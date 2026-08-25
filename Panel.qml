@@ -596,14 +596,11 @@ Panel {
   Process {
     id: installProc
     property string localeToInstall: ""
-    command: ["pkexec", "bash", "-c",
-      "sed -i '/^#\\? *" + localeToInstall + " UTF-8/s/^# *//' /etc/locale.gen; " +
-      "grep -q '^" + localeToInstall + " UTF-8' /etc/locale.gen || echo '" + localeToInstall + " UTF-8' >> /etc/locale.gen; " +
-      "locale-gen; echo DONE"]
+    command: ["pkexec", "bash", Qt.resolvedUrl("locale-install.sh").toString().replace("file://", ""), localeToInstall]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        if (text.indexOf("DONE") >= 0) {
+        if (text.indexOf("DONE:" + root.installProc.localeToInstall) >= 0) {
           if (!localeListProc.running) localeListProc.running = true
           root.setLocale(root.installProc.localeToInstall)
           root.pendingInstall = ""
