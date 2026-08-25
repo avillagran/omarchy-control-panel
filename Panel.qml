@@ -271,13 +271,9 @@ Panel {
     // let natural_scroll alone control direction.
     L.push('hl.device({ name = "apple-mtp-multi-touch", natural_scroll = ' + (saved.naturalScroll ? "true" : "false") + ', scroll_factor = 1 })')
 
-    // Atomic write (tmp + mv) so a concurrent hyprctl reload can never read
-    // a half-written file and blame a phantom syntax error mid-file.
-    luaWriter.command = ["bash", "-lc",
-      "mkdir -p ~/.config/hypr && printf '%s\\n' \"$1\" > '" + root.luaPath + ".tmp' && mv '" + root.luaPath + ".tmp' '" + root.luaPath + "' && "
-      + "grep -qs 'require(\"control-panel\")' ~/.config/hypr/hyprland.lua || "
-      + "echo 'require(\"control-panel\")' >> ~/.config/hypr/hyprland.lua",
-      "bash", L.join("\n")]
+    // Atomic, symlink-safe write via external script (mktemp + mv -f).
+    luaWriter.command = ["bash", Qt.resolvedUrl("write-lua-atomic.sh").toString().replace("file://", ""),
+      root.luaPath, L.join("\n")]
     luaWriter.running = true
   }
 
@@ -443,9 +439,8 @@ Panel {
   }
 
   function savePrefs() {
-    prefsWriter.command = ["bash", "-lc",
-      "mkdir -p ~/.local/state/omarchy && printf '%s\\n' \"$1\" > '" + prefsPath + ".tmp' && mv '" + prefsPath + ".tmp' '" + prefsPath + "'",
-      "bash", JSON.stringify({ swipe3: swipe3On, inertia: inertiaOn, naturalScroll: naturalScroll, tapToClick: tapToClick })]
+    prefsWriter.command = ["bash", Qt.resolvedUrl("write-prefs-atomic.sh").toString().replace("file://", ""),
+      prefsPath, JSON.stringify({ swipe3: swipe3On, inertia: inertiaOn, naturalScroll: naturalScroll, tapToClick: tapToClick })]
     prefsWriter.running = true
   }
 
@@ -456,7 +451,7 @@ Panel {
 
   Process {
     id: prefsLoader
-    command: ["bash", "-lc", "cat '" + root.prefsPath + "' 2>/dev/null || true"]
+    command: ["bash", "-lc", "head -c 65536 '" + root.prefsPath + "' 2>/dev/null || true"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.loadPrefs(text)
@@ -543,9 +538,9 @@ Panel {
   Process {
     id: luaStateProc
     command: ["bash", "-lc",
-      "f='" + root.luaPath + "'; [ -f \"$f\" ] || exit 0; " +
-      "echo NS=$(grep -oE 'natural_scroll = (true|false)' \"$f\" | head -1 | grep -oE '(true|false)'); " +
-      "echo TC=$(grep -oE 'tap_to_click = (true|false)' \"$f\" | head -1 | grep -oE '(true|false)')"]
+      "f='" + root.luaPath + "'; [ -f \"$f\" ] || exit 0; c=$(head -c 65536 \"$f\"); " +
+      "echo NS=$(printf '%s' \"$c\" | grep -oE 'natural_scroll = (true|false)' | head -1 | grep -oE '(true|false)'); " +
+      "echo TC=$(printf '%s' \"$c\" | grep -oE 'tap_to_click = (true|false)' | head -1 | grep -oE '(true|false)')"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -639,8 +634,8 @@ Panel {
     id: kbdLedProbe
     command: ["bash", "-lc",
       "if [ -e /sys/class/leds/kbd_backlight/brightness ]; then " +
-      "cur=$(cat /sys/class/leds/kbd_backlight/brightness); " +
-      "max=$(cat /sys/class/leds/kbd_backlight/max_brightness); " +
+      "cur=$(head -c 64 /sys/class/leds/kbd_backlight/brightness); " +
+      "max=$(head -c 64 /sys/class/leds/kbd_backlight/max_brightness); " +
       "echo FOUND=$(( max > 0 ? 100 * cur / max : 0 )); " +
       "else echo MISSING; fi"]
     stdout: StdioCollector {
@@ -658,7 +653,7 @@ Panel {
   Process {
     id: apfsProbe
     command: ["bash", "-lc",
-      "lsblk -Jno PATH,FSTYPE,SIZE,LABEL,MOUNTPOINT 2>/dev/null | jq -c '[.. | objects | select(.fstype? == \"apfs\") | {path,fstype,size,label,mountpoint}] // []'"]
+      "lsblk -Jno PATH,FSTYPE,SIZE,LABEL,MOUNTPOINT 2>/dev/null | head -c 65536 | jq -c '[.. | objects | select(.fstype? == \"apfs\") | {path,fstype,size,label,mountpoint}] // []'"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
