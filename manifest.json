@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.avillagran.omarchy-control-panel",
+  "name": "Omarchy Control Panel",
+  "version": "1.0.0",
+  "author": "avillagran",
+  "description": "System Settings panel for Omarchy/Hyprland: keyboard, language, trackpad, animations, gaps and more. Familiar for users coming from macOS, useful for everyone.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omarchy Control Panel",
+    "description": "Omarchy settings panel (familiar for macOS users)",
+    "category": "Settings",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}
