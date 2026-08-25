@@ -565,14 +565,7 @@ Panel {
   property string pendingInstall: ""
   Process {
     id: localeListProc
-    command: ["bash", "-lc",
-      "gen=$(locale -a 2>/dev/null | sed -E 's/\\.utf8$/\\.UTF-8/I; s/\\.utf-8$/\\.UTF-8/I' | sort -u); " +
-      "for b in $(ls /usr/share/i18n/locales/ 2>/dev/null); do " +
-      "  if echo \"$b\" | grep -qE '^[a-z]{2}(_[A-Z]{2})?$'; then " +
-      "    v=\"${b}.UTF-8\"; " +
-      "    if echo \"$gen\" | grep -qx \"$v\"; then echo \"$v\\t1\"; else echo \"$v\\t0\"; fi; " +
-      "  fi; " +
-      "done"]
+    command: ["bash", Qt.resolvedUrl("locale-list.sh").toString().replace("file://", "")]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
