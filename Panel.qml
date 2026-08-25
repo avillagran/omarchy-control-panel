@@ -564,7 +564,7 @@ Panel {
   property var localeOptions: []
   Process {
     id: localeListProc
-    command: ["bash", "-lc", "locale -a 2>/dev/null | grep -E 'UTF-8$' | sort -u"]
+    command: ["bash", "-lc", "locale -a 2>/dev/null | grep -E '\\.' | grep -viE '^(C|POSIX)\\.' "]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -572,7 +572,10 @@ Panel {
         var lines = text.split("\n")
         for (var i = 0; i < lines.length; i++) {
           var l = lines[i].trim()
-          if (l) opts.push({ value: l, label: l })
+          if (!l) continue
+          // Normalize glibc 'utf8' / 'utf-8' to 'UTF-8' so it matches currentLocale.
+          var norm = l.replace(/utf-8/gi, "UTF-8")
+          opts.push({ value: norm, label: norm })
         }
         root.localeOptions = opts
       }
