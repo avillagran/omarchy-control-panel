@@ -563,6 +563,7 @@ Panel {
   // Dynamic locale list (system locales) for the language picker.
   property var localeOptions: []
   property string pendingInstall: ""
+  property bool installing: false
   Process {
     id: localeListProc
     command: ["bash", Qt.resolvedUrl("locale-list.sh").toString().replace("file://", "")]
@@ -589,6 +590,7 @@ Panel {
   function installLocale(v) {
     if (!v) return
     root.pendingInstall = v
+    root.installing = true
     installProc.localeToInstall = v
     if (!installProc.running) installProc.running = true
   }
@@ -600,11 +602,10 @@ Panel {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        if (text.indexOf("DONE:" + root.installProc.localeToInstall) >= 0) {
-          if (!localeListProc.running) localeListProc.running = true
-          root.setLocale(root.installProc.localeToInstall)
-          root.pendingInstall = ""
-        }
+        root.installing = false
+        root.pendingInstall = ""
+        if (!localeListProc.running) localeListProc.running = true
+        root.setLocale(root.installProc.localeToInstall)
       }
     }
   }
@@ -813,7 +814,8 @@ Panel {
         Button {
           width: parent.width
           visible: root.pendingInstall !== ""
-          text: "Install & apply " + root.pendingInstall
+          enabled: !root.installing
+          text: root.installing ? "Instalando…" : "Install & apply " + root.pendingInstall
           selected: true
           foreground: root.fg
           onClicked: root.installLocale(root.pendingInstall)
