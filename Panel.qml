@@ -605,7 +605,10 @@ Panel {
         root.installing = false
         root.pendingInstall = ""
         if (!localeListProc.running) localeListProc.running = true
-        root.setLocale(root.installProc.localeToInstall)
+        // The install script already ran localectl set-locale as root,
+        // so we only sync the UI here (no second pkexec prompt).
+        root.currentLocale = root.installProc.localeToInstall
+        root.statusMessage = root.t(root.uiLang, "sysLanguage") + " · " + root.installProc.localeToInstall
       }
     }
   }

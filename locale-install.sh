@@ -8,4 +8,5 @@ f=/etc/locale.gen
 sed -i "/^#\? *${v} UTF-8/s/^# *//" "$f"
 grep -q "^${v} UTF-8" "$f" || echo "${v} UTF-8" >> "$f"
 locale-gen
+localectl set-locale "$v"
 echo "DONE:$v"
