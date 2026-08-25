@@ -472,18 +472,17 @@ Panel {
   }
 
   function autoMountApfs(dev) {
+    // The plugin never runs privileged shell strings built from QML. Show the
+    // exact steps so the user can run them in a terminal themselves.
     var base = dev.replace("/dev/", "")
-    run("pkexec bash -c 'UUID=$(blkid -s UUID -o value " + dev + "); MP=/mnt/apfs-" + base + "; "
-      + "grep -qs \"$UUID\" /etc/fstab || echo \"UUID=$UUID $MP apfs rw,nofail,x-systemd.automount,x-systemd.device-timeout=10 0 0\" >> /etc/fstab; "
-      + "mkdir -p \"$MP\"; systemctl daemon-reload; modprobe apfs 2>/dev/null; ls \"$MP\"'")
-    statusMessage = "APFS · automount · " + dev
-    syncTimer.restart()
+    var uuid = "$(blkid -s UUID -o value " + dev + ")"
+    statusMessage = "APFS · run in terminal:\n"
+      + "UUID=" + uuid + "; MP=/mnt/apfs-" + base + "; "
+      + "pkexec bash -c \"grep -qs \\\$UUID /etc/fstab || echo 'UUID=\\\$UUID \\\$MP apfs rw,nofail,x-systemd.automount,x-systemd.device-timeout=10 0 0' >> /etc/fstab; mkdir -p \\\$MP; systemctl daemon-reload; modprobe apfs; ls \\\$MP\""
   }
 
   function unmountApfs(mp) {
-    run("pkexec umount '" + mp + "'")
-    statusMessage = "APFS · umount · " + mp
-    syncTimer.restart()
+    statusMessage = "APFS · run in terminal: pkexec umount '" + mp + "'"
   }
 
   Process {
@@ -559,7 +558,7 @@ Panel {
   // Dynamic locale list (system locales) for the language picker.
   property var localeOptions: []
   property string pendingInstall: ""
-  property bool installing: false
+  property string localeInstallHint: ""
   Process {
     id: localeListProc
     command: ["bash", Qt.resolvedUrl("locale-list.sh").toString().replace("file://", "")]
@@ -581,33 +580,17 @@ Panel {
     }
   }
 
-  // Install a not-yet-generated locale via pkexec (one-time password prompt),
-  // then apply it. Edits /etc/locale.gen + runs locale-gen as root, on demand only.
-  function installLocale(v) {
-    if (!v) return
-    root.pendingInstall = v
-    root.installing = true
-    installProc.localeToInstall = v
-    if (!installProc.running) installProc.running = true
-  }
-
-  Process {
-    id: installProc
-    property string localeToInstall: ""
-    command: ["pkexec", "bash", Qt.resolvedUrl("locale-install.sh").toString().replace("file://", ""), localeToInstall]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        root.installing = false
-        root.pendingInstall = ""
-        if (!localeListProc.running) localeListProc.running = true
-        // The install script already ran localectl set-locale as root, so the
-        // system locale changed. Re-read it (refresh re-runs readProc which
-        // derives currentLocale from `localectl status`) so the UI auto-syncs
-        // without the user having to pick the locale again.
-        root.refresh()
-      }
-    }
+  // When the user picks a locale that is not yet generated, show the exact
+  // manual steps to install it. The plugin NEVER executes these commands;
+  // the user copies them to a terminal themselves — an immutable handoff that
+  // avoids running any mutable plugin code as root.
+  function showLocaleInstallHint(v) {
+    if (!v || !/^[a-z]{2}(_[A-Z]{2})?\.UTF-8$/.test(v)) return
+    root.localeInstallHint = "Install " + v + ":\n" +
+      "1. Edit /etc/locale.gen as root and uncomment (or add):\n   " + v + " UTF-8\n" +
+      "2. Run:  pkexec locale-gen\n" +
+      "3. Run:  pkexec localectl set-locale " + v + "\n" +
+      "Then close and reopen this panel to refresh."
   }
 
   // Dynamic keyboard layout list (X11 layouts) for the layout picker.
@@ -814,11 +797,20 @@ Panel {
         Button {
           width: parent.width
           visible: root.pendingInstall !== ""
-          enabled: !root.installing
-          text: root.installing ? "Instalando…" : "Install & apply " + root.pendingInstall
+          text: "Show install steps for " + root.pendingInstall
           selected: true
           foreground: root.fg
-          onClicked: root.installLocale(root.pendingInstall)
+          onClicked: root.showLocaleInstallHint(root.pendingInstall)
+        }
+
+        Text {
+          width: parent.width
+          visible: root.localeInstallHint !== ""
+          text: root.localeInstallHint
+          color: root.fg
+          wrapMode: Text.Wrap
+          font.pointSize: Style.font.small
+          opacity: 0.85
         }
 
         Rectangle {
