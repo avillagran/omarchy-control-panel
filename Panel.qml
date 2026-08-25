@@ -560,6 +560,44 @@ Panel {
     }
   }
 
+  // Dynamic locale list (system locales) for the language picker.
+  property var localeOptions: []
+  Process {
+    id: localeListProc
+    command: ["bash", "-lc", "locale -a 2>/dev/null | grep -E 'UTF-8$' | sort -u"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var opts = []
+        var lines = text.split("\n")
+        for (var i = 0; i < lines.length; i++) {
+          var l = lines[i].trim()
+          if (l) opts.push({ value: l, label: l })
+        }
+        root.localeOptions = opts
+      }
+    }
+  }
+
+  // Dynamic keyboard layout list (X11 layouts) for the layout picker.
+  property var layoutOptions: []
+  Process {
+    id: layoutListProc
+    command: ["bash", "-lc", "localectl list-x11-keymap-layouts 2>/dev/null | sort -u"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var opts = []
+        var lines = text.split("\n")
+        for (var i = 0; i < lines.length; i++) {
+          var l = lines[i].trim()
+          if (l) opts.push({ value: l, label: l })
+        }
+        root.layoutOptions = opts
+      }
+    }
+  }
+
   // Keyboard backlight level.
   Process {
     id: kbdLedProbe
@@ -618,6 +656,8 @@ Panel {
   Component.onCompleted: {
     prefsLoader.running = true
     if (!i18nLoader.running) i18nLoader.running = true
+    if (!localeListProc.running) localeListProc.running = true
+    if (!layoutListProc.running) layoutListProc.running = true
     // Bring the live Hyprland config in line with what we persisted, so a
     // shell/plugin restart doesn't leave the system on Omarchy's defaults.
     // Defer slightly: execDetached + hyprctl eval needs Quickshell/Hyprland
@@ -724,22 +764,13 @@ Panel {
           font.pixelSize: Style.font.caption
         }
 
-        Flow {
+        SearchableDropdown {
           width: parent.width
-          spacing: Style.space(6)
-
-          Repeater {
-            model: ["es_CL.UTF-8", "es_ES.UTF-8", "es_MX.UTF-8", "en_US.UTF-8", "pt_BR.UTF-8", "fr_FR.UTF-8"]
-
-            Button {
-              required property string modelData
-              text: modelData.replace(".UTF-8", "")
-              selected: root.currentLocale.indexOf(modelData) === 0 || root.currentLocale.indexOf(modelData.split(".")[0]) === 0
-              fontSize: Style.font.caption
-              foreground: root.fg
-              onClicked: root.setLocale(modelData)
-            }
-          }
+          label: root.t(root.uiLang, "sysLanguage")
+          placeholderText: root.t(root.uiLang, "sysLanguage") + "…"
+          options: root.localeOptions
+          value: root.currentLocale
+          onChanged: function(v) { root.setLocale(v) }
         }
 
         Rectangle {
@@ -797,22 +828,13 @@ Panel {
           font.pixelSize: Style.font.caption
         }
 
-        Flow {
+        SearchableDropdown {
           width: parent.width
-          spacing: Style.space(6)
-
-          Repeater {
-            model: ["us", "es", "latam", "gb", "de", "fr", "br"]
-
-            Button {
-              required property string modelData
-              text: modelData
-              selected: root.kbLayout.split(",")[0] === modelData
-              fontSize: Style.font.caption
-              foreground: root.fg
-              onClicked: root.applyKbLayout(modelData)
-            }
-          }
+          label: root.t(root.uiLang, "physKeyboard")
+          placeholderText: root.t(root.uiLang, "physKeyboard") + "…"
+          options: root.layoutOptions
+          value: root.kbLayout.split(",")[0]
+          onChanged: function(v) { root.applyKbLayout(v) }
         }
 
         Column {
