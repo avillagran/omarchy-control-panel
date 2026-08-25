@@ -25,13 +25,13 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - The UI language is **auto-detected** from the system locale (no manual selector needed).
 - All UI strings live in `i18n.json`, editable as plain data without touching the QML.
 - The **language and keyboard-layout pickers** are searchable dropdowns (`SearchableDropdown`): they list every locale/layout available on the system with type-to-filter.
-- **Missing locales can be installed on demand**: picking an ungenerated locale offers an "Install & apply" button that runs `locale-gen` via a one-time `pkexec` password prompt, then applies it automatically — the UI re-syncs without picking the locale again.
+- **Missing locales**: picking an ungenerated locale shows the exact manual steps to enable it (edit `/etc/locale.gen`, run `pkexec locale-gen`, etc.). The plugin never executes privileged commands itself — the user copies the steps to a terminal.
 
 ## Technical notes
 
 - **External i18n**: all UI strings live in `i18n.json` (19 fully translated languages). The UI language follows the OS locale.
 - **Persistence**: state is saved to `~/.config/hypr/control-panel.lua` (re-applied on Hyprland load) and to the plugin's prefs JSON.
-- **No root**: the plugin never writes to `/usr/share/omarchy` and never asks for sudo for normal operation; only essential changes via `hyprctl`. Installing a new system locale is the one action that needs a one-time `pkexec` prompt (by design — it edits `/etc/locale.gen`).
+- **No root**: the plugin never writes to `/usr/share/omarchy` and never asks for sudo for normal operation; only essential changes via `hyprctl`. It never executes privileged commands automatically — APFS mount/unmount and locale install are surfaced as manual terminal steps the user can copy and run with `pkexec`/`sudo`.
 - **Security hardening**: all writes to user files (`~/.config/hypr/control-panel.lua`, plugin prefs JSON, and the idempotent `require("control-panel")` line in `~/.config/hypr/hyprland.lua`) go through exclusive `mktemp` temp files in the same directory followed by an atomic `mv -f` — never a predictable `*.tmp` name (which a planted symlink could redirect) and never a `>>` append (the symlink-append vector). Every file/probe read, including inside the write helpers, is byte-capped and FIFO-safe (`timeout 5 head -c 65536`) so a large or malicious file cannot hang or exhaust memory.
 - **No state flicker**: the UI syncs from the Lua file (source of truth) on open, avoiding the `hyprctl` read flip-flop on mouse-class devices.
 
@@ -51,7 +51,8 @@ BarWidget.qml        # bar widget that summons the panel
 Panel.qml            # the settings panel
 i18n.json            # UI strings in 19 languages
 locale-list.sh       # enumerates available system locales for the picker
-locale-install.sh    # installs + applies a locale via pkexec
+write-lua-atomic.sh  # atomic, symlink-safe write of control-panel.lua
+write-prefs-atomic.sh # atomic, symlink-safe write of plugin prefs
 ```
 
 ## Verification
