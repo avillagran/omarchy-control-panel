@@ -32,6 +32,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **External i18n**: all UI strings live in `i18n.json` (19 fully translated languages). The UI language follows the OS locale.
 - **Persistence**: state is saved to `~/.config/hypr/control-panel.lua` (re-applied on Hyprland load) and to the plugin's prefs JSON.
 - **No root**: the plugin never writes to `/usr/share/omarchy` and never asks for sudo for normal operation; only essential changes via `hyprctl`. Installing a new system locale is the one action that needs a one-time `pkexec` prompt (by design — it edits `/etc/locale.gen`).
+- **Security hardening**: all writes to user files (`~/.config/hypr/control-panel.lua`, plugin prefs JSON) go through exclusive `mktemp` temp files in the same directory followed by an atomic `mv -f` — never a predictable `*.tmp` name that a planted symlink could redirect. Every file/probe read (`cat`, `lsblk`, sysfs, Lua grep) is byte-capped with `head -c` so a large or malicious file cannot hang or exhaust memory.
 - **No state flicker**: the UI syncs from the Lua file (source of truth) on open, avoiding the `hyprctl` read flip-flop on mouse-class devices.
 
 ## Installation
