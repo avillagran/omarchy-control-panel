@@ -19,11 +19,19 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **Keyboard & Language**: physical layout, system language
 - **Night light**, screenshot, and more
 
+## Internationalization
+
+- **19 UI languages**, fully translated: `en`, `es`, `pt`, `fr`, `de`, `it`, `nl`, `pl`, `ru`, `ja`, `ko`, `zh`, `ar`, `tr`, `sv`, `da`, `no`, `fi`, `cs`.
+- The UI language is **auto-detected** from the system locale (no manual selector needed).
+- All UI strings live in `i18n.json`, editable as plain data without touching the QML.
+- The **language and keyboard-layout pickers** are searchable dropdowns (`SearchableDropdown`): they list every locale/layout available on the system with type-to-filter.
+- **Missing locales can be installed on demand**: picking an ungenerated locale offers an "Install & apply" button that runs `locale-gen` via a one-time `pkexec` password prompt, then applies it automatically — the UI re-syncs without picking the locale again.
+
 ## Technical notes
 
-- **External i18n**: all UI strings live in `i18n.json` (19 languages: en, es, pt, fr, de, it, nl, pl, ru, ja, ko, zh, ar, tr, sv, da, no, fi, cs). Fully translated: `en`, `es`, `pt`, `fr`. Pending translation (fall back to English): `de`, `it`, `nl`, `pl`, `ru`, `ja`, `ko`, `zh`, `ar`, `tr`, `sv`, `da`, `no`, `fi`, `cs`. The UI language follows the OS locale.
+- **External i18n**: all UI strings live in `i18n.json` (19 fully translated languages). The UI language follows the OS locale.
 - **Persistence**: state is saved to `~/.config/hypr/control-panel.lua` (re-applied on Hyprland load) and to the plugin's prefs JSON.
-- **No root**: the plugin never writes to `/usr/share/omarchy` and never asks for sudo; only essential changes via `hyprctl`.
+- **No root**: the plugin never writes to `/usr/share/omarchy` and never asks for sudo for normal operation; only essential changes via `hyprctl`. Installing a new system locale is the one action that needs a one-time `pkexec` prompt (by design — it edits `/etc/locale.gen`).
 - **No state flicker**: the UI syncs from the Lua file (source of truth) on open, avoiding the `hyprctl` read flip-flop on mouse-class devices.
 
 ## Installation
@@ -41,6 +49,8 @@ manifest.json        # plugin declaration (id, kinds, entry points)
 BarWidget.qml        # bar widget that summons the panel
 Panel.qml            # the settings panel
 i18n.json            # UI strings in 19 languages
+locale-list.sh       # enumerates available system locales for the picker
+locale-install.sh    # installs + applies a locale via pkexec
 ```
 
 ## Verification
