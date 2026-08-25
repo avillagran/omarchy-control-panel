@@ -1,56 +1,56 @@
 # Omarchy Control Panel
 
-System Settings panel for **Omarchy / Hyprland**, built as an Omarchy shell plugin (Quickshell/QML). Familiar for users coming from macOS, useful for everyone.
+A system settings panel for **Omarchy / Hyprland**, built as an Omarchy shell plugin (Quickshell/QML). Familiar for users coming from macOS, useful for everyone.
 
-## Qué hace
+## Features
 
-Panel de configuración rápida que se sumona desde la barra de Omarchy. Controla, sin tocar `/usr/share/omarchy` ni pedir sudo:
+A quick settings panel summoned from the Omarchy bar. It manages settings without touching `/usr/share/omarchy` and without sudo:
 
-- **Trackpad / Mouse** (optimizado para Apple MTP multi-touch, clasificado como mouse por Hyprland):
-  - Tap to click (sin presionar)
-  - Scroll natural/invertido (por dispositivo, vía `natural_scroll` + `scroll_factor`)
-  - Scroll con inercia
-  - Swipe de 3 dedos para cambiar de escritorio
-- **Animaciones**: animaciones del sistema, transición de escritorios, flat pointer acceleration, velocidad/sensibilidad
-- **Ventanas**: espaciado interno/externo (gaps)
-- **Dispositivos**: retroiluminación de teclado, APFS (discos macOS)
-- **Teclado e Idioma**: distribución física, idioma del sistema
-- **Luz nocturna**, captura de pantalla, y más
+- **Trackpad / Mouse** (tuned for the Apple MTP multi-touch, which Hyprland classifies as a mouse):
+  - Tap to click (no physical press)
+  - Natural/inverted scrolling (per-device via `natural_scroll` + `scroll_factor`)
+  - Inertial scrolling
+  - 3-finger swipe to switch workspaces
+- **Animations**: system animations, workspace transition, flat pointer acceleration, speed/sensitivity
+- **Windows**: inner/outer gaps
+- **Devices**: keyboard backlight, APFS (macOS disks)
+- **Keyboard & Language**: physical layout, system language
+- **Night light**, screenshot, and more
 
-## Características técnicas
+## Technical notes
 
-- **i18n externo**: todos los strings viven en `i18n.json` (en/es/pt/fr), editables como datos planos sin tocar el QML.
-- **Persistencia**: el estado se guarda en `~/.config/hypr/control-panel.lua` (re-aplicado al cargar Hyprland) y en prefs JSON del plugin.
-- **Sin root**: el plugin nunca escribe en `/usr/share/omarchy` ni pide sudo; solo cambios esenciales vía `hyprctl`.
-- **Sin flicker de estado**: la UI se sincroniza desde el Lua (fuente de verdad) al abrir, evitando el flip-flop de lectura de `hyprctl` en dispositivos mouse-class.
+- **External i18n**: all UI strings live in `i18n.json` (en/es/pt/fr), editable as plain data without touching the QML.
+- **Persistence**: state is saved to `~/.config/hypr/control-panel.lua` (re-applied on Hyprland load) and to the plugin's prefs JSON.
+- **No root**: the plugin never writes to `/usr/share/omarchy` and never asks for sudo; only essential changes via `hyprctl`.
+- **No state flicker**: the UI syncs from the Lua file (source of truth) on open, avoiding the `hyprctl` read flip-flop on mouse-class devices.
 
-## Instalación
+## Installation
 
 ```bash
 omarchy plugin add https://github.com/avillagran/omarchy-control-panel
 ```
 
-O clónalo manualmente en `~/.config/omarchy/plugins/io.github.avillagran.omarchy-control-panel/` y habilítalo.
+Or clone manually into `~/.config/omarchy/plugins/io.github.avillagran.omarchy-control-panel/` and enable it.
 
-## Estructura
+## Structure
 
 ```
-manifest.json        # declaración del plugin (id, kinds, entry points)
-BarWidget.qml        # widget en la barra que sumona el panel
-Panel.qml            # el panel de configuración
-i18n.json            # strings de UI en 4 idiomas
+manifest.json        # plugin declaration (id, kinds, entry points)
+BarWidget.qml        # bar widget that summons the panel
+Panel.qml            # the settings panel
+i18n.json            # UI strings in 4 languages
 ```
 
-## Verificación
+## Verification
 
-Antes de publicar/subir, corre el smoke test:
+Before publishing, run the smoke test:
 
 ```bash
 ~/.local/bin/verify-omarchy-control-panel.sh
 ```
 
-Valida el manifest con `omarchy-plugin-validate`, revisa symlinks, JSON y que el panel cargue sin errores.
+It validates the manifest with `omarchy-plugin-validate`, checks for symlinks, JSON validity, and that the panel loads without errors.
 
-## Licencia
+## License
 
-MIT — ver [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
