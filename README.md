@@ -17,7 +17,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **Windows**: inner/outer gaps
 - **Devices**: keyboard backlight, APFS (macOS disks)
 - **Keyboard & Language**: physical layout, system language
-- **Night light**, screenshot, and more
+- **Night light**, and more
 
 ## Internationalization
 
