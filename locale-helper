@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Root-owned helper for installing a glibc locale.
+# Intended to be installed once at /usr/local/bin/omarchy-control-panel-locale-helper
+# (owner root, mode 755). The plugin calls it with pkexec <helper> <locale>.
+set -uo pipefail
+v="$1"
+[ -n "$v" ] || exit 1
+f=/etc/locale.gen
+d="$(dirname -- "$f")"
+cur="$(timeout 5 head -c 65536 "$f" 2>/dev/null || true)"
+# Enable the locale line (strip a leading '#'), add it if missing.
+cur="$(printf '%s\n' "$cur" | sed "/^#\? *${v} UTF-8/s/^# *//")"
+if ! printf '%s\n' "$cur" | grep -q "^${v} UTF-8"; then
+  cur="${cur}
+${v} UTF-8"
+fi
+TMP="$(mktemp "$d/.ocp-locale.XXXXXX")"
+chmod 644 "$TMP" 2>/dev/null || true
+printf '%s\n' "$cur" > "$TMP"
+mv -f "$TMP" "$f"
+locale-gen
+localectl set-locale "$v"
+echo "DONE:$v"

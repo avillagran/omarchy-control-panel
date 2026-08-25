@@ -107,6 +107,7 @@ Panel {
   // APFS (Extras): driver presence + detected partitions.
   property bool apfsInstalled: false
   property var apfsList: []
+  property string apfsCommandText: ""
 
   // Menu tab: inline calculator + web search (Alfred-style helpers).
   property string calcInput: ""
@@ -201,6 +202,16 @@ Panel {
   function run(cmd) {
     Quickshell.execDetached(["bash", "-lc", cmd])
     syncTimer.restart()
+  }
+
+  // Copy text to the system clipboard and flash a brief confirmation.
+  function copyToClipboard(text) {
+    if (text) {
+      if (typeof Qt !== "undefined" && Qt.clipboard) Qt.clipboard.setText(text)
+      else Quickshell.execDetached(["bash", "-lc", "printf '%s' " + JSON.stringify(text) + " | wl-copy 2>/dev/null || xclip -selection clipboard 2>/dev/null || true"])
+      root.statusMessage = "Copied to clipboard"
+      syncTimer.restart()
+    }
   }
 
   // ---- Persistence, omasettings-style -------------------------------------
@@ -360,11 +371,11 @@ Panel {
     statusMessage = root.t(root.uiLang, "physKeyboard") + " · " + layout
   }
 
-  // Locales may not be generated yet; enable in locale.gen, generate, apply.
-  // pkexec + locale-gen take seconds, so reflect optimistically and poll.
+  // Apply an already-generated system locale. Uses the root-owned localectl
+  // binary directly with a validated argv — no mutable plugin code as root.
   function setLocale(locale) {
-    if (!locale) return
-    run("pkexec bash -c \"sed -i 's/^#" + locale + "/" + locale + "/' /etc/locale.gen && locale-gen >/dev/null 2>&1 && localectl set-locale " + locale + "\"")
+    if (!locale || !/^[a-z]{2}(_[A-Z]{2})?\.UTF-8$/.test(locale)) return
+    Quickshell.execDetached(["pkexec", "/usr/bin/localectl", "set-locale", locale])
     currentLocale = locale
     statusMessage = root.t(root.uiLang, "sysLanguage") + " · " + locale
     slowSyncLeft = 6
@@ -473,16 +484,17 @@ Panel {
 
   function autoMountApfs(dev) {
     // The plugin never runs privileged shell strings built from QML. Show the
-    // exact steps so the user can run them in a terminal themselves.
+    // exact command so the user can copy and run it themselves.
     var base = dev.replace("/dev/", "")
     var uuid = "$(blkid -s UUID -o value " + dev + ")"
-    statusMessage = "APFS · run in terminal:\n"
-      + "UUID=" + uuid + "; MP=/mnt/apfs-" + base + "; "
+    root.apfsCommandText = "UUID=" + uuid + "; MP=/mnt/apfs-" + base + "; "
       + "pkexec bash -c \"grep -qs \\\$UUID /etc/fstab || echo 'UUID=\\\$UUID \\\$MP apfs rw,nofail,x-systemd.automount,x-systemd.device-timeout=10 0 0' >> /etc/fstab; mkdir -p \\\$MP; systemctl daemon-reload; modprobe apfs; ls \\\$MP\""
+    statusMessage = "APFS · command ready to copy"
   }
 
   function unmountApfs(mp) {
-    statusMessage = "APFS · run in terminal: pkexec umount '" + mp + "'"
+    root.apfsCommandText = "pkexec umount '" + mp + "'"
+    statusMessage = "APFS · command ready to copy"
   }
 
   Process {
@@ -580,17 +592,54 @@ Panel {
     }
   }
 
-  // When the user picks a locale that is not yet generated, show the exact
-  // manual steps to install it. The plugin NEVER executes these commands;
-  // the user copies them to a terminal themselves — an immutable handoff that
-  // avoids running any mutable plugin code as root.
-  function showLocaleInstallHint(v) {
+  property bool localeHelperInstalled: false
+  property string localeHelperPath: "/usr/local/bin/omarchy-control-panel-locale-helper"
+  property string localeInstallCommand: ""
+  property bool installing: false
+
+  // Detect whether the root-owned locale helper is installed.
+  Process {
+    id: localeHelperProbe
+    command: ["bash", "-lc", "test -x '" + root.localeHelperPath + "' && echo YES || echo NO"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.localeHelperInstalled = (text.trim() === "YES")
+    }
+  }
+
+  // Install a missing locale using a ROOT-OWNED helper in /usr/local/bin.
+  // The helper is installed once by the user (see showLocaleHelperInstallCommand);
+  // afterwards the plugin calls it with pkexec + a validated argv. The mutable
+  // plugin code itself never runs as root.
+  function installLocale(v) {
     if (!v || !/^[a-z]{2}(_[A-Z]{2})?\.UTF-8$/.test(v)) return
-    root.localeInstallHint = "Install " + v + ":\n" +
-      "1. Edit /etc/locale.gen as root and uncomment (or add):\n   " + v + " UTF-8\n" +
-      "2. Run:  pkexec locale-gen\n" +
-      "3. Run:  pkexec localectl set-locale " + v + "\n" +
-      "Then close and reopen this panel to refresh."
+    root.pendingInstall = v
+    root.installing = true
+    installProc.localeToInstall = v
+    if (!installProc.running) installProc.running = true
+  }
+
+  // Show the one-time command to install the immutable root-owned helper.
+  // The user runs it manually; once installed, locale install is one click.
+  function showLocaleHelperInstallCommand() {
+    root.localeInstallCommand = "pkexec install -o root -g root -m 755 \""
+      + Qt.resolvedUrl("locale-helper").toString().replace("file://", "") + "\" "
+      + root.localeHelperPath
+  }
+
+  Process {
+    id: installProc
+    property string localeToInstall: ""
+    command: ["pkexec", root.localeHelperPath, localeToInstall]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.installing = false
+        root.pendingInstall = ""
+        if (!localeListProc.running) localeListProc.running = true
+        root.refresh()
+      }
+    }
   }
 
   // Dynamic keyboard layout list (X11 layouts) for the layout picker.
@@ -672,6 +721,7 @@ Panel {
     if (!i18nLoader.running) i18nLoader.running = true
     if (!localeListProc.running) localeListProc.running = true
     if (!layoutListProc.running) layoutListProc.running = true
+    if (!localeHelperProbe.running) localeHelperProbe.running = true
     // Bring the live Hyprland config in line with what we persisted, so a
     // shell/plugin restart doesn't leave the system on Omarchy's defaults.
     // Defer slightly: execDetached + hyprctl eval needs Quickshell/Hyprland
@@ -796,21 +846,39 @@ Panel {
 
         Button {
           width: parent.width
-          visible: root.pendingInstall !== ""
-          text: "Show install steps for " + root.pendingInstall
+          visible: root.pendingInstall !== "" && root.localeHelperInstalled
+          enabled: !root.installing
+          text: root.installing ? "Instalando…" : "Install & apply " + root.pendingInstall
           selected: true
           foreground: root.fg
-          onClicked: root.showLocaleInstallHint(root.pendingInstall)
+          onClicked: root.installLocale(root.pendingInstall)
+        }
+
+        Button {
+          width: parent.width
+          visible: root.pendingInstall !== "" && !root.localeHelperInstalled
+          text: "Set up locale installer (one-time)"
+          selected: true
+          foreground: root.fg
+          onClicked: root.showLocaleHelperInstallCommand()
         }
 
         Text {
           width: parent.width
-          visible: root.localeInstallHint !== ""
-          text: root.localeInstallHint
+          visible: root.localeInstallCommand !== ""
+          text: root.localeInstallCommand
           color: root.fg
           wrapMode: Text.Wrap
           font.pointSize: Style.font.small
           opacity: 0.85
+        }
+
+        Button {
+          width: parent.width
+          visible: root.localeInstallCommand !== ""
+          text: "Copy command to clipboard"
+          foreground: root.fg
+          onClicked: root.copyToClipboard(root.localeInstallCommand)
         }
 
         Rectangle {
@@ -1106,6 +1174,24 @@ Panel {
 
             PanelSeparator { foreground: root.fg }
           }
+        }
+
+        Text {
+          width: parent.width
+          visible: root.apfsCommandText !== ""
+          text: root.apfsCommandText
+          color: root.fg
+          wrapMode: Text.Wrap
+          font.pixelSize: Style.font.caption
+          opacity: 0.85
+        }
+
+        Button {
+          width: parent.width
+          visible: root.apfsCommandText !== ""
+          text: "Copy APFS command"
+          foreground: root.fg
+          onClicked: root.copyToClipboard(root.apfsCommandText)
         }
       }
 
