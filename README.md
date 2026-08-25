@@ -2,6 +2,8 @@
 
 A system settings panel for **Omarchy / Hyprland**, built as an Omarchy shell plugin (Quickshell/QML). Familiar for users coming from macOS, useful for everyone.
 
+![Trackpad](screenshot-1-trackpad.png)
+
 ## Features
 
 A quick settings panel summoned from the Omarchy bar. It manages settings without touching `/usr/share/omarchy` and without sudo:
@@ -38,7 +40,7 @@ Or clone manually into `~/.config/omarchy/plugins/io.github.avillagran.omarchy-c
 manifest.json        # plugin declaration (id, kinds, entry points)
 BarWidget.qml        # bar widget that summons the panel
 Panel.qml            # the settings panel
-i18n.json            # UI strings in 4 languages
+i18n.json            # UI strings in 19 languages
 ```
 
 ## Verification
@@ -50,6 +52,14 @@ Before publishing, run the smoke test:
 ```
 
 It validates the manifest with `omarchy-plugin-validate`, checks for symlinks, JSON validity, and that the panel loads without errors.
+
+## Screenshots
+
+![Animation](screenshot-2-animation.png)
+![Windows](screenshot-3-windows.png)
+![Devices](screenshot-4-devices.png)
+![Keyboard](screenshot-5-keyboard-a.png)
+![Keyboard](screenshot-5-keyboard-b.png)
 
 ## License
 
