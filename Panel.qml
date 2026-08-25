@@ -20,10 +20,11 @@ Panel {
   readonly property string fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
   readonly property color fg: barForeground
 
-  // UI language follows the OS locale prefix (es/en/pt/fr, else en).
+  // UI language follows the OS locale prefix (auto-detected from currentLocale).
   readonly property string uiLang: {
     var p = (currentLocale || "es_ES").toLowerCase().split("_")[0]
-    return (p === "es" || p === "en" || p === "pt" || p === "fr") ? p : "en"
+    var supported = ["en","es","pt","fr","de","it","nl","pl","ru","ja","ko","zh","ar","tr","sv","da","no","fi","cs"]
+    return supported.indexOf(p) >= 0 ? p : "en"
   }
   function t(lang, key) {
     var table = i18nData[lang] || i18nData.en
