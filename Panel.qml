@@ -562,22 +562,59 @@ Panel {
 
   // Dynamic locale list (system locales) for the language picker.
   property var localeOptions: []
+  property string pendingInstall: ""
   Process {
     id: localeListProc
-    command: ["bash", "-lc", "locale -a 2>/dev/null | grep -E '\\.' | grep -viE '^(C|POSIX)\\.' "]
+    command: ["bash", "-lc",
+      "gen=$(locale -a 2>/dev/null | sed -E 's/\\.utf8$/\\.UTF-8/I; s/\\.utf-8$/\\.UTF-8/I' | sort -u); " +
+      "for b in $(ls /usr/share/i18n/locales/ 2>/dev/null); do " +
+      "  if echo \"$b\" | grep -qE '^[a-z]{2}(_[A-Z]{2})?$'; then " +
+      "    v=\"${b}.UTF-8\"; " +
+      "    if echo \"$gen\" | grep -qx \"$v\"; then echo \"$v\\t1\"; else echo \"$v\\t0\"; fi; " +
+      "  fi; " +
+      "done"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
         var opts = []
         var lines = text.split("\n")
         for (var i = 0; i < lines.length; i++) {
-          var l = lines[i].trim()
-          if (!l) continue
-          // Normalize glibc 'utf8' / 'utf-8' to 'UTF-8' so it matches currentLocale.
-          var norm = l.replace(/utf-8/gi, "UTF-8")
-          opts.push({ value: norm, label: norm })
+          var parts = lines[i].split("\t")
+          if (parts.length < 2) continue
+          var v = parts[0].trim()
+          if (!v) continue
+          var inst = parts[1].trim() === "1"
+          opts.push({ value: v, label: v, description: inst ? "installed" : "not installed", installed: inst })
         }
         root.localeOptions = opts
+      }
+    }
+  }
+
+  // Install a not-yet-generated locale via pkexec (one-time password prompt),
+  // then apply it. Edits /etc/locale.gen + runs locale-gen as root, on demand only.
+  function installLocale(v) {
+    if (!v) return
+    root.pendingInstall = v
+    installProc.localeToInstall = v
+    if (!installProc.running) installProc.running = true
+  }
+
+  Process {
+    id: installProc
+    property string localeToInstall: ""
+    command: ["pkexec", "bash", "-c",
+      "sed -i '/^#\\? *" + localeToInstall + " UTF-8/s/^# *//' /etc/locale.gen; " +
+      "grep -q '^" + localeToInstall + " UTF-8' /etc/locale.gen || echo '" + localeToInstall + " UTF-8' >> /etc/locale.gen; " +
+      "locale-gen; echo DONE"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        if (text.indexOf("DONE") >= 0) {
+          if (!localeListProc.running) localeListProc.running = true
+          root.setLocale(root.installProc.localeToInstall)
+          root.pendingInstall = ""
+        }
       }
     }
   }
@@ -773,7 +810,23 @@ Panel {
           placeholderText: root.t(root.uiLang, "sysLanguage") + "…"
           options: root.localeOptions
           value: root.currentLocale
-          onChanged: function(v) { root.setLocale(v) }
+          onChanged: function(v) {
+            var opt = null
+            for (var i = 0; i < root.localeOptions.length; i++) {
+              if (root.localeOptions[i].value === v) { opt = root.localeOptions[i]; break }
+            }
+            if (opt && opt.installed) { root.setLocale(v); root.pendingInstall = "" }
+            else { root.pendingInstall = v }
+          }
+        }
+
+        Button {
+          width: parent.width
+          visible: root.pendingInstall !== ""
+          text: "Install & apply " + root.pendingInstall
+          selected: true
+          foreground: root.fg
+          onClicked: root.installLocale(root.pendingInstall)
         }
 
         Rectangle {
