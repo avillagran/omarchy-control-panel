@@ -19,7 +19,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 
 ## Technical notes
 
-- **External i18n**: all UI strings live in `i18n.json` (en/es/pt/fr), editable as plain data without touching the QML.
+- **External i18n**: all UI strings live in `i18n.json` (19 languages: en, es, pt, fr, de, it, nl, pl, ru, ja, ko, zh, ar, tr, sv, da, no, fi, cs). `en`, `es`, `pt`, `fr` are fully translated; the rest fall back to English until translated. The UI language follows the OS locale.
 - **Persistence**: state is saved to `~/.config/hypr/control-panel.lua` (re-applied on Hyprland load) and to the plugin's prefs JSON.
 - **No root**: the plugin never writes to `/usr/share/omarchy` and never asks for sudo; only essential changes via `hyprctl`.
 - **No state flicker**: the UI syncs from the Lua file (source of truth) on open, avoiding the `hyprctl` read flip-flop on mouse-class devices.
