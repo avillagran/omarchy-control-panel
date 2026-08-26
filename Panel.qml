@@ -729,6 +729,17 @@ Panel {
     applyOnLoadTimer.restart()
   }
 
+  // Poll for the root-owned locale helper while a not-yet-installed locale is
+  // selected, so the UI switches to "Install & apply" as soon as the user has
+  // run the one-time install command.
+  Timer {
+    id: localeHelperPoller
+    interval: 2000
+    repeat: true
+    running: root.pendingInstall !== ""
+    onTriggered: if (!localeHelperProbe.running) localeHelperProbe.running = true
+  }
+
   Timer {
     id: applyOnLoadTimer
     interval: 400
