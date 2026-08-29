@@ -1471,7 +1471,7 @@ Panel {
         visible: root.currentTab === 0
         spacing: Style.space(10)
 
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "invScroll")
           checked: root.naturalScroll
           onClicked: { root.setNaturalScroll(!root.naturalScroll, false) }
@@ -1493,25 +1493,25 @@ Panel {
           onMoved: root.applySensitivity(value)
         }
 
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "flatAccel")
           checked: root.flatAccel
           onClicked: { root.flatAccel = !root.flatAccel; root.hyprSet("input", "accel_profile", root.flatAccel ? '"flat"' : '"adaptive"'); root.writeLua() }
         }
 
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "tapClick")
           checked: root.tapToClick
           onClicked: { root.setTapToClick(!root.tapToClick) }
         }
 
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "swipe3")
           checked: root.swipe3On
           onClicked: { root.setSwipe3(!root.swipe3On) }
         }
 
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "middleButtonScreenshotOff")
           checked: root.middleBtnOff
           onClicked: { root.setMiddleBtnOff(!root.middleBtnOff) }
@@ -1519,7 +1519,7 @@ Panel {
 
         PanelSeparator { foreground: root.fg }
 
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "inertia")
           checked: root.inertiaOn
           onClicked: { root.setInertia(!root.inertiaOn) }
@@ -2029,18 +2029,18 @@ Panel {
         spacing: Style.space(10)
 
 
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "browserCloseTab")
           checked: root.browserCloseTabOn
           onClicked: { root.setBrowserCloseTab(!root.browserCloseTabOn) }
         }
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "sysAnims")
           checked: root.animationsEnabled
           onClicked: { root.applyAnimations(!root.animationsEnabled) }
         }
         PanelSeparator { foreground: root.fg }
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "wsSlide")
           checked: root.wsAnimationOn
           onClicked: { root.animSet(!root.wsAnimationOn) }
@@ -2048,7 +2048,7 @@ Panel {
 
         PanelSeparator { foreground: root.fg }
 
-        Toggle {
+        ToggleRow {
           label: root.t(root.uiLang, "nightLight")
           checked: root.nightLightOn
           onClicked: { root.nightLightOn = !root.nightLightOn; root.run("omarchy-toggle-nightlight") }
