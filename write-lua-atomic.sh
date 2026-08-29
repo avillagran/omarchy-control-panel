@@ -17,22 +17,8 @@ chmod 644 "$TMP" 2>/dev/null || true
 printf '%s\n' "$content" > "$TMP"
 mv -f "$TMP" "$f"
 
-# Idempotently ensure ~/.config/hypr/hyprland.lua requires control-panel, using
-# the SAME atomic + byte-capped + FIFO-safe pattern. No unbounded grep, no '>>'.
-hl="$HOME/.config/hypr/hyprland.lua"
-hld="$(dirname -- "$hl")"
-mkdir -p -- "$hld"
-if [ -f "$hl" ]; then
-  cur="$(timeout 5 head -c 65536 "$hl" 2>/dev/null || true)"
-  if ! printf '%s' "$cur" | grep -qs 'require("control-panel")'; then
-    TMP2="$(mktemp "$hld/.ocp-hl.XXXXXX")"
-    chmod 644 "$TMP2" 2>/dev/null || true
-    printf '%s\nrequire("control-panel")\n' "$cur" > "$TMP2"
-    mv -f "$TMP2" "$hl"
-  fi
-else
-  TMP2="$(mktemp "$hld/.ocp-hl.XXXXXX")"
-  chmod 644 "$TMP2" 2>/dev/null || true
-  printf 'require("control-panel")\n' > "$TMP2"
-  mv -f "$TMP2" "$hl"
-fi
+# NOTE: hyprland.lua already requires("control-panel") (the plugin's generated
+# Lua). We do NOT touch hyprland.lua here — re-inserting require("hypr.control-panel")
+# created a DUPLICATE require, which executed control-panel.lua twice per reload
+# and produced the "Gesture will be overshadowed by a previous gesture" warning.
+# The single require("control-panel") is sufficient and must stay unique.
