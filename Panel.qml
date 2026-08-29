@@ -1905,32 +1905,22 @@ Panel {
             }
           }
 
-          Slider {
-            id: scaleSlider
+          // Scale as discrete buttons read straight from the monitor's accepted
+          // scales (computed from its resolution by DisplayModel.validScales),
+          // not a free slider. Hyprland only honours scales that divide the
+          // mode's resolution, so offering exactly those avoids invalid picks.
+          Flow {
             width: parent.width
-            from: 0.5
-            to: 4.0
-            stepSize: 0.01
-            value: root.displaySelected ? Number(root.displaySelected.scale) : 1
-            // The track is continuous 50%–400% on every monitor (nothing
-            // hardcoded), but Hyprland only honours scales that divide the
-            // mode's resolution, so snap to the nearest one the mode accepts.
-            // Snap the KNOB too, otherwise the handle sits at an invalid value
-            // (e.g. 150%) while the percentage label shows the snapped one
-            // (100%) — making the drag values look wrong.
-            onMoved: {
-              if (!root.displaySelected) return
-              var snapped = DisplayModel.nearestScale(root.displaySelected.mode, scaleSlider.value)
-              root.displayUpdate("scale", snapped)
-              scaleSlider.value = snapped
-            }
-          }
-
-          // Keep the knob in sync when the user switches the selected monitor.
-          Connections {
-            target: root
-            function onDisplaySelectedChanged() {
-              scaleSlider.value = root.displaySelected ? Number(root.displaySelected.scale) : 1
+            spacing: Style.space(6)
+            Repeater {
+              model: root.displaySelected ? DisplayModel.validScales(root.displaySelected.mode) : []
+              delegate: Button {
+                required property var modelData
+                text: Math.round(modelData * 100) + "%"
+                selected: root.displaySelected && Math.abs(Number(root.displaySelected.scale) - modelData) < 0.001
+                foreground: root.fg; fontFamily: root.fontFamily; bordered: true
+                onClicked: root.displayUpdate("scale", modelData)
+              }
             }
           }
 
