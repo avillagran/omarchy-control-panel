@@ -1,0 +1,396 @@
+#!/usr/bin/env bash
+# Omarchy Control Panel — display helper.
+# Reads live monitor state via `hyprctl monitors`, validates a requested
+# layout, applies it through `hyprctl eval` (user session, no root), and
+# verifies the compositor actually accepted it. A 15s automatic rollback
+# protects against a layout that leaves the user with no usable screen.
+#
+# Persisted layouts are written by the QML panel into
+# ~/.config/hypr/control-panel.lua (the plugin's own, deletable file that
+# hyprland.lua requires last), so this helper only ever deals with the live,
+# volatile Hyprland state.
+set -euo pipefail
+
+plugin_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+state_root=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-control-panel
+pending_file=$state_root/pending.json
+mkdir -p "$state_root"
+
+die() { printf '{"ok":false,"error":%s}\n' "$(jq -Rn --arg value "$*" '$value')" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
+need jq
+need hyprctl
+
+monitors() { hyprctl -j monitors all; }
+
+state_prog='def fp: (.name // "unknown") as $n | [(.make // ""), (.model // ""), (.serial // "")] | map(select(length > 0)) | if length > 0 then join("|") else $n end; [ .[] | { name, description, make, model, serial, fingerprint: fp, disabled: (.disabled == true), focused: (.focused == true), mode: ((.width|tostring) + "x" + (.height|tostring) + "@" + ((.refreshRate // 60)|tostring)), width, height, refresh: (.refreshRate // 60), x, y, scale: (.scale // 1), transform: (.transform // 0), mirror: (if (.mirrorOf // "none") == "none" then "" else .mirrorOf end), modes: (.availableModes // []) } ]'
+
+state() {
+  monitors | jq -c "$state_prog"
+}
+
+topology() {
+  state | jq -r '[.[].fingerprint] | sort | join("::")'
+}
+
+# Clamp every requested scale to the nearest value Hyprland can honour for that
+# mode (integer logical width and height). Hyprland warns "failed to find a
+# clear divisor" and refuses arbitrary scales, so we auto-correct instead of
+# ever sending one it will reject. Runs over the whole config before applying.
+sanitize_scales() {
+  jq -c '
+    def dims: (.mode // "") | capture("^(?<w>[0-9]+)x(?<h>[0-9]+)@(?<r>[0-9.]+)");
+    def candidates: [0.5, 0.6, (2/3), 0.75, 0.8, 0.9, 1, 1.1, 1.2, 1.25, (4/3), 1.5, 1.6, 1.75, 1.8, 2, 2.25, 2.5, 3, 3.5, 4];
+    def valid_scales($w; $h):
+      [ candidates[]
+        | select((($w / .) - (($w / .) | round) | fabs) < 0.0001)
+        | select((($h / .) - (($h / .) | round) | fabs) < 0.0001) ];
+    def nearest($scales; $target):
+      reduce $scales[] as $s ({best: $scales[0], dist: (($scales[0] - $target) | fabs)};
+        if (($s - $target) | fabs) < .dist then {best: $s, dist: (($s - $target) | fabs)} else . end) | .best;
+    map(. as $d
+      | if ($d.disabled == true) then $d
+        else
+          ($d | dims) as $m
+          | if $m == null then $d
+            else
+              (valid_scales(($m.w | tonumber); ($m.h | tonumber))) as $valid
+              | if ($valid | length) == 0 then $d
+                else $d | .scale = nearest($valid; ($d.scale // 1))
+                end
+            end
+        end)'
+}
+
+validate_config() {
+  local config=$1
+  jq -e '
+    def mode_parts:
+      .mode | capture("^(?<width>[0-9]+)x(?<height>[0-9]+)@(?<refresh>[0-9]+(?:[.][0-9]+)?)(?:Hz)?$");
+    def logical_rect:
+      . as $display
+      | mode_parts as $mode
+      | ($mode.width | tonumber) as $width
+      | ($mode.height | tonumber) as $height
+      | if (($display.transform % 2) == 1) then
+          {x: $display.x, y: $display.y, width: (($height / $display.scale) | round), height: (($width / $display.scale) | round)}
+        else
+          {x: $display.x, y: $display.y, width: (($width / $display.scale) | round), height: (($height / $display.scale) | round)}
+        end;
+    def valid_display($config):
+      (.name | type) == "string" and (.name | length) > 0
+      and (
+        (.disabled == true)
+        or (
+          (.mode | type) == "string"
+          and (.mode | test("^[0-9]+x[0-9]+@[0-9]+(?:[.][0-9]+)?(?:Hz)?$"))
+          and ((.x | type) == "number") and ((.x | floor) == .x)
+          and ((.y | type) == "number") and ((.y | floor) == .y)
+          and ((.scale | type) == "number") and (.scale > 0)
+          and ((.transform | type) == "number") and ((.transform | floor) == .transform)
+          and (.transform >= 0) and (.transform <= 7)
+          and (((.mirror // "") | type) == "string")
+          and ((.mirror // "") as $target | (
+            $target == ""
+            or (
+              $target != .name
+              and ($config | any(.name == $target and .disabled != true and (.mirror // "") == ""))
+            )
+          ))
+        )
+      );
+    . as $config
+    | type == "array" and length > 0
+    and (map(select(.disabled != true)) | length) > 0
+    and ([.[].name] | length) == ([.[].name] | unique | length)
+    and all(.[]; valid_display($config))
+    and (
+      [.[] | select(.disabled != true and (.mirror // "") == "") | logical_rect] as $rects
+      | all(range(0; $rects | length); . as $l | all(range($l + 1; $rects | length); . as $r |
+          ($rects[$l].x >= ($rects[$r].x + $rects[$r].width))
+          or (($rects[$l].x + $rects[$l].width) <= $rects[$r].x)
+          or ($rects[$l].y >= ($rects[$r].y + $rects[$r].height))
+          or (($rects[$l].y + $rects[$l].height) <= $rects[$r].y)))
+    )
+  ' <<<"$config" >/dev/null \
+    || die "Invalid display configuration"
+}
+
+apply_config() {
+  local config=$1 expression
+  validate_config "$config"
+  # Auto-correct scales to the nearest value Hyprland honours before applying.
+  config=$(sanitize_scales <<<"$config")
+
+  # Only touch outputs whose effective config actually changed. Re-applying a
+  # monitor rule (even an identical one) reconfigures that output, which can
+  # blank it and tear down the panel window living on it. Skipping unchanged
+  # outputs keeps the UI alive when only one display is being adjusted.
+  local live changed
+  live=$(state)
+  # Write the two inputs to temp files and let bash read them back with $(<file);
+  # passing them as inline --argjson arguments would expose the raw JSON on the
+  # command line, where shell/transport escaping of brackets can corrupt it.
+  # The -n flag is REQUIRED: the program reads only the $requested/$live
+  # variables (never the implicit input .), so without -n jq waits on stdin and
+  # emits nothing, which made every layout look "unchanged" and silently no-op.
+  printf '%s\n' "$config" > "$state_root/dm_config.json"
+  printf '%s\n' "$live"   > "$state_root/dm_live.json"
+  changed=$(jq -cn --argjson requested "$(<"$state_root/dm_config.json")" --argjson live "$(<"$state_root/dm_live.json")" '
+    def dims: (.mode // "") | capture("^(?<w>[0-9]+)x(?<h>[0-9]+)@(?<r>[0-9.]+)");
+    [ $requested[] as $want
+      | ($live | map(select(.name == $want.name)) | first // null) as $got
+      | if $got == null then $want
+        else
+          ($want | dims) as $wm
+          | ($got | dims) as $gm
+          | if ($want.disabled == true) != ($got.disabled == true)
+               or ($want.disabled != true and (
+                    $wm.w != $gm.w or $wm.h != $gm.h
+                    or (($wm.r | tonumber) - ($gm.r | tonumber) | fabs) > 0.25
+                    or $got.x != $want.x or $got.y != $want.y
+                    or (($got.scale - $want.scale) | fabs) > 0.06
+                    or $got.transform != $want.transform
+                    or $got.mirror != ($want.mirror // "")))
+            then $want
+            else empty end
+        end ]')
+  [[ -n $changed && $changed != "[]" ]] || { printf '{"ok":true,"unchanged":true}\n'; return 0; }
+
+  while IFS= read -r encoded; do
+    local row name name_lua
+    row=$(base64 -d <<<"$encoded")
+    name=$(jq -r '.name' <<<"$row")
+    name_lua=$(jq -Rn --arg value "$name" '$value')
+    if [[ $(jq -r '.disabled // false' <<<"$row") == true ]]; then
+      expression="hl.monitor({ output = $name_lua, disabled = true })"
+    else
+      local mode mode_lua position_lua x y scale transform mirror mirror_lua
+      mode=$(jq -r '.mode // "preferred"' <<<"$row")
+      # Hyprland reports EDID modes with a human-readable Hz suffix, while
+      # hl.monitor expects WIDTHxHEIGHT@RATE. Strip the suffix first...
+      mode=${mode%Hz}
+      # ...and normalise the refresh rate. hyprctl reports "@120.00000" but
+      # hl.monitor only honours "@120" (or "@120.00"); the full-precision
+      # string is accepted when the mode alone changes yet silently rejected
+      # when combined with a scale change, so round it to at most 2 decimals.
+      if [[ $mode =~ ^([0-9]+x[0-9]+)@([0-9]+\.[0-9]+)$ ]]; then
+        local mres=${BASH_REMATCH[1]} mrate=${BASH_REMATCH[2]}
+        # Keep up to 2 decimals, drop a trailing ".00".
+        mrate=$(printf '%.2f' "$mrate")
+        mrate=${mrate%.00}
+        mode="${mres}@${mrate}"
+      fi
+      x=$(jq -r '.x // 0' <<<"$row")
+      y=$(jq -r '.y // 0' <<<"$row")
+      scale=$(jq -r '.scale // 1' <<<"$row")
+      transform=$(jq -r '.transform // 0' <<<"$row")
+      mirror=$(jq -r '.mirror // ""' <<<"$row")
+      mode_lua=$(jq -Rn --arg value "$mode" '$value')
+      position_lua=$(jq -Rn --arg value "${x}x${y}" '$value')
+      expression="hl.monitor({ output = $name_lua, mode = $mode_lua, position = $position_lua, scale = $scale, transform = $transform"
+      if [[ -n $mirror ]]; then
+        mirror_lua=$(jq -Rn --arg value "$mirror" '$value')
+        expression+=", mirror = $mirror_lua"
+      fi
+      expression+=" })"
+    fi
+    hyprctl eval "$expression" >/dev/null || die "Hyprland rejected settings for $name"
+  done < <(jq -r '.[] | @base64' <<<"$changed")
+
+  # Hyprland can accept a monitor rule even when the DRM backend rejects its
+  # mode. Give the compositor a moment to modeset, then verify the result so a
+  # failed resolution change is never presented (or saved) as successful.
+  sleep "${DISPLAY_MANAGER_SETTLE_SECONDS:-0.75}"
+  local live mismatch
+  live=$(state)
+  if ! mismatch=$(jq -rn --argjson requested "$config" --argjson live "$live" '
+    def dimensions:
+      (.mode // "") | capture("^(?<width>[0-9]+)x(?<height>[0-9]+)@(?<refresh>[0-9.]+)");
+    first(
+      $requested[] as $want
+      | ($live | map(select(.name == $want.name)) | first // null) as $got
+      | if $got == null then
+          "\($want.name) was not reported after applying the layout"
+        elif $want.disabled == true then
+          select($got.disabled != true)
+          | "\($want.name) did not turn off"
+        else
+          ($want | dimensions) as $mode
+          | ($want.mirror // "") as $wanted_mirror
+          | select(
+              $got.disabled == true or
+              $got.width != ($mode.width | tonumber) or
+              $got.height != ($mode.height | tonumber) or
+              (($got.refresh - ($mode.refresh | tonumber)) | fabs) > 0.25 or
+              # Hyprland quantizes fractional scales to the nearest integer
+              # logical size, so allow a small drift between the requested and
+              # reported scale (the UI re-reads the real value afterwards).
+              (($got.scale - $want.scale) | fabs) > 0.06 or
+              $got.transform != $want.transform or
+              $got.mirror != $wanted_mirror or
+              (($wanted_mirror == "") and ($got.x != $want.x or $got.y != $want.y))
+            )
+          | "\($want.name) stayed at \($got.width)x\($got.height)@\($got.refresh), position \($got.x)x\($got.y), scale \($got.scale), transform \($got.transform), mirror \($got.mirror); requested \($want.mode), position \($want.x)x\($want.y), scale \($want.scale), transform \($want.transform), mirror \($wanted_mirror)"
+        end
+    ) // empty
+  '); then
+    die "Could not verify the applied display configuration"
+  fi
+  # Persist the desired layout first so a later reapplySaved() (the panel replays
+  # this file) keeps the new arrangement instead of reverting it.
+  persist_layout
+  # A monitor that should be enabled but is still reported disabled is not a
+  # hard failure: Hyprland sometimes needs a full reload to power a previously
+  # disabled output back on. The Lua file already reflects the enabled state, so
+  # requesting a reload lets it come up without rolling back the whole change.
+  if [[ -n $mismatch ]]; then
+    if [[ $mismatch == *"did not turn on"* || $mismatch == *"stayed at"* ]] \
+       && printf '%s\n' "$config" | jq -e 'any(.[]; .disabled != true)' >/dev/null 2>&1; then
+      hyprctl reload >/dev/null 2>&1 || true
+      return 0
+    fi
+    die "Display hardware rejected the requested setting: $mismatch"
+  fi
+}
+
+# Persist the just-applied layout into ~/.config/hypr/control-panel.lua so a later
+# reapplySaved() (the panel replays this file on open / via its sync timer) keeps
+# the new arrangement instead of reverting it. Any hl.monitor line for an output
+# we are rewriting is removed first (so a file without the "-- Display layout"
+# marker, or with stale duplicate rules, is corrected rather than appended to).
+persist_layout() {
+  local lua="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/control-panel.lua"
+  [[ -f "$lua" ]] || return 0
+  local tmp names
+  tmp=$(mktemp "$lua.XXXXXX") || return 0
+  # Names of outputs present in the applied config.
+  names=$(printf '%s\n' "$config" | jq -r '.[].name')
+  # Keep every line that is NOT an hl.monitor rule for one of those outputs, and
+  # drop a stray "-- Display layout" marker (it will be re-emitted below).
+  local pat
+  pat=$(printf '%s\n' "$names" | sed 's/[][\\.*^$/]/\\&/g' | paste -sd'|' -)
+  grep -vE "^hl\.monitor\(\{ output = \"($pat)\"" "$lua" 2>/dev/null \
+    | grep -v '^-- Display layout$' >"$tmp" || true
+  {
+    echo "-- Display layout"
+    printf '%s\n' "$config" | jq -c '.[]' | while IFS= read -r d; do
+      local name mode x y scale transform mirror
+      name=$(jq -r '.name' <<<"$d")
+      if [[ $(jq -r '.disabled // false' <<<"$d") == true ]]; then
+        echo "hl.monitor({ output = \"$name\", disabled = true })"
+      else
+        mode=$(jq -r '.mode // "preferred"' <<<"$d"); mode=${mode%Hz}
+        # Normalise the refresh rate the same way apply_config does.
+        if [[ $mode =~ ^([0-9]+x[0-9]+)@([0-9]+\.[0-9]+)$ ]]; then
+          local mr=${BASH_REMATCH[1]} mrate; mrate=$(printf '%.2f' "${BASH_REMATCH[2]}"); mrate=${mrate%.00}; mode="${mr}@${mrate}"
+        fi
+        x=$(jq -r '.x // 0' <<<"$d"); y=$(jq -r '.y // 0' <<<"$d")
+        scale=$(jq -r '.scale // 1' <<<"$d"); transform=$(jq -r '.transform // 0' <<<"$d")
+        mirror=$(jq -r '.mirror // ""' <<<"$d")
+        if [[ -n $mirror ]]; then
+          echo "hl.monitor({ output = \"$name\", mode = \"$mode\", position = \"${x}x${y}\", scale = $scale, transform = $transform, mirror = \"$mirror\" })"
+        else
+          echo "hl.monitor({ output = \"$name\", mode = \"$mode\", position = \"${x}x${y}\", scale = $scale, transform = $transform })"
+        fi
+      fi
+    done
+  } >>"$tmp"
+  mv -f "$tmp" "$lua"
+}
+
+cancel_rollback() {
+  systemctl --user stop omarchy-control-panel-rollback.timer >/dev/null 2>&1 || true
+  systemctl --user stop omarchy-control-panel-rollback.service >/dev/null 2>&1 || true
+  systemctl --user reset-failed omarchy-control-panel-rollback.service >/dev/null 2>&1 || true
+}
+
+schedule_rollback() {
+  need systemd-run
+  cancel_rollback
+  systemd-run --user --quiet --unit=omarchy-control-panel-rollback \
+    --on-active=15s "$plugin_dir/bin/display-manager" rollback >/dev/null
+}
+
+restore_pending() {
+  if [[ -f $pending_file ]]; then
+    local snapshot
+    snapshot=$(<"$pending_file")
+    apply_config "$snapshot"
+    rm -f "$pending_file"
+  fi
+}
+
+preview() {
+  local config=${1:-} snapshot_tmp apply_error schedule_error
+  [[ -n $config ]] || die "preview requires a JSON configuration"
+  validate_config "$config"
+  snapshot_tmp=$(mktemp "$state_root/pending.XXXXXX")
+  state >"$snapshot_tmp"
+  mv "$snapshot_tmp" "$pending_file"
+  if ! apply_error=$(apply_config "$config" 2>&1); then
+    if ! (apply_config "$(<"$pending_file")") >/dev/null 2>&1; then
+      die "Preview failed and the previous layout could not be restored; the recovery snapshot remains at $pending_file"
+    fi
+    rm -f "$pending_file"
+    printf '%s\n' "$apply_error" >&2
+    return 1
+  fi
+  if ! schedule_error=$(schedule_rollback 2>&1); then
+    if ! (apply_config "$(<"$pending_file")") >/dev/null 2>&1; then
+      die "Automatic rollback could not be scheduled and the previous layout could not be restored; the recovery snapshot remains at $pending_file"
+    fi
+    rm -f "$pending_file"
+    die "Could not schedule automatic rollback: $schedule_error"
+  fi
+  printf '{"ok":true,"timeout":15}\n'
+}
+
+confirm() {
+  cancel_rollback
+  rm -f "$pending_file"
+  printf '{"ok":true}\n'
+}
+
+revert() {
+  cancel_rollback
+  restore_pending
+  printf '{"ok":true}\n'
+}
+
+rollback() {
+  restore_pending
+  printf '{"ok":true}\n'
+}
+
+# Report whether a preview is awaiting confirmation (a pending snapshot exists
+# and the rollback timer has not fired yet). Used by the panel to restore the
+# Keep/Revert countdown when it reopens after a main-screen reconfigure closed it.
+pending() {
+  if [[ -f $pending_file ]]; then printf '{"pending":true}\n'; else printf '{"pending":false}\n'; fi
+}
+
+# Apply a configuration immediately, with no rollback timer. Used for safe,
+# easily-reversible changes (scale, position) where the 15s confirm flow would
+# only get in the way. Resolution/orientation still go through preview, which
+# arms the automatic rollback.
+apply() {
+  local config=${1:-}
+  if [[ -z $config && -n ${DM_ARG_FILE:-} ]]; then config=$(cat "$DM_ARG_FILE"); fi
+  if [[ -z $config && ! -t 0 ]]; then config=$(cat); fi
+  [[ -n $config ]] || die "apply requires a JSON configuration"
+  apply_config "$config"
+  printf '{"ok":true}\n'
+}
+
+case ${1:-help} in
+  state) state ;;
+  topology) topology ;;
+  apply) apply "${2:-}" ;;
+  preview) preview "${2:-}" ;;
+  confirm) confirm ;;
+  revert) revert ;;
+  rollback) rollback ;;
+  pending) pending ;;
+  *) printf 'Usage: %s {state|apply JSON|preview JSON|confirm|revert|rollback|pending}\n' "$0" ;;
+esac

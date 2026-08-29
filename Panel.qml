@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "DisplayModel.js" as DisplayModel
 
 Panel {
   id: root
@@ -54,10 +55,10 @@ Panel {
 
   readonly property var tabs: [
     { title: t(uiLang, "trackpad") },
-    { title: t(uiLang, "animation") },
     { title: t(uiLang, "windows") },
-    { title: t(uiLang, "devices") },
-    { title: t(uiLang, "kblang") }
+    { title: t(uiLang, "displays") },
+    { title: t(uiLang, "kblang") },
+    { title: t(uiLang, "devices") }
   ]
   property int currentTab: 0
 
@@ -102,12 +103,137 @@ Panel {
   property bool kittyInstalled: true
   property bool inertiaOn: false
   property bool tapToClick: false
+  property bool middleBtnOff: false
+  property bool browserCloseTabOn: false
   property string defaultTerm: ""
 
   // APFS (Extras): driver presence + detected partitions.
   property bool apfsInstalled: false
   property var apfsList: []
   property string apfsCommandText: ""
+
+  // Displays tab: live monitor state and the in-progress layout.
+  property var displays: []
+  property int displaySelectedIndex: 0
+  property bool displayLoading: false
+  // Names of outputs seen on the last state read, used to detect a hotplugged
+  // (newly connected) monitor and auto-arrange it.
+  property var displayKnownNames: []
+  property bool displayApplying: false
+  property bool displayAwaitingConfirmation: false
+  property int displaySecondsRemaining: 15
+  property string displayStatusMessage: ""
+  property string displayRefreshMessage: ""
+  // Identify-all mode: show a numbered overlay on every physical monitor.
+  property bool identifyAllDisplays: false
+  // True while a display tile is being dragged. Suppresses the physical
+  // identify overlay during the drag so Quickshell does not create/destroy
+  // Wayland PanelWindows mid-gesture (which segfaults in QWaylandWindow::setGeometry).
+  property bool displayDragging: false
+  readonly property string displayHelperPath: Qt.resolvedUrl("bin/display-manager").toString().replace("file://", "")
+
+  readonly property var displaySelected: displays.length && displaySelectedIndex < displays.length ? displays[displaySelectedIndex] : null
+  readonly property int displayActiveCount: displays.filter(function(d) { return !d.disabled }).length
+  readonly property bool displayValidLayout: displayActiveCount > 0 && !DisplayModel.hasOverlap(displays)
+
+  function displayParse(text) {
+    try { return JSON.parse(String(text || "")) } catch (e) { return null }
+  }
+
+  function displayProcessError(text, fallback) {
+    var parsed = displayParse(text)
+    return parsed && parsed.error ? parsed.error : fallback
+  }
+
+  function displayRefresh(message) {
+    if (displayStateProc.running) { if (message) displayRefreshMessage = message; return }
+    displayRefreshMessage = message || ""
+    displayLoading = true
+    displayStatusMessage = message || displayStatusMessage
+    displayStateProc.command = [displayHelperPath, "state"]
+    displayStateProc.running = true
+  }
+
+  // Hotplug: when the SET of connected outputs changes (a monitor is plugged or
+  // unplugged) refresh the display list automatically. Reconfiguring an existing
+  // output (mode/scale/position) keeps the same names, so it does not retrigger.
+  readonly property string displayScreenNames: {
+    var names = []
+    var s = Quickshell.screens
+    for (var i = 0; i < s.length; i++) names.push(s[i].name)
+    names.sort()
+    return names.join(",")
+  }
+  onDisplayScreenNamesChanged: {
+    if (root.opened) root.displayRefresh()
+  }
+
+  function displayUpdate(key, value) {
+    if (!displaySelected) return
+    var copy = DisplayModel.clone(displays)
+    copy[displaySelectedIndex][key] = value
+    // A scale or mode change alters the logical size but not x, which would
+    // leave a gap or overlap. Reflow so every neighbour snaps flush against the
+    // changed display, keeping the intended arrangement (stacked or side-by-side).
+    if (key === "scale" || key === "mode") copy = DisplayModel.reflowAroundSelected(copy, displaySelectedIndex)
+    displays = copy
+  }
+
+  function displaySetResolution(value) {
+    if (!displaySelected) return
+    displayUpdate("mode", DisplayModel.nearestMode(displaySelected.modes, value, DisplayModel.refresh(displaySelected.mode)))
+  }
+
+  function displaySetRefresh(value) {
+    if (!displaySelected) return
+    displayUpdate("mode", DisplayModel.nearestMode(displaySelected.modes, DisplayModel.resolution(displaySelected.mode), value))
+  }
+
+  function displayToggleEnabled() {
+    if (!displaySelected || (!displaySelected.disabled && displayActiveCount <= 1)) return
+    displayUpdate("disabled", !displaySelected.disabled)
+  }
+
+  function displayApplyPreview() {
+    // Never start a new preview while one is already awaiting confirmation:
+    // the snapshots/rollback timers would chain and corrupt the state.
+    if (!displayValidLayout || displayApplying || displayAwaitingConfirmation) return
+    displayApplying = true
+    displayStatusMessage = "Applying preview…"
+    displayApplyProc.command = [displayHelperPath, "preview", JSON.stringify(DisplayModel.clone(displays))]
+    displayApplyProc.running = true
+  }
+
+  // Apply safe, easily-reversible changes (scale, position) immediately, with
+  // no rollback timer. Resolution/orientation still go through the preview +
+  // Keep/Revert flow because a bad mode can leave the screen unusable.
+  function displayApplyInstant() {
+    if (!displayValidLayout || displayInstantProc.running) return
+    displayInstantProc.command = [displayHelperPath, "apply", JSON.stringify(DisplayModel.clone(displays))]
+    displayInstantProc.running = true
+  }
+  function displayConfirm() {
+    if (displayConfirmProc.running || displayRevertProc.running) return
+    displayConfirmProc.command = [displayHelperPath, "confirm"]
+    displayConfirmProc.running = true
+  }
+
+  function displayRevert() {
+    if (displayRevertProc.running || displayConfirmProc.running) return
+    displayStatusMessage = "Restoring previous layout…"
+    displayRevertProc.command = [displayHelperPath, "revert"]
+    displayRevertProc.running = true
+  }
+
+  // Keep the previewed layout: confirm with the helper (cancels the 15s
+  // rollback), then persist into saved.displays so writeLua() records the
+  // hl.monitor rules alongside every other setting in control-panel.lua.
+  function displayKeep() {
+    displayConfirm()
+    saved.displays = DisplayModel.clone(displays)
+    writeLua()
+    savePrefs()
+  }
 
   // Menu tab: inline calculator + web search (Alfred-style helpers).
   property string calcInput: ""
@@ -169,7 +295,14 @@ Panel {
     // restart that dropped the volatile hyprctl eval values still lands on
     // the saved state instead of whatever Hyprland's defaults are.
     reapplySaved()
-    refresh()
+    // Do NOT refresh() immediately: readProc reads live Hyprland state and writes
+    // it into saved.*. If we refresh before the persisted prefs are loaded (and
+    // before reapplySaved() finishes applying the lua, since both are async),
+    // readProc can overwrite saved.* with default Hyprland values and the next
+    // writeLua() persists those defaults — silently dropping the user's config.
+    // Once prefsLoaded is true the source of truth is in place; otherwise the
+    // prefsLoader triggers the refresh itself on completion (see loadPrefs()).
+    if (root.prefsLoaded) refresh()
     if (!luaStateProc.running) luaStateProc.running = true
   }
 
@@ -183,13 +316,15 @@ Panel {
     var f = root.luaPath
     Quickshell.execDetached(["bash", "-lc",
       "f='" + f + "'; [ -f \"$f\" ] || exit 0; " +
-      "while IFS= read -r l; do l=\"${l%$'\\r'}\"; [ -z \"$l\" ] && continue; " +
+      "for i in $(seq 1 40); do hyprctl getoption general:gaps_out >/dev/null 2>&1 && break; sleep 0.25; done; " +
+      "while IFS= read -r l; do l=\"${l%$'\\r}\"; [ -z \"$l\" ] && continue; " +
       "case \"$l\" in \\#*) continue;; esac; " +
       "hyprctl eval \"$l\" >/dev/null 2>&1 || true; done < \"$f\""])
     syncTimer.restart()
   }
 
   function close() {
+    identifyAllDisplays = false
     controller.hide()
   }
 
@@ -197,6 +332,7 @@ Panel {
     if (readProc.running) readProc.running = false
     readProc.running = true
     if (!kbdLedProbe.running) kbdLedProbe.running = true
+    displayRefresh()
   }
 
   function run(cmd) {
@@ -231,10 +367,19 @@ Panel {
     gapsOut: -1,
     kbLayout: "",
     swipe3: false,
-    tapToClick: false
+    tapToClick: false,
+    browserCloseTab: false,
+    middleButtonScreenshotOff: false,
+    displays: []
   })
 
+  // writeLua() is only safe once the persisted prefs are loaded; otherwise an
+  // early caller (e.g. the natural-scroll sync) regenerates control-panel.lua
+  // with default values and silently drops the swipe gestures and toggles.
+  property bool prefsLoaded: false
+
   function writeLua() {
+    if (!root.prefsLoaded) return
     var L = ["-- Generated by Omarchy Control Panel. Safe to delete."]
     L.push("hl.config({ input = { natural_scroll = " + (saved.naturalScroll ? "true" : "false") + " } })")
     L.push("hl.config({ input = { touchpad = { tap_to_click = " + (saved.tapToClick ? "true" : "false") + " } } })")
@@ -248,11 +393,16 @@ Panel {
     var gi = saved.gapsIn >= 0 ? saved.gapsIn : 5
     var go = saved.gapsOut >= 0 ? saved.gapsOut : 10
     L.push("hl.config({ general = { gaps_in = " + gi + ", gaps_out = " + go + " } })")
-    // 3-finger swipe switches workspaces. This is the single source of truth
-    // for that gesture (the user.trackpad-gestures plugin restores its own
-    // shell.json from a backup and would drop it). control-panel.lua is
-    // required after gestures-generated.lua, so these win the load order.
+    // 3-finger swipe switches workspaces. We OWN this gesture (the toggle is in
+    // this panel) and invert it when natural scrolling is on, so the swipe feels
+    // consistent with the rest of the trackpad. Hyprland cannot unbind gestures,
+    // so to avoid colliding with user.trackpad-gestures (which also defines a
+    // 3-finger swipe) we disable that plugin's 3-finger assignment while our
+    // swipe3 toggle is on — see syncTrackpadGestures(). The two are mutually
+    // exclusive, so there is never a double definition / "overshadowed" warning.
     if (saved.swipe3) {
+      var leftTarget = saved.naturalScroll ? "+1" : "-1"
+      var rightTarget = saved.naturalScroll ? "-1" : "+1"
       var g = [
         'local function ocp_swipe(dir)',
         '  local distance, triggered = 0, false',
@@ -270,8 +420,8 @@ Panel {
         '    finish = function() distance = 0; triggered = false end,',
         '  }',
         'end',
-        'hl.gesture({ fingers = 3, direction = "left", action = ocp_swipe("+1") })',
-        'hl.gesture({ fingers = 3, direction = "right", action = ocp_swipe("-1") })'
+        'hl.gesture({ fingers = 3, direction = "left", action = ocp_swipe("' + leftTarget + '") })',
+        'hl.gesture({ fingers = 3, direction = "right", action = ocp_swipe("' + rightTarget + '") })'
       ]
       L.push(g.join("\n"))
     }
@@ -282,10 +432,97 @@ Panel {
     // let natural_scroll alone control direction.
     L.push('hl.device({ name = "apple-mtp-multi-touch", natural_scroll = ' + (saved.naturalScroll ? "true" : "false") + ', scroll_factor = 1 })')
 
+    // Persisted display layout (Displays tab). One hl.monitor rule per output,
+    // same expressions the display helper sends to Hyprland. These reload with
+    // the rest of control-panel.lua so the arrangement survives restarts.
+    if (saved.displays && saved.displays.length) {
+      L.push("-- Display layout")
+      DisplayModel.clone(saved.displays).forEach(function(d) {
+        if (d.disabled) {
+          L.push('hl.monitor({ output = "' + d.name + '", disabled = true })')
+        } else {
+          var mode = String(d.mode || "preferred").replace(/Hz$/, "")
+          L.push('hl.monitor({ output = "' + d.name + '", mode = "' + mode + '", position = "' + d.x + 'x' + d.y + '", scale = ' + (Number(d.scale) || 1) + ', transform = ' + (Number(d.transform) || 0) + (d.mirror ? ', mirror = "' + d.mirror + '"' : '') + ' })')
+        }
+      })
+    }
+
+    // When enabled, SUPER+W closes the active TAB in browsers (simulated Ctrl+W
+    // via wtype/ydotool) instead of killing the whole window. Outside browsers it
+    // falls back to closing the window normally. We unbind the default SUPER+W
+    // first so the two don't collide/error.
+    //
+    // FIXES (verified against the sensei/Hyprland rewrite):
+    //  - The browser branch used `os.execute("bash script &")`. Hyprland reaps its
+    //    own children, so the detached subprocess could be killed before wtype
+    //    delivered Ctrl+W — the tab never closed. We now launch it through
+    //    `hl.dsp.exec_cmd(...)`, the same exec dispatcher Omarchy uses for every
+    //    other keybind, which Hyprland manages as a real exec (not a reaped child).
+    //  - We pass the already-detected class as $1 so the script never re-reads the
+    //    active window (removes the focus/timing race between keypress and script).
+    //  - The non-browser branch used `hl.dispatch(hl.dsp.window.close())`, which
+    //    errors ("expected a dispatcher"). It is now `hl.dsp.window.close()` — the
+    //    current close dispatcher.
+    // NOTE: sensei.lua wraps hl.bind(keys:string, dispatcher, options) — passing a
+    // table as arg1 errors ("expected string, got table"), so use the string +
+    // function form, same as the rest of the config.
+    if (saved.browserCloseTab) {
+      var scriptPath = Qt.resolvedUrl("bin/close-tab-or-window.sh").toString().replace("file://", "")
+      L.push('-- SUPER+W closes browser tabs (toggle "Close tab in browsers")')
+      L.push('hl.unbind("SUPER + W")')
+      L.push([
+        'hl.bind("SUPER + W", function()',
+        '  local ok, win = pcall(function() return hl.get_active_window() end)',
+        '  local cls = ""',
+        '  if ok and win and win.class then cls = string.lower(tostring(win.class)) end',
+        '  if cls:match("chrome") or cls:match("chromium") or cls:match("firefox") or cls:match("edge") or cls:match("brave") or cls:match("opera") or cls:match("vivaldi") or cls:match("epiphany") or cls:match("gnome%-web") then',
+        '    hl.dispatch(hl.dsp.exec_cmd("bash ' + scriptPath + ' \'" .. cls .. "\' &"))',
+        '  else',
+        '    hl.dsp.window.close()',
+        '  end',
+        'end)'
+      ].join("\n"))
+    }
+
+    // When enabled, unbind the middle-mouse-button screenshot (mouse:274) that
+    // the user.trackpad-gestures plugin defines — an uncomfortable combo for
+    // some trackpads. control-panel.lua is required after gestures-generated.lua,
+    // so this unbind wins the load order.
+    if (saved.middleButtonScreenshotOff) {
+      L.push('-- Disable middle-button screenshot (toggle "Middle-button screenshot")')
+      L.push('hl.unbind("mouse:274")')
+    }
+
     // Atomic, symlink-safe write via external script (mktemp + mv -f).
     luaWriter.command = ["bash", Qt.resolvedUrl("write-lua-atomic.sh").toString().replace("file://", ""),
       root.luaPath, L.join("\n")]
     luaWriter.running = true
+  }
+
+  // Keep user.trackpad-gestures from ALSO defining a 3-finger swipe, which would
+  // collide with ours ("overshadowed" warning — Hyprland can't unbind gestures).
+  // While our swipe3 toggle is ON we clear that plugin's generated gesture file
+  // so only our (natural-scroll-aware, inverted) swipe is active; while OFF we
+  // regenerate it from the plugin's defaults so it works on its own. The two are
+  // mutually exclusive, so there is never a double definition.
+  function syncTrackpadGestures() {
+    var tp = Quickshell.env("HOME") + "/.config/hypr/gestures-generated.lua"
+    if (root.saved.swipe3) {
+      tpSync.command = ["bash", "-lc",
+        "printf '%s\\n' '-- Cleared by omarchy-control-panel (swipe3 on): 3-finger swipe owned by control-panel' > '" + tp + "'"]
+    } else {
+      var sh = Quickshell.env("HOME") + "/.config/omarchy/plugins/user.trackpad-gestures/apply-gestures.sh"
+      tpSync.command = ["bash", sh, "true", "clickfinger", "lrm", "threefinger", "screenshot", "false",
+        "none", "none", "none", "none", "none", "none",
+        "relative_workspace", "relative_workspace", "none", "none", "none", "none",
+        "none", "none", "none", "none", "none", "none"]
+    }
+    tpSync.running = true
+  }
+
+  Process {
+    id: tpSync
+    stdout: StdioCollector { waitForEnd: true }
   }
 
   Process {
@@ -399,9 +636,28 @@ Panel {
     saved.swipe3 = on
     savePrefs()
     syncGestures()
+    syncTrackpadGestures()
     statusMessage = t(uiLang, "swipe3") + " · " + (on ? "on" : "off")
     slowSyncLeft = 3
     slowSyncTimer.restart()
+  }
+
+  function setMiddleBtnOff(on) {
+    middleBtnOff = on
+    saved.middleButtonScreenshotOff = on
+    savePrefs()
+    writeLua()
+    run("hyprctl reload")
+    statusMessage = "Botón central · " + (on ? "desactivado" : "activado")
+  }
+
+  function setBrowserCloseTab(on) {
+    browserCloseTabOn = on
+    saved.browserCloseTab = on
+    savePrefs()
+    writeLua()
+    run("hyprctl reload")
+    statusMessage = "SUPER+W navegadores · " + (on ? "pestaña" : "ventana")
   }
 
   function syncGestures(naturalNow) {
@@ -446,12 +702,28 @@ Panel {
       saved.naturalScroll = naturalScroll
       tapToClick = d.tapToClick === true
       saved.tapToClick = tapToClick
+      saved.browserCloseTab = d.browserCloseTab === true
+      browserCloseTabOn = saved.browserCloseTab
+      saved.middleButtonScreenshotOff = d.middleButtonScreenshotOff === true
+      middleBtnOff = saved.middleButtonScreenshotOff
+      prefsLoaded = true
+      // Do NOT call syncTrackpadGestures()/writeLua() here: at this point
+      // saved.sensitivity/gaps/kb_layout/accel are still at their object defaults
+      // because readProc no longer writes them and luaStateProc hasn't run yet.
+      // Writing now would persist those defaults and silently drop the user's
+      // config. luaStateProc repopulates saved.* from the persisted Lua (the
+      // source of truth) and triggers the write itself once it's done.
+      // The persisted config is now the source of truth. If the panel is already
+      // open, refresh the UI from live state NOW — this is the only safe moment,
+      // because readProc must never overwrite saved.* with default Hyprland
+      // values before our config is in place (see open()/readProc note below).
+      if (root.opened) root.refresh()
     } catch (e) {}
   }
 
   function savePrefs() {
     prefsWriter.command = ["bash", Qt.resolvedUrl("write-prefs-atomic.sh").toString().replace("file://", ""),
-      prefsPath, JSON.stringify({ swipe3: swipe3On, inertia: inertiaOn, naturalScroll: naturalScroll, tapToClick: tapToClick })]
+      prefsPath, JSON.stringify({ swipe3: swipe3On, inertia: inertiaOn, naturalScroll: naturalScroll, tapToClick: tapToClick, browserCloseTab: browserCloseTabOn, middleButtonScreenshotOff: middleBtnOff })]
     prefsWriter.running = true
   }
 
@@ -521,14 +793,14 @@ Panel {
           var kv = lines[i].split("=")
           if (kv.length !== 2) continue
           var k = kv[0], v = kv[1]
-          if (k === "ANIM") root.animationsEnabled = v === "true"
-          else if (k === "SENS") root.cursorSensitivity = parseFloat(v) || 0
-          else if (k === "ACCEL") root.flatAccel = v.indexOf("flat") === 0
+          if (k === "ANIM") { root.animationsEnabled = v === "true" }
+          else if (k === "SENS") { root.cursorSensitivity = parseFloat(v) || 0 }
+          else if (k === "ACCEL") { root.flatAccel = v.indexOf("flat") === 0 }
           else if (k === "GIN") { var gin = parseInt(v); if (!isNaN(gin)) root.gapsIn = gin }
           else if (k === "GOUT") { var gout = parseInt(v); if (!isNaN(gout)) root.gapsOut = gout }
-          else if (k === "KB") { root.kbLayout = v || "us"; if (!root.saved.kbLayout) root.saved.kbLayout = root.kbLayout.split(",")[0] }
+          else if (k === "KB") { root.kbLayout = v || "us" }
           else if (k === "NL") root.nightLightOn = v === "true"
-          else if (k === "WSA") { var n = parseInt(v); if (n === 0 || n === 1) root.wsAnimationOn = n >= 1 }
+          else if (k === "WSA") { var n = parseInt(v); if (n === 0 || n === 1) { root.wsAnimationOn = n >= 1 } }
           else if (k === "LOCL" && v !== "") root.currentLocale = v
           else if (k === "APFSD") { root.apfsInstalled = v === "yes"; if (!apfsProbe.running) apfsProbe.running = true }
           else if (k === "SW3") root.swipe3On = v === "relative_workspace"
@@ -545,13 +817,24 @@ Panel {
   // per-device (the global input:natural_scroll never reaches it). readProc
   // therefore cannot reliably read these two knobs. The persisted Lua file
   // (~/.config/hypr/control-panel.lua) is the source of truth, so we parse it
-  // to reflect the real state in the UI instead of trusting hyprctl.
+  // to reflect the real state in the UI instead of trusting hyprctl. The same
+  // applies to the animations / workspace-animation toggles: they are NOT in the
+  // small prefs JSON, so their saved.* values must come from the Lua (the
+  // persisted artifact), never from readProc's live Hyprctl read (which would
+  // overwrite saved.* with defaults and get persisted on the next writeLua).
   Process {
     id: luaStateProc
     command: ["bash", "-lc",
       "f='" + root.luaPath + "'; [ -f \"$f\" ] || exit 0; c=$(head -c 65536 \"$f\"); " +
       "echo NS=$(printf '%s' \"$c\" | grep -oE 'natural_scroll = (true|false)' | head -1 | grep -oE '(true|false)'); " +
-      "echo TC=$(printf '%s' \"$c\" | grep -oE 'tap_to_click = (true|false)' | head -1 | grep -oE '(true|false)')"]
+      "echo TC=$(printf '%s' \"$c\" | grep -oE 'tap_to_click = (true|false)' | head -1 | grep -oE '(true|false)'); " +
+      "echo AN=$(printf '%s' \"$c\" | grep -oE 'animations = { enabled = (true|false)' | head -1 | grep -oE '(true|false)'); " +
+      "echo WA=$(printf '%s' \"$c\" | grep -oE 'leaf = \"workspaces\", enabled = (true|false)' | head -1 | grep -oE '(true|false)'); " +
+      "echo SENS=$(printf '%s' \"$c\" | grep -oE 'sensitivity = [-0-9.]+' | head -1 | grep -oE '[-0-9.]+'); " +
+      "echo GIN=$(printf '%s' \"$c\" | grep -oE 'gaps_in = [0-9]+' | head -1 | grep -oE '[0-9]+'); " +
+      "echo GOUT=$(printf '%s' \"$c\" | grep -oE 'gaps_out = [0-9]+' | head -1 | grep -oE '[0-9]+'); " +
+      "echo KB=$(printf '%s' \"$c\" | grep -oE 'kb_layout = \"[^\"]*\"' | head -1 | sed -E 's/kb_layout = \"([^\"]*)\"/\\1/'); " +
+      "echo ACC=$(printf '%s' \"$c\" | grep -oE 'accel_profile = \"(flat|adaptive)\"' | head -1 | grep -oE '(flat|adaptive)')"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -560,13 +843,24 @@ Panel {
           var kv = lines[i].split("=")
           if (kv.length !== 2) continue
           var k = kv[0], v = kv[1]
-          if (k === "NS" && (v === "true" || v === "false")) root.naturalScroll = (v === "true")
-          if (k === "TC" && (v === "true" || v === "false")) root.tapToClick = (v === "true")
+          if (k === "NS" && (v === "true" || v === "false")) { root.naturalScroll = (v === "true"); root.saved.naturalScroll = root.naturalScroll }
+          if (k === "TC" && (v === "true" || v === "false")) { root.tapToClick = (v === "true"); root.saved.tapToClick = root.tapToClick }
+          if (k === "AN" && (v === "true" || v === "false")) { root.animationsEnabled = (v === "true"); root.saved.animations = root.animationsEnabled }
+          if (k === "WA" && (v === "true" || v === "false")) { root.wsAnimationOn = (v === "true"); root.saved.wsAnimation = root.wsAnimationOn }
+          if (k === "SENS" && v !== "") { var sv = parseFloat(v); if (!isNaN(sv)) { root.cursorSensitivity = sv; root.saved.sensitivity = sv } }
+          if (k === "GIN" && v !== "") { var gin = parseInt(v); if (!isNaN(gin)) { root.gapsIn = gin; root.saved.gapsIn = gin } }
+          if (k === "GOUT" && v !== "") { var gout = parseInt(v); if (!isNaN(gout)) { root.gapsOut = gout; root.saved.gapsOut = gout } }
+          if (k === "KB" && v !== "") { root.kbLayout = v; root.saved.kbLayout = v }
+          if (k === "ACC" && (v === "flat" || v === "adaptive")) { root.flatAccel = (v === "flat"); root.saved.flatAccel = root.flatAccel }
         }
+        // All persisted Lua values are now in saved.*. Regenerate the Lua so it
+        // keeps these real values (do NOT let readProc/writeLua ever serialize
+        // the object defaults). Only after prefs are loaded to avoid a write
+        // race with the JSON side.
+        if (root.prefsLoaded) root.syncTrackpadGestures()
       }
     }
   }
-
   // Dynamic locale list (system locales) for the language picker.
   property var localeOptions: []
   property string pendingInstall: ""
@@ -716,6 +1010,190 @@ Panel {
     }
   }
 
+  // ---- Displays tab: live monitor layout --------------------------------
+  Process {
+    id: displayStateProc
+    property bool outputValid: false
+    stderr: StdioCollector { id: displayStateError; waitForEnd: true }
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var parsed = root.displayParse(text)
+        if (parsed && Array.isArray(parsed)) {
+          displayStateProc.outputValid = true
+          // Auto-correct corrupt/weird states (invalid mirror, an output both
+          // disabled AND carrying a corrupt mirror, or every output disabled):
+          // fix and apply immediately, never ask first — a working picture is
+          // better than a blank one.
+          var sane = DisplayModel.sanitizeDisplays(parsed)
+          if (JSON.stringify(sane) !== JSON.stringify(parsed)) {
+            parsed = sane
+            root.displays = sane
+            root.displayApplyInstant()
+          }
+          root.displays = parsed
+          // Keep saved.displays in sync with the live layout so a later
+          // writeLua() (triggered by any setting) always records the display
+          // rules. Without this, a panel reload left saved.displays empty and
+          // the next unrelated writeLua wiped the monitor layout from
+          // control-panel.lua, losing it on the next Hyprland restart.
+          if (!root.saved.displays || root.saved.displays.length === 0) {
+            root.saved.displays = DisplayModel.clone(parsed)
+            // First state read after startup: prefs are loaded and the display
+            // layout is now known. Regenerate control-panel.lua.
+            root.writeLua()
+          }
+          // Hotplug CONNECT: a monitor that was just plugged in is auto-placed
+          // by Hyprland (often overlapping the others). Snap it flush against the
+          // existing layout (which does not move) and apply, so a freshly
+          // connected monitor never lands overlapped (which would error and restart).
+          var currentNames = []
+          for (var ci = 0; ci < parsed.length; ci++) currentNames.push(parsed[ci].name)
+          if (root.displayKnownNames.length > 0) {
+            var arranged = parsed
+            var changed = false
+            for (var ni = 0; ni < parsed.length; ni++) {
+              if (root.displayKnownNames.indexOf(parsed[ni].name) < 0) {
+                var before = JSON.stringify(arranged[ni])
+                arranged = DisplayModel.snapDraggedFlush(arranged, ni)
+                if (JSON.stringify(arranged[ni]) !== before) changed = true
+              }
+            }
+            if (changed) {
+              root.displays = arranged
+              root.saved.displays = DisplayModel.clone(arranged)
+              root.displayApplyInstant()
+            }
+          }
+          root.displayKnownNames = currentNames
+          root.displayStatusMessage = root.displayRefreshMessage
+          root.displayRefreshMessage = ""
+          // Restore a pending Keep/Revert confirmation if a preview is still
+          // armed (e.g. the popup closed when the primary output reconfigured).
+          if (!root.displayAwaitingConfirmation && !displayPendingProc.running) {
+            displayPendingProc.command = [root.displayHelperPath, "pending"]
+            displayPendingProc.running = true
+          }
+        }
+      }
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0 || !outputValid) {
+        root.displayStatusMessage = root.displayProcessError(displayStateError.text, "Could not read Hyprland display state")
+        root.displayRefreshMessage = ""
+      }
+    }
+    onRunningChanged: {
+      if (running) outputValid = false
+      else root.displayLoading = false
+    }
+  }
+
+  Process {
+    id: displayApplyProc
+    stdout: StdioCollector { id: displayApplyOutput; waitForEnd: true }
+    stderr: StdioCollector { id: displayApplyError; waitForEnd: true }
+    onExited: function(exitCode) {
+      root.displayApplying = false
+      if (exitCode === 0) {
+        var result = root.displayParse(displayApplyOutput.text)
+        root.displayAwaitingConfirmation = true
+        root.displaySecondsRemaining = result && result.timeout ? Number(result.timeout) : 15
+        root.displayStatusMessage = "Keep these display settings?"
+        displayConfirmationTimer.restart()
+      } else {
+        root.displayRefresh(root.displayProcessError(displayApplyError.text, "Preview failed; the previous layout was restored"))
+      }
+    }
+  }
+
+  Process {
+    id: displayConfirmProc
+    stdout: StdioCollector { waitForEnd: true }
+    stderr: StdioCollector { id: displayConfirmError; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.displayAwaitingConfirmation = false
+        displayConfirmationTimer.stop()
+        root.displayStatusMessage = "Display settings kept and saved for this session"
+      } else {
+        root.displayStatusMessage = root.displayProcessError(displayConfirmError.text, "Could not confirm display settings; automatic rollback is still active")
+      }
+    }
+  }
+
+  // Instant apply for safe changes (scale, position). No rollback is armed.
+  Process {
+    id: displayInstantProc
+    stdout: StdioCollector { waitForEnd: true }
+    stderr: StdioCollector { id: displayInstantError; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.displayStatusMessage = "Applied"
+        // Persist the safe change so it survives restarts.
+        root.saved.displays = DisplayModel.clone(root.displays)
+        root.writeLua()
+        root.displayRefresh()
+      } else {
+        root.displayRefresh(root.displayProcessError(displayInstantError.text, "Could not apply display settings"))
+      }
+    }
+  }
+
+  // Check whether a preview is still awaiting confirmation (its snapshot is
+  // armed on disk). If so, restore the Keep/Revert UI so the user can confirm
+  // even after the popup closed on a primary-output reconfiguration.
+  Process {
+    id: displayPendingProc
+    stdout: StdioCollector { id: displayPendingOutput; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) return
+      var result = root.displayParse(displayPendingOutput.text)
+      if (result && result.pending === true && !root.displayAwaitingConfirmation) {
+        root.displayAwaitingConfirmation = true
+        root.displaySecondsRemaining = 15
+        root.displayStatusMessage = "Confirm display settings?"
+        displayConfirmationTimer.restart()
+      }
+    }
+  }
+
+  Process {
+    id: displayRevertProc
+    stdout: StdioCollector { waitForEnd: true }
+    stderr: StdioCollector { id: displayRevertError; waitForEnd: true }
+    onExited: function(exitCode) {
+      root.displayAwaitingConfirmation = false
+      displayConfirmationTimer.stop()
+      if (exitCode === 0)
+        root.displayRefresh("Previous layout restored")
+      else
+        root.displayRefresh(root.displayProcessError(displayRevertError.text, "Previous layout could not be restored"))
+    }
+  }
+
+  Timer {
+    id: displayConfirmationTimer
+    interval: 1000
+    repeat: true
+    onTriggered: {
+      root.displaySecondsRemaining--
+      if (root.displaySecondsRemaining <= 0) {
+        stop()
+        root.displayStatusMessage = "Timed out; restoring previous layout…"
+        root.displayRevert()
+      }
+    }
+  }
+
+  // Auto-dismiss the identify-all overlay after a few seconds.
+  Timer {
+    id: identifyAllTimer
+    interval: 3000
+    repeat: false
+    onTriggered: root.identifyAllDisplays = false
+  }
+
   Component.onCompleted: {
     prefsLoader.running = true
     if (!i18nLoader.running) i18nLoader.running = true
@@ -728,7 +1206,6 @@ Panel {
     // to be fully up, otherwise the call fired at construction time is lost.
     applyOnLoadTimer.restart()
   }
-
   // Poll for the root-owned locale helper while a not-yet-installed locale is
   // selected, so the UI switches to "Install & apply" as soon as the user has
   // run the one-time install command.
@@ -827,7 +1304,7 @@ Panel {
       // ---------- Keyboard & Language ----------
       Column {
         width: parent.width
-        visible: root.currentTab === 4
+        visible: root.currentTab === 3
         spacing: Style.space(8)
 
         Text {
@@ -880,7 +1357,7 @@ Panel {
           text: root.localeInstallCommand
           color: root.fg
           wrapMode: Text.Wrap
-          font.pointSize: Style.font.small
+          font.pointSize: Style.font.caption
           opacity: 0.85
         }
 
@@ -1009,6 +1486,8 @@ Panel {
 
         ToggleRow { labelKey: "swipe3"; checked: root.swipe3On; action: function() { root.setSwipe3(!root.swipe3On) } }
 
+        ToggleRow { labelKey: "middleButtonScreenshotOff"; checked: root.middleBtnOff; action: function() { root.setMiddleBtnOff(!root.middleBtnOff) } }
+
         PanelSeparator { foreground: root.fg }
 
         ToggleRow {
@@ -1050,25 +1529,10 @@ Panel {
         }
       }
 
-      // ---------- Animation ----------
-      Column {
-        width: parent.width
-        visible: root.currentTab === 1
-        spacing: Style.space(10)
-
-        ToggleRow { labelKey: "sysAnims"; checked: root.animationsEnabled; action: function() { root.applyAnimations(!root.animationsEnabled) } }
-        PanelSeparator { foreground: root.fg }
-        ToggleRow { labelKey: "wsSlide"; checked: root.wsAnimationOn; action: function() { root.animSet(!root.wsAnimationOn) } }
-
-        PanelSeparator { foreground: root.fg }
-
-        ToggleRow { labelKey: "nightLight"; checked: root.nightLightOn; action: function() { root.nightLightOn = !root.nightLightOn; root.run("omarchy-toggle-nightlight") } }
-      }
-
       // ---------- Windows ----------
       Column {
         width: parent.width
-        visible: root.currentTab === 2
+        visible: root.currentTab === 1
         spacing: Style.space(10)
 
         Text {
@@ -1103,10 +1567,12 @@ Panel {
         }
       }
 
+      PanelSeparator { foreground: root.fg }
+
       // ---------- Devices ----------
       Column {
         width: parent.width
-        visible: root.currentTab === 3
+        visible: root.currentTab === 4
         spacing: Style.space(10)
 
         Button {
@@ -1206,6 +1672,364 @@ Panel {
         }
       }
 
+      // ---------- Displays ----------
+      Column {
+        width: parent.width
+        visible: root.currentTab === 2
+        spacing: Style.space(10)
+
+        RowLayout {
+          width: parent.width
+          spacing: Style.space(12)
+          Text {
+            text: "󰍺"
+            color: root.fg
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.display
+          }
+          Column {
+            Layout.fillWidth: true
+            Text { width: parent.width; text: root.t(root.uiLang, "displays"); color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true; elide: Text.ElideRight }
+            Text { width: parent.width; text: root.displays.length + (root.displays.length === 1 ? " " + root.t(root.uiLang, "displayCount") : " " + root.t(root.uiLang, "displaysCount")); color: Qt.darker(root.fg, 1.4); font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true; font.letterSpacing: 1.1; elide: Text.ElideRight }
+          }
+          // Loading indicator lives in the (fixed-height) header with reserved
+          // space, so it never shifts the canvas/content when it flashes.
+          Text {
+            Layout.alignment: Qt.AlignVCenter
+            text: root.t(root.uiLang, "readingDisplays")
+            color: Qt.darker(root.fg, 1.4)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            opacity: root.displayLoading ? 1 : 0
+          }
+          Button {
+            Layout.alignment: Qt.AlignVCenter
+            text: root.t(root.uiLang, "identify")
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            bordered: true
+            active: root.identifyAllDisplays
+            onClicked: {
+              root.identifyAllDisplays = !root.identifyAllDisplays
+              if (root.identifyAllDisplays) identifyAllTimer.restart()
+            }
+          }
+        }
+
+        PanelSeparator { foreground: root.fg }
+
+        Text {
+          visible: !root.displayLoading && root.displays.length === 0
+          width: parent.width
+          text: root.t(root.uiLang, "noDisplays")
+          color: root.fg
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          horizontalAlignment: Text.AlignHCenter
+        }
+
+        Rectangle {
+          id: displayCanvas
+          visible: root.displays.length > 0
+          width: parent.width
+          height: Math.min(240, Math.max(170, panel.contentWidth * 0.31))
+          radius: Style.cornerRadius
+          color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.035)
+          border.color: root.displayValidLayout ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.18) : Color.urgent
+          border.width: 1
+
+          // Commit a drag: convert canvas px to logical coords, keep the layout
+          // connected (flush), and auto-apply the new position. Lives on the
+          // canvas (a normal child of root) because Repeater delegates cannot
+          // reliably reach the `root` id to run processes.
+          function commitDrag(idx, px, py) {
+            var copy = DisplayModel.clone(root.displays)
+            copy[idx].x = Math.round((px - Style.space(16)) / zoom + minX)
+            copy[idx].y = Math.round((py - Style.space(16)) / zoom + minY)
+            copy = DisplayModel.snapDraggedFlush(copy, idx)
+            root.displays = copy
+            root.displayApplyInstant()
+          }
+
+          property real minX: {
+            var v = Infinity; root.displays.forEach(function(d) { if (!d.disabled && !d.mirror) v = Math.min(v, d.x) }); return isFinite(v) ? v : 0
+          }
+          property real minY: {
+            var v = Infinity; root.displays.forEach(function(d) { if (!d.disabled && !d.mirror) v = Math.min(v, d.y) }); return isFinite(v) ? v : 0
+          }
+          property real maxX: {
+            var v = 1; root.displays.forEach(function(d) { var s = DisplayModel.logicalSize(d); if (!d.disabled && !d.mirror) v = Math.max(v, d.x + s.width) }); return v
+          }
+          property real maxY: {
+            var v = 1; root.displays.forEach(function(d) { var s = DisplayModel.logicalSize(d); if (!d.disabled && !d.mirror) v = Math.max(v, d.y + s.height) }); return v
+          }
+          property real zoom: Math.min((width - Style.space(32)) / Math.max(1, maxX - minX), (height - Style.space(32)) / Math.max(1, maxY - minY))
+
+          Repeater {
+            model: root.displays
+            Rectangle {
+              required property var modelData
+              required property int index
+              property var logical: DisplayModel.logicalSize(modelData)
+              visible: !modelData.disabled
+              x: Style.space(16) + (modelData.x - displayCanvas.minX) * displayCanvas.zoom
+              y: Style.space(16) + (modelData.y - displayCanvas.minY) * displayCanvas.zoom
+              width: Math.max(Style.space(70), logical.width * displayCanvas.zoom)
+              height: Math.max(Style.space(44), logical.height * displayCanvas.zoom)
+              radius: Style.cornerRadius
+              color: index === root.displaySelectedIndex ? Style.selectedFillFor(root.fg, Color.accent) : Style.hoverFillFor(root.fg, Color.accent)
+              border.color: index === root.displaySelectedIndex ? Color.accent : root.fg
+              border.width: index === root.displaySelectedIndex ? 2 : 1
+              opacity: modelData.mirror ? 0.65 : 1
+
+              Text {
+                anchors.centerIn: parent
+                text: (index + 1) + "  " + modelData.name + (modelData.mirror ? "\nMirrors " + modelData.mirror : "")
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+              }
+              MouseArea {
+                anchors.fill: parent
+                drag.target: parent
+                drag.axis: Drag.XAndYAxis
+                cursorShape: Qt.SizeAllCursor
+                onPressed: {
+                  root.displayDragging = true
+                  root.displaySelectedIndex = index
+                }
+                onReleased: {
+                  root.displayDragging = false
+                  displayCanvas.commitDrag(index, parent.x, parent.y)
+                }
+              }
+            }
+          }
+        }
+
+        Text {
+          visible: !root.displayValidLayout
+          text: root.displayActiveCount === 0 ? root.t(root.uiLang, "displayAtLeastOne") : root.t(root.uiLang, "displayNoOverlap")
+          color: Color.urgent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        PanelSeparator { visible: root.displays.length > 0; foreground: root.fg }
+
+        Flow {
+          visible: root.displays.length > 0
+          width: parent.width
+          spacing: Style.space(8)
+          Repeater {
+            model: root.displays
+            Button {
+              required property var modelData
+              required property int index
+              text: (index + 1) + " · " + modelData.name
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              bordered: true
+              active: index === root.displaySelectedIndex
+              onClicked: root.displaySelectedIndex = index
+            }
+          }
+        }
+
+        GridLayout {
+          visible: root.displaySelected !== null
+          width: parent.width
+          columns: 3
+          columnSpacing: Style.space(10)
+          rowSpacing: Style.space(10)
+
+          Dropdown {
+            Layout.fillWidth: true
+            label: options.length === 1 ? root.t(root.uiLang, "resolution") + " · " + root.t(root.uiLang, "native") : root.t(root.uiLang, "resolution")
+            foreground: root.fg; fontFamily: root.fontFamily
+            options: root.displaySelected ? DisplayModel.resolutionOptions(root.displaySelected.modes) : []
+            value: root.displaySelected ? DisplayModel.resolution(root.displaySelected.mode) : ""
+            opacity: options.length > 1 ? 1 : 0.72
+            onChanged: function(value) { root.displaySetResolution(value) }
+          }
+          Dropdown {
+            Layout.fillWidth: true
+            label: root.t(root.uiLang, "refreshRate")
+            foreground: root.fg; fontFamily: root.fontFamily
+            options: root.displaySelected ? DisplayModel.refreshOptions(root.displaySelected.modes, DisplayModel.resolution(root.displaySelected.mode)) : []
+            value: root.displaySelected ? DisplayModel.refresh(root.displaySelected.mode) : ""
+            onChanged: function(value) { root.displaySetRefresh(value) }
+          }
+          Dropdown {
+            Layout.fillWidth: true
+            label: root.t(root.uiLang, "orientation")
+            foreground: root.fg; fontFamily: root.fontFamily
+            options: [{value:"0",label:root.t(root.uiLang, "landscape")},{value:"1",label:root.t(root.uiLang, "portrait")},{value:"2",label:root.t(root.uiLang, "landscapeFlipped")},{value:"3",label:root.t(root.uiLang, "portraitFlipped")}]
+            value: root.displaySelected ? String(root.displaySelected.transform) : "0"
+            onChanged: function(value) { root.displayUpdate("transform", Number(value)) }
+          }
+        }
+
+        // Free scale slider (50%–400%). Hyprland accepts fractional scales, so
+        // the user can dial in the exact text size per display instead of
+        // picking from a fixed list.
+        Column {
+          visible: root.displaySelected !== null
+          width: parent.width
+          spacing: Style.space(4)
+
+          Row {
+            width: parent.width
+            spacing: Style.space(8)
+            Text {
+              id: scaleLabel
+              text: root.t(root.uiLang, "scale")
+              color: Qt.darker(root.fg, 1.4)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              anchors.verticalCenter: parent.verticalCenter
+            }
+            Item { width: 1; height: 1; visible: false }
+            Text {
+              width: parent.width - scaleLabel.width - parent.spacing
+              horizontalAlignment: Text.AlignRight
+              text: Math.round((root.displaySelected ? Number(root.displaySelected.scale) : 1) * 100) + "%"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.bold: true
+              anchors.verticalCenter: parent.verticalCenter
+            }
+          }
+
+          Slider {
+            id: scaleSlider
+            width: parent.width
+            from: 0.5
+            to: 4.0
+            stepSize: 0.01
+            value: root.displaySelected ? Number(root.displaySelected.scale) : 1
+            // The track is continuous 50%–400% on every monitor (nothing
+            // hardcoded), but Hyprland only honours scales that divide the
+            // mode's resolution, so snap to the nearest one the mode accepts.
+            // Snap the KNOB too, otherwise the handle sits at an invalid value
+            // (e.g. 150%) while the percentage label shows the snapped one
+            // (100%) — making the drag values look wrong.
+            onMoved: {
+              if (!root.displaySelected) return
+              var snapped = DisplayModel.nearestScale(root.displaySelected.mode, scaleSlider.value)
+              root.displayUpdate("scale", snapped)
+              scaleSlider.value = snapped
+            }
+          }
+
+          // Keep the knob in sync when the user switches the selected monitor.
+          Connections {
+            target: root
+            function onDisplaySelectedChanged() {
+              scaleSlider.value = root.displaySelected ? Number(root.displaySelected.scale) : 1
+            }
+          }
+
+          // The exact percentages this monitor accepts (computed from its
+          // resolution, not hardcoded). The slider snaps to these.
+          Text {
+            width: parent.width
+            visible: root.displaySelected !== null
+            text: root.displaySelected
+              ? DisplayModel.validScales(root.displaySelected.mode).map(function(v){ return Math.round(v * 100) + "%" }).join("   ")
+              : ""
+            color: Qt.darker(root.fg, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+        }
+
+        RowLayout {
+          visible: root.displaySelected !== null
+          width: parent.width
+          spacing: Style.space(10)
+          Dropdown {
+            Layout.fillWidth: true
+            label: root.t(root.uiLang, "multiDisplay")
+            foreground: root.fg; fontFamily: root.fontFamily
+            options: [{value:"",label:root.t(root.uiLang, "extendDesktop")}].concat(root.displays.filter(function(d){return root.displaySelected && d.name !== root.displaySelected.name && !d.disabled}).map(function(d){return {value:d.name,label:root.t(root.uiLang, "duplicate") + " " + d.name}}))
+            value: root.displaySelected ? root.displaySelected.mirror : ""
+            onChanged: function(value) { root.displayUpdate("mirror", value) }
+          }
+          Button {
+            Layout.alignment: Qt.AlignBottom
+            text: root.displaySelected && root.displaySelected.disabled ? root.t(root.uiLang, "connectDisplay") : root.t(root.uiLang, "disconnectDisplay")
+            foreground: root.fg; fontFamily: root.fontFamily; bordered: true
+            enabled: root.displaySelected && (root.displaySelected.disabled || root.displayActiveCount > 1)
+            onClicked: root.displayToggleEnabled()
+          }
+        }
+
+        PanelSeparator { foreground: root.fg }
+
+        RowLayout {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            text: root.displayStatusMessage || root.t(root.uiLang, "displayPreviewHint")
+            color: root.displayAwaitingConfirmation ? Color.accent : Qt.darker(root.fg, 1.25)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+          Button {
+            Layout.alignment: Qt.AlignVCenter
+            text: root.t(root.uiLang, "refresh")
+            foreground: root.fg; fontFamily: root.fontFamily; bordered: true
+            onClicked: root.displayRefresh()
+          }
+          Button {
+            Layout.alignment: Qt.AlignVCenter
+            text: root.displayApplying ? root.t(root.uiLang, "applying") : root.t(root.uiLang, "apply")
+            foreground: root.fg; fontFamily: root.fontFamily; bordered: true
+            active: true
+            enabled: root.displayValidLayout && !root.displayApplying && !root.displayAwaitingConfirmation
+            onClicked: root.displayApplyPreview()
+          }
+        }
+
+        RowLayout {
+          visible: root.displayAwaitingConfirmation
+          width: parent.width
+          spacing: Style.space(10)
+          Text { text: root.displaySecondsRemaining + "s"; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.subtitle; font.bold: true; Layout.alignment: Qt.AlignVCenter }
+          Item { Layout.fillWidth: true; height: 1 }
+          Button { id: displayRevertButton; text: displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; enabled: !displayConfirmProc.running && !displayRevertProc.running; onClicked: root.displayRevert() }
+          Button { id: displayKeepButton; text: displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; active: true; enabled: !displayConfirmProc.running && !displayRevertProc.running; onClicked: root.displayKeep() }
+        }
+      }
+
+      PanelSeparator { foreground: root.fg }
+
+      // ---------- Animation ----------
+      Column {
+        width: parent.width
+        visible: root.currentTab === 1
+        spacing: Style.space(10)
+
+
+        ToggleRow { labelKey: "browserCloseTab"; checked: root.browserCloseTabOn; action: function() { root.setBrowserCloseTab(!root.browserCloseTabOn) } }
+        ToggleRow { labelKey: "sysAnims"; checked: root.animationsEnabled; action: function() { root.applyAnimations(!root.animationsEnabled) } }
+        PanelSeparator { foreground: root.fg }
+        ToggleRow { labelKey: "wsSlide"; checked: root.wsAnimationOn; action: function() { root.animSet(!root.wsAnimationOn) } }
+
+        PanelSeparator { foreground: root.fg }
+
+        ToggleRow { labelKey: "nightLight"; checked: root.nightLightOn; action: function() { root.nightLightOn = !root.nightLightOn; root.run("omarchy-toggle-nightlight") } }
+      }
+
       Text {
         width: parent.width
         visible: statusMessage !== ""
@@ -1217,6 +2041,17 @@ Panel {
         elide: Text.ElideRight
       }
     }
+  }
+
+  // Physical-monitor highlight for the Displays tab. Draws an accent border
+  // (and, in identify-all mode, a big index) on real monitors so the user can
+  // match each canvas tile to the physical display.
+  DisplayIdentifyOverlay {
+    id: displayIdentify
+    displays: root.displays
+    selectedName: root.opened && root.currentTab === 2 && root.displaySelected ? root.displaySelected.name : ""
+    identifyAll: root.opened && root.currentTab === 2 && root.identifyAllDisplays
+    dragActive: root.displayDragging
   }
 
   // Inline component for one toggle row, used across the panel.
