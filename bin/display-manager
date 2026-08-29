@@ -11,6 +11,13 @@
 # volatile Hyprland state.
 set -euo pipefail
 
+# Force a C locale so numeric formatting/parsing is deterministic regardless of
+# the caller's environment (the Quickshell panel runs under LANG=es_CL.UTF-8,
+# where `printf '%.2f' "120.00000"` rejects the dot as a decimal separator and
+# the display revert/confirm flow breaks). C keeps printf/hyprctl/jq on a
+# predictable decimal point.
+export LC_ALL=C LANG=C
+
 plugin_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 state_root=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-control-panel
 pending_file=$state_root/pending.json

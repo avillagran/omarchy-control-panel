@@ -1970,7 +1970,6 @@ Panel {
             Layout.alignment: Qt.AlignVCenter
             text: root.displayApplying ? root.t(root.uiLang, "applying") : root.t(root.uiLang, "apply")
             foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-            active: true
             enabled: root.displayValidLayout && !root.displayApplying && !root.displayAwaitingConfirmation
             onClicked: root.displayApplyPreview()
           }
@@ -1982,8 +1981,8 @@ Panel {
           spacing: Style.space(10)
           Text { text: root.displaySecondsRemaining + "s"; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.subtitle; font.bold: true; Layout.alignment: Qt.AlignVCenter }
           Item { Layout.fillWidth: true; height: 1 }
-          Button { id: displayRevertButton; text: displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; enabled: !displayConfirmProc.running && !displayRevertProc.running; onClicked: root.displayRevert() }
-          Button { id: displayKeepButton; text: displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; active: true; enabled: !displayConfirmProc.running && !displayRevertProc.running; onClicked: root.displayKeep() }
+          Button { id: displayRevertButton; text: displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; onClicked: root.displayRevert() }
+          Button { id: displayKeepButton; text: displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; onClicked: root.displayKeep() }
         }
       }
 
