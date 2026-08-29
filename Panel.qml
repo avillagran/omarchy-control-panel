@@ -2092,10 +2092,6 @@ Panel {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     anchors { top: true; bottom: true; left: true; right: true }
 
-    // Fade + scale the card in/out instead of popping it.
-    Behavior on opacity { NumberAnimation { duration: 160 } }
-    opacity: root.displayAwaitingConfirmation ? 1 : 0
-
     Column {
       anchors.centerIn: parent
       width: Math.min(Style.space(520), parent.width - Style.space(40))
@@ -2110,6 +2106,9 @@ Panel {
         // Animate height so the card grows/shrinks smoothly.
         height: overlayInner.height + Style.space(20)
         Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+        // Fade in/out with the confirmation state.
+        opacity: root.displayAwaitingConfirmation ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 160 } }
         clip: true
 
         Column {
