@@ -1471,7 +1471,11 @@ Panel {
         visible: root.currentTab === 0
         spacing: Style.space(10)
 
-        ToggleRow { labelKey: "invScroll"; checked: root.naturalScroll; action: function() { root.setNaturalScroll(!root.naturalScroll, false) } }
+        Toggle {
+          label: root.t(root.uiLang, "invScroll")
+          checked: root.naturalScroll
+          onClicked: { root.setNaturalScroll(!root.naturalScroll, false) }
+        }
 
         Text {
           text: root.t(root.uiLang, "speed") + ": " + Number(root.cursorSensitivity).toFixed(2)
@@ -1489,20 +1493,36 @@ Panel {
           onMoved: root.applySensitivity(value)
         }
 
-        ToggleRow { labelKey: "flatAccel"; checked: root.flatAccel; action: function() { root.flatAccel = !root.flatAccel; root.hyprSet("input", "accel_profile", root.flatAccel ? '"flat"' : '"adaptive"'); root.writeLua() } }
+        Toggle {
+          label: root.t(root.uiLang, "flatAccel")
+          checked: root.flatAccel
+          onClicked: { root.flatAccel = !root.flatAccel; root.hyprSet("input", "accel_profile", root.flatAccel ? '"flat"' : '"adaptive"'); root.writeLua() }
+        }
 
-        ToggleRow { labelKey: "tapClick"; checked: root.tapToClick; action: function() { root.setTapToClick(!root.tapToClick) } }
+        Toggle {
+          label: root.t(root.uiLang, "tapClick")
+          checked: root.tapToClick
+          onClicked: { root.setTapToClick(!root.tapToClick) }
+        }
 
-        ToggleRow { labelKey: "swipe3"; checked: root.swipe3On; action: function() { root.setSwipe3(!root.swipe3On) } }
+        Toggle {
+          label: root.t(root.uiLang, "swipe3")
+          checked: root.swipe3On
+          onClicked: { root.setSwipe3(!root.swipe3On) }
+        }
 
-        ToggleRow { labelKey: "middleButtonScreenshotOff"; checked: root.middleBtnOff; action: function() { root.setMiddleBtnOff(!root.middleBtnOff) } }
+        Toggle {
+          label: root.t(root.uiLang, "middleButtonScreenshotOff")
+          checked: root.middleBtnOff
+          onClicked: { root.setMiddleBtnOff(!root.middleBtnOff) }
+        }
 
         PanelSeparator { foreground: root.fg }
 
-        ToggleRow {
-          labelKey: "inertia"
+        Toggle {
+          label: root.t(root.uiLang, "inertia")
           checked: root.inertiaOn
-          action: function() { root.setInertia(!root.inertiaOn) }
+          onClicked: { root.setInertia(!root.inertiaOn) }
         }
 
         Text {
@@ -2009,14 +2029,30 @@ Panel {
         spacing: Style.space(10)
 
 
-        ToggleRow { labelKey: "browserCloseTab"; checked: root.browserCloseTabOn; action: function() { root.setBrowserCloseTab(!root.browserCloseTabOn) } }
-        ToggleRow { labelKey: "sysAnims"; checked: root.animationsEnabled; action: function() { root.applyAnimations(!root.animationsEnabled) } }
+        Toggle {
+          label: root.t(root.uiLang, "browserCloseTab")
+          checked: root.browserCloseTabOn
+          onClicked: { root.setBrowserCloseTab(!root.browserCloseTabOn) }
+        }
+        Toggle {
+          label: root.t(root.uiLang, "sysAnims")
+          checked: root.animationsEnabled
+          onClicked: { root.applyAnimations(!root.animationsEnabled) }
+        }
         PanelSeparator { foreground: root.fg }
-        ToggleRow { labelKey: "wsSlide"; checked: root.wsAnimationOn; action: function() { root.animSet(!root.wsAnimationOn) } }
+        Toggle {
+          label: root.t(root.uiLang, "wsSlide")
+          checked: root.wsAnimationOn
+          onClicked: { root.animSet(!root.wsAnimationOn) }
+        }
 
         PanelSeparator { foreground: root.fg }
 
-        ToggleRow { labelKey: "nightLight"; checked: root.nightLightOn; action: function() { root.nightLightOn = !root.nightLightOn; root.run("omarchy-toggle-nightlight") } }
+        Toggle {
+          label: root.t(root.uiLang, "nightLight")
+          checked: root.nightLightOn
+          onClicked: { root.nightLightOn = !root.nightLightOn; root.run("omarchy-toggle-nightlight") }
+        }
       }
 
       Text {
@@ -2062,7 +2098,7 @@ Panel {
 
     Column {
       anchors.centerIn: parent
-      width: Math.min(Style.space(520), Screen.width - Style.space(40))
+      width: Math.min(Style.space(520), parent.width - Style.space(40))
       spacing: Style.space(10)
 
       Rectangle {
