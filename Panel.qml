@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "DisplayModel.js" as DisplayModel
@@ -1956,42 +1957,47 @@ Panel {
 
         PanelSeparator { foreground: root.fg }
 
-        RowLayout {
+        Item {
+          id: barHost
           width: parent.width
-          spacing: Style.space(10)
-          Text {
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            text: root.displayStatusMessage || root.t(root.uiLang, "displayPreviewHint")
-            color: root.displayAwaitingConfirmation ? Color.accent : Qt.darker(root.fg, 1.25)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-          Button {
-            Layout.alignment: Qt.AlignVCenter
-            text: root.t(root.uiLang, "refresh")
-            foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-            onClicked: root.displayRefresh()
-          }
-          Button {
-            Layout.alignment: Qt.AlignVCenter
-            text: root.displayApplying ? root.t(root.uiLang, "applying") : root.t(root.uiLang, "apply")
-            foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-            enabled: root.displayValidLayout && !root.displayApplying && !root.displayAwaitingConfirmation
-            onClicked: root.displayApplyPreview()
+          height: root.displayAwaitingConfirmation ? 0 : barRow.height
+          opacity: root.displayAwaitingConfirmation ? 0 : 1
+          Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+          Behavior on opacity { NumberAnimation { duration: 160 } }
+          clip: true
+          RowLayout {
+            id: barRow
+            width: parent.width
+            spacing: Style.space(10)
+            Text {
+              Layout.fillWidth: true
+              Layout.alignment: Qt.AlignVCenter
+              text: root.displayStatusMessage || root.t(root.uiLang, "displayPreviewHint")
+              color: root.displayAwaitingConfirmation ? Color.accent : Qt.darker(root.fg, 1.25)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+            Button {
+              Layout.alignment: Qt.AlignVCenter
+              text: root.t(root.uiLang, "refresh")
+              foreground: root.fg; fontFamily: root.fontFamily; bordered: true
+              enabled: !root.displayAwaitingConfirmation
+              onClicked: root.displayRefresh()
+            }
+            Button {
+              Layout.alignment: Qt.AlignVCenter
+              text: root.displayApplying ? root.t(root.uiLang, "applying") : root.t(root.uiLang, "apply")
+              foreground: root.fg; fontFamily: root.fontFamily; bordered: true
+              enabled: root.displayValidLayout && !root.displayApplying && !root.displayAwaitingConfirmation
+              onClicked: root.displayApplyPreview()
+            }
           }
         }
 
-        RowLayout {
-          visible: root.displayAwaitingConfirmation
-          width: parent.width
-          spacing: Style.space(10)
-          Text { text: root.displaySecondsRemaining + "s"; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.subtitle; font.bold: true; Layout.alignment: Qt.AlignVCenter }
-          Item { Layout.fillWidth: true; height: 1 }
-          Button { id: displayRevertButton; text: displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; onClicked: root.displayRevert() }
-          Button { id: displayKeepButton; text: displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; onClicked: root.displayKeep() }
-        }
+        // Keep/Revert confirmation now lives in a global LayerSurface
+        // (confirmOverlay) so it survives the popup closing when the output
+        // reconfigures on a scale change. See the PanelWindow at the end.
       }
 
       PanelSeparator { foreground: root.fg }
@@ -2037,27 +2043,76 @@ Panel {
     dragActive: root.displayDragging
   }
 
-  // Inline component for one toggle row, used across the panel.
-  component ToggleRow: Row {
-    property string labelKey: ""
-    property bool checked: false
-    property var action: null
-    width: parent.width
-    spacing: 0
+  // Keep/Revert confirmation as a GLOBAL LayerSurface so it stays visible even
+  // after the control-panel popup closes (changing a monitor's scale reconfigures
+  // the output and Quickshell tears down the popup). The user can confirm or
+  // revert from this overlay regardless of the popup's state.
+  PanelWindow {
+    id: confirmOverlay
+    visible: root.displayAwaitingConfirmation
+    color: "transparent"
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    anchors { top: true; bottom: true; left: true; right: true }
 
-    ToggleSwitch {
-      checked: parent.checked
-      foreground: root.fg
-      onToggled: if (parent.action) parent.action()
-    }
+    // Fade + scale the card in/out instead of popping it.
+    Behavior on opacity { NumberAnimation { duration: 160 } }
+    opacity: root.displayAwaitingConfirmation ? 1 : 0
 
-    Text {
-      text: root.t(root.uiLang, parent.labelKey)
-      color: root.fg
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
-      anchors.verticalCenter: parent.verticalCenter
-      leftPadding: Style.space(8)
+    Column {
+      anchors.centerIn: parent
+      width: Math.min(Style.space(520), Screen.width - Style.space(40))
+      spacing: Style.space(10)
+
+      Rectangle {
+        width: parent.width
+        radius: Style.cornerRadius * 2
+        color: Color.popups.background
+        border.color: Color.accent
+        border.width: Style.normalBorderWidth
+        // Animate height so the card grows/shrinks smoothly.
+        height: overlayInner.height + Style.space(20)
+        Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+        clip: true
+
+        Column {
+          id: overlayInner
+          anchors.fill: parent
+          anchors.margins: Style.space(10)
+          spacing: Style.space(10)
+
+          Text {
+            width: parent.width
+            text: root.t(root.uiLang, "keepChangesPrompt")
+            color: Color.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
+            wrapMode: Text.WordWrap
+          }
+
+          RowLayout {
+            width: parent.width
+            spacing: Style.space(10)
+            Text { text: root.displaySecondsRemaining + "s"; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.subtitle; font.bold: true; Layout.alignment: Qt.AlignVCenter }
+            Item { Layout.fillWidth: true; height: 1 }
+            Button { text: displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; onClicked: root.displayRevert() }
+            Button { text: displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges"); foreground: root.fg; fontFamily: root.fontFamily; bordered: true; onClicked: root.displayKeep() }
+          }
+
+          Text {
+            width: parent.width
+            visible: root.displaySecondsRemaining <= 5
+            text: root.t(root.uiLang, "displayRevertHint")
+            color: Qt.darker(Color.foreground, 1.4)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+        }
+      }
     }
   }
 }
+
