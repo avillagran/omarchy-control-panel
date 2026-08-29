@@ -1919,23 +1919,9 @@ Panel {
                 text: Math.round(modelData * 100) + "%"
                 selected: root.displaySelected && Math.abs(Number(root.displaySelected.scale) - modelData) < 0.001
                 foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-                onClicked: root.displayUpdate("scale", modelData)
+                onClicked: { root.displayUpdate("scale", modelData); root.displayApplyPreview() }
               }
             }
-          }
-
-          // The exact percentages this monitor accepts (computed from its
-          // resolution, not hardcoded). The slider snaps to these.
-          Text {
-            width: parent.width
-            visible: root.displaySelected !== null
-            text: root.displaySelected
-              ? DisplayModel.validScales(root.displaySelected.mode).map(function(v){ return Math.round(v * 100) + "%" }).join("   ")
-              : ""
-            color: Qt.darker(root.fg, 1.5)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
           }
         }
 
