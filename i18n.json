@@ -68,7 +68,9 @@
     "tapClick": "Tap to click (no press)",
     "useKitty": "Switch to Kitty",
     "calcCopied": "Copied to clipboard",
-    "notMath": "Not a valid expression"
+    "notMath": "Not a valid expression",
+    "keepChangesPrompt": "Keep these display settings?",
+    "displayRevertHint": "If you don't choose, the previous layout will be restored automatically."
   },
   "es": {
     "naturalMac": "Scroll natural (como Mac)",
@@ -139,7 +141,9 @@
     "tapClick": "Click con tap (sin presionar)",
     "useKitty": "Cambiar a Kitty",
     "calcCopied": "Copiado al portapapeles",
-    "notMath": "No es una expresión válida"
+    "notMath": "No es una expresión válida",
+    "keepChangesPrompt": "¿Mantener esta configuración de pantalla?",
+    "displayRevertHint": "Si no eliges, la configuración anterior se restaurará automáticamente."
   },
   "pt": {
     "naturalMac": "Rolagem natural (estilo Mac)",
