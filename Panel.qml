@@ -304,6 +304,14 @@ Panel {
     // prefsLoader triggers the refresh itself on completion (see loadPrefs()).
     if (root.prefsLoaded) refresh()
     if (!luaStateProc.running) luaStateProc.running = true
+    // If a display preview (Keep/Revert) is still armed, the popup may have
+    // closed when the output reconfigured on scale change — restore the
+    // confirmation dialog on reopen so the user can Keep/Revert without losing
+    // the pending state.
+    if (!root.displayAwaitingConfirmation && !displayPendingProc.running) {
+      displayPendingProc.command = [root.displayHelperPath, "pending"]
+      displayPendingProc.running = true
+    }
   }
 
   // The panel only ever wrote values as volatile `hyprctl eval` calls plus a
