@@ -495,7 +495,7 @@ Panel {
         '  else',
         '    hl.dispatch(hl.dsp.window.close())',
         '  end',
-        'end)'
+        'end, { release = true })'
       ].join("\n"))
     }
 

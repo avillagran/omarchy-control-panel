@@ -29,6 +29,11 @@ echo "$(date '+%H:%M:%S') class='$cls_lower'" >> "$LOG"
 if printf '%s' "$cls_lower" | grep -qiE "$BROWSERS"; then
   echo "$(date '+%H:%M:%S') BRANCH browser -> Ctrl+W" >> "$LOG"
 
+  # Wait briefly so the user's physical SUPER release reaches the input system
+  # before we inject Ctrl+W. Otherwise wtype/ydotool may produce Super+Ctrl+W,
+  # which Chromium ignores.
+  sleep 0.07
+
   # Detect whether Chromium/Chrome is running under XWayland. wtype only
   # reaches native Wayland surfaces; ydotool works at the input-device level
   # and reaches both, but needs the ydotoold daemon.
@@ -39,6 +44,24 @@ if printf '%s' "$cls_lower" | grep -qiE "$BROWSERS"; then
     is_xwayland=false
   fi
   echo "$(date '+%H:%M:%S') xwayland=$is_xwayland" >> "$LOG"
+
+  # Start ydotoold if available; we also use ydotool to release SUPER so the
+  # injected Ctrl+W is not mixed with the still-held SUPER key.
+  ydotool_ready=false
+  if command -v ydotool >/dev/null; then
+    if ! pgrep -x ydotoold >/dev/null 2>&1; then
+      echo "$(date '+%H:%M:%S') starting ydotoold" >> "$LOG"
+      ydotoold >> "$LOG" 2>&1 &
+      sleep 0.4
+    fi
+    # Release left/right SUPER so the following Ctrl+W is not Super+Ctrl+W.
+    if ydotool key 125:0 126:0 2>>"$LOG"; then
+      ydotool_ready=true
+      echo "$(date '+%H:%M:%S') released SUPER via ydotool" >> "$LOG"
+    else
+      echo "$(date '+%H:%M:%S') ydotool release-meta failed" >> "$LOG"
+    fi
+  fi
 
   use_ydotool=false
   if command -v wtype >/dev/null && [ "$is_xwayland" != "true" ]; then
@@ -53,17 +76,14 @@ if printf '%s' "$cls_lower" | grep -qiE "$BROWSERS"; then
     use_ydotool=true
   fi
 
-  if $use_ydotool; then
-    if ! pgrep -x ydotoold >/dev/null 2>&1; then
-      echo "$(date '+%H:%M:%S') starting ydotoold" >> "$LOG"
-      ydotoold >> "$LOG" 2>&1 &
-      sleep 0.4
-    fi
+  if $use_ydotool && $ydotool_ready; then
     if ydotool key ctrl+w 2>>"$LOG"; then
       echo "$(date '+%H:%M:%S') ydotool ok" >> "$LOG"
     else
       echo "$(date '+%H:%M:%S') ydotool failed" >> "$LOG"
     fi
+  elif $use_ydotool && ! $ydotool_ready; then
+    echo "$(date '+%H:%M:%S') ydotool unavailable, cannot send Ctrl+W" >> "$LOG"
   fi
 else
   echo "$(date '+%H:%M:%S') BRANCH non-browser -> killactive" >> "$LOG"
