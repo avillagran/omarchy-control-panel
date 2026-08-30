@@ -1818,16 +1818,18 @@ Panel {
               }
               MouseArea {
                 anchors.fill: parent
+                enabled: !root.displayAwaitingConfirmation
                 drag.target: parent
                 drag.axis: Drag.XAndYAxis
-                cursorShape: Qt.SizeAllCursor
+                cursorShape: root.displayAwaitingConfirmation ? Qt.ArrowCursor : Qt.SizeAllCursor
                 onPressed: {
+                  if (root.displayAwaitingConfirmation) return
                   root.displayDragging = true
                   root.displaySelectedIndex = index
                 }
                 onReleased: {
                   root.displayDragging = false
-                  displayCanvas.commitDrag(index, parent.x, parent.y)
+                  if (!root.displayAwaitingConfirmation) displayCanvas.commitDrag(index, parent.x, parent.y)
                 }
               }
             }
@@ -1857,8 +1859,9 @@ Panel {
               foreground: root.fg
               fontFamily: root.fontFamily
               bordered: true
+              enabled: !root.displayAwaitingConfirmation
               active: index === root.displaySelectedIndex
-              onClicked: root.displaySelectedIndex = index
+              onClicked: { if (!root.displayAwaitingConfirmation) root.displaySelectedIndex = index }
             }
           }
         }
@@ -1877,7 +1880,8 @@ Panel {
             options: root.displaySelected ? DisplayModel.resolutionOptions(root.displaySelected.modes) : []
             value: root.displaySelected ? DisplayModel.resolution(root.displaySelected.mode) : ""
             opacity: options.length > 1 ? 1 : 0.72
-            onChanged: function(value) { root.displaySetResolution(value) }
+            enabled: !root.displayAwaitingConfirmation
+            onChanged: function(value) { if (!root.displayAwaitingConfirmation) root.displaySetResolution(value) }
           }
           Dropdown {
             Layout.fillWidth: true
@@ -1885,7 +1889,8 @@ Panel {
             foreground: root.fg; fontFamily: root.fontFamily
             options: root.displaySelected ? DisplayModel.refreshOptions(root.displaySelected.modes, DisplayModel.resolution(root.displaySelected.mode)) : []
             value: root.displaySelected ? DisplayModel.refresh(root.displaySelected.mode) : ""
-            onChanged: function(value) { root.displaySetRefresh(value) }
+            enabled: !root.displayAwaitingConfirmation
+            onChanged: function(value) { if (!root.displayAwaitingConfirmation) root.displaySetRefresh(value) }
           }
           Dropdown {
             Layout.fillWidth: true
@@ -1893,7 +1898,8 @@ Panel {
             foreground: root.fg; fontFamily: root.fontFamily
             options: [{value:"0",label:root.t(root.uiLang, "landscape")},{value:"1",label:root.t(root.uiLang, "portrait")},{value:"2",label:root.t(root.uiLang, "landscapeFlipped")},{value:"3",label:root.t(root.uiLang, "portraitFlipped")}]
             value: root.displaySelected ? String(root.displaySelected.transform) : "0"
-            onChanged: function(value) { root.displayUpdate("transform", Number(value)) }
+            enabled: !root.displayAwaitingConfirmation
+            onChanged: function(value) { if (!root.displayAwaitingConfirmation) root.displayUpdate("transform", Number(value)) }
           }
         }
 
@@ -1944,7 +1950,9 @@ Panel {
                 text: Math.round(modelData * 100) + "%"
                 selected: root.displaySelected && Math.abs(Number(root.displaySelected.scale) - modelData) < 0.001
                 foreground: root.fg; fontFamily: root.fontFamily; bordered: true
+                enabled: !root.displayAwaitingConfirmation
                 onClicked: {
+                  if (root.displayAwaitingConfirmation) return
                   root.displayUpdate("scale", modelData)
                   root.displayApplyPreview()
                 }
@@ -1963,14 +1971,15 @@ Panel {
             foreground: root.fg; fontFamily: root.fontFamily
             options: [{value:"",label:root.t(root.uiLang, "extendDesktop")}].concat(root.displays.filter(function(d){return root.displaySelected && d.name !== root.displaySelected.name && !d.disabled}).map(function(d){return {value:d.name,label:root.t(root.uiLang, "duplicate") + " " + d.name}}))
             value: root.displaySelected ? root.displaySelected.mirror : ""
-            onChanged: function(value) { root.displayUpdate("mirror", value) }
+            enabled: !root.displayAwaitingConfirmation
+            onChanged: function(value) { if (!root.displayAwaitingConfirmation) root.displayUpdate("mirror", value) }
           }
           Button {
             Layout.alignment: Qt.AlignBottom
             text: root.displaySelected && root.displaySelected.disabled ? root.t(root.uiLang, "connectDisplay") : root.t(root.uiLang, "disconnectDisplay")
             foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-            enabled: root.displaySelected && (root.displaySelected.disabled || root.displayActiveCount > 1)
-            onClicked: root.displayToggleEnabled()
+            enabled: root.displaySelected && (root.displaySelected.disabled || root.displayActiveCount > 1) && !root.displayAwaitingConfirmation
+            onClicked: { if (!root.displayAwaitingConfirmation) root.displayToggleEnabled() }
           }
         }
 
