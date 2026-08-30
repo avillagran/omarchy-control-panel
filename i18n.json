@@ -70,7 +70,9 @@
     "calcCopied": "Copied to clipboard",
     "notMath": "Not a valid expression",
     "keepChangesPrompt": "Keep these display settings?",
-    "displayRevertHint": "If you don't choose, the previous layout will be restored automatically."
+    "displayRevertHint": "If you don't choose, the previous layout will be restored automatically.",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "es": {
     "naturalMac": "Scroll natural (como Mac)",
@@ -143,7 +145,9 @@
     "calcCopied": "Copiado al portapapeles",
     "notMath": "No es una expresión válida",
     "keepChangesPrompt": "¿Mantener esta configuración de pantalla?",
-    "displayRevertHint": "Si no eliges, la configuración anterior se restaurará automáticamente."
+    "displayRevertHint": "Si no eliges, la configuración anterior se restaurará automáticamente.",
+    "displayApplyPrompt": "Aplicar",
+    "cancel": "Cancelar"
   },
   "pt": {
     "naturalMac": "Rolagem natural (estilo Mac)",
@@ -182,7 +186,9 @@
     "tapClick": "Clique com toque (sem pressionar)",
     "useKitty": "Mudar para Kitty",
     "calcCopied": "Copiado para a área de transferência",
-    "notMath": "Expressão inválida"
+    "notMath": "Expressão inválida",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "fr": {
     "naturalMac": "Défilement naturel (style Mac)",
@@ -221,7 +227,9 @@
     "tapClick": "Cliquer en tapotant (sans appuyer)",
     "useKitty": "Passer à Kitty",
     "calcCopied": "Copié dans le presse-papiers",
-    "notMath": "Expression invalide"
+    "notMath": "Expression invalide",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "de": {
     "naturalMac": "Natürliches Scrollen (Mac-Stil)",
@@ -260,7 +268,9 @@
     "tapClick": "Tippen zum Klicken (ohne Druck)",
     "useKitty": "Zu Kitty wechseln",
     "calcCopied": "In die Zwischenablage kopiert",
-    "notMath": "Kein gültiger Ausdruck"
+    "notMath": "Kein gültiger Ausdruck",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "it": {
     "naturalMac": "Scorrimento naturale (stile Mac)",
@@ -299,7 +309,9 @@
     "tapClick": "Tocca per cliccare (senza pressione)",
     "useKitty": "Passa a Kitty",
     "calcCopied": "Copiato negli appunti",
-    "notMath": "Espressione non valida"
+    "notMath": "Espressione non valida",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "nl": {
     "naturalMac": "Natuurlijk scrollen (Mac-stijl)",
@@ -338,7 +350,9 @@
     "tapClick": "Tik om te klikken (zonder druk)",
     "useKitty": "Schakel naar Kitty",
     "calcCopied": "Gekopieerd naar klembord",
-    "notMath": "Geen geldige expressie"
+    "notMath": "Geen geldige expressie",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "pl": {
     "naturalMac": "Naturalne przewijanie (styl Mac)",
@@ -377,7 +391,9 @@
     "tapClick": "Stuknięcie zamiast kliknięcia (bez nacisku)",
     "useKitty": "Przełącz na Kitty",
     "calcCopied": "Skopiowano do schowka",
-    "notMath": "Nieprawidłowe wyrażenie"
+    "notMath": "Nieprawidłowe wyrażenie",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "ru": {
     "naturalMac": "Естественная прокрутка (в стиле Mac)",
@@ -416,7 +432,9 @@
     "tapClick": "Касание вместо нажатия",
     "useKitty": "Переключить на Kitty",
     "calcCopied": "Скопировано в буфер обмена",
-    "notMath": "Неверное выражение"
+    "notMath": "Неверное выражение",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "ja": {
     "naturalMac": "自然なスクロール (Macスタイル)",
@@ -455,7 +473,9 @@
     "tapClick": "タップでクリック (押下不要)",
     "useKitty": "Kittyに切り替え",
     "calcCopied": "クリップボードにコピーしました",
-    "notMath": "無効な式"
+    "notMath": "無効な式",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "ko": {
     "naturalMac": "자연스러운 스크롤 (Mac 스타일)",
@@ -494,7 +514,9 @@
     "tapClick": "탭하여 클릭 (누르지 않음)",
     "useKitty": "Kitty로 전환",
     "calcCopied": "클립보드에 복사됨",
-    "notMath": "잘못된 수식"
+    "notMath": "잘못된 수식",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "zh": {
     "naturalMac": "自然滚动 (Mac 风格)",
@@ -533,7 +555,9 @@
     "tapClick": "轻点按 (无需按压)",
     "useKitty": "切换到 Kitty",
     "calcCopied": "已复制到剪贴板",
-    "notMath": "无效的表达式"
+    "notMath": "无效的表达式",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "ar": {
     "naturalMac": "التمرير الطبيعي (أسلوب Mac)",
@@ -572,7 +596,9 @@
     "tapClick": "انقر للنقر (دون ضغط)",
     "useKitty": "التبديل إلى Kitty",
     "calcCopied": "تم النسخ إلى الحافظة",
-    "notMath": "تعبير غير صالح"
+    "notMath": "تعبير غير صالح",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "tr": {
     "naturalMac": "Doğal kaydırma (Mac tarzı)",
@@ -611,7 +637,9 @@
     "tapClick": "Dokunup tıklama (baskısız)",
     "useKitty": "Kitty'ye geç",
     "calcCopied": "Panoya kopyalandı",
-    "notMath": "Geçersiz ifade"
+    "notMath": "Geçersiz ifade",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "sv": {
     "naturalMac": "Naturligt rullande (Mac-stil)",
@@ -650,7 +678,9 @@
     "tapClick": "Tryck för att klicka (utan tryck)",
     "useKitty": "Byt till Kitty",
     "calcCopied": "Kopierat till urklipp",
-    "notMath": "Ogiltigt uttryck"
+    "notMath": "Ogiltigt uttryck",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "da": {
     "naturalMac": "Naturligt rulning (Mac-stil)",
@@ -689,7 +719,9 @@
     "tapClick": "Tryk for at klikke (uden tryk)",
     "useKitty": "Skift til Kitty",
     "calcCopied": "Kopieret til udklipsholder",
-    "notMath": "Ugyldigt udtryk"
+    "notMath": "Ugyldigt udtryk",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "no": {
     "naturalMac": "Naturlig rulling (Mac-stil)",
@@ -728,7 +760,9 @@
     "tapClick": "Trykk for å klikke (uten trykk)",
     "useKitty": "Bytt til Kitty",
     "calcCopied": "Kopiert til utklippstavle",
-    "notMath": "Ugyldig uttrykk"
+    "notMath": "Ugyldig uttrykk",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "fi": {
     "naturalMac": "Luonnollinen vieritys (Mac-tyyli)",
@@ -767,7 +801,9 @@
     "tapClick": "Napauta napsauttamaan (ilman painallusta)",
     "useKitty": "Vaihda Kittyyn",
     "calcCopied": "Kopioitu leikepöydälle",
-    "notMath": "Virheellinen lauseke"
+    "notMath": "Virheellinen lauseke",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   },
   "cs": {
     "naturalMac": "Přirozené posouvání (ve stylu Mac)",
@@ -806,6 +842,8 @@
     "tapClick": "Klepnutí pro kliknutí (bez tlaku)",
     "useKitty": "Přepnout na Kitty",
     "calcCopied": "Zkopírováno do schránky",
-    "notMath": "Neplatný výraz"
+    "notMath": "Neplatný výraz",
+    "displayApplyPrompt": "Apply",
+    "cancel": "Cancel"
   }
 }
