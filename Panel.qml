@@ -828,8 +828,6 @@ Panel {
       "echo ANIM=$(hyprctl getoption animations:enabled -j | jq -r .bool); " +
       "echo SENS=$(hyprctl getoption input:sensitivity -j | jq -r .float); " +
       "echo ACCEL=$(hyprctl getoption input:accel_profile -j | jq -r .str); " +
-      "echo GIN=$(hyprctl getoption general:gaps_in -j | jq -r '.css // empty' | cut -d' ' -f1); " +
-      "echo GOUT=$(hyprctl getoption general:gaps_out -j | jq -r '.css // empty' | cut -d' ' -f1); " +
       "echo KB=$(hyprctl getoption input:kb_layout -j | jq -r .str); " +
       "echo NL=$(omarchy-toggle-nightlight --status 2>/dev/null | jq -r .enabled); " +
       "echo WSA=$(hyprctl animations 2>/dev/null | awk '/^[[:space:]]*name: workspaces$/{f=1;next} f&&/enabled:/{print $2; exit}'); " +
@@ -850,8 +848,6 @@ Panel {
           if (k === "ANIM") { root.animationsEnabled = v === "true" }
           else if (k === "SENS") { root.cursorSensitivity = parseFloat(v) || 0 }
           else if (k === "ACCEL") { root.flatAccel = v.indexOf("flat") === 0 }
-          else if (k === "GIN") { var gin = parseInt(v); if (!isNaN(gin)) root.gapsIn = gin }
-          else if (k === "GOUT") { var gout = parseInt(v); if (!isNaN(gout)) root.gapsOut = gout }
           else if (k === "KB") { root.kbLayout = v || "us" }
           else if (k === "NL") root.nightLightOn = v === "true"
           else if (k === "WSA") { var n = parseInt(v); if (n === 0 || n === 1) { root.wsAnimationOn = n >= 1 } }
@@ -1515,12 +1511,6 @@ Panel {
         visible: root.currentTab === 0
         spacing: Style.space(10)
 
-        ToggleRow {
-          label: root.t(root.uiLang, "invScroll")
-          checked: root.naturalScroll
-          onClicked: { root.setNaturalScroll(!root.naturalScroll, false) }
-        }
-
         Text {
           text: root.t(root.uiLang, "speed") + ": " + Number(root.cursorSensitivity).toFixed(2)
           color: root.fg
@@ -1551,6 +1541,12 @@ Panel {
           stepSize: 1
           value: root.cursorSize
           onMoved: root.applyCursorSize(value)
+        }
+
+        ToggleRow {
+          label: root.t(root.uiLang, "invScroll")
+          checked: root.naturalScroll
+          onClicked: { root.setNaturalScroll(!root.naturalScroll, false) }
         }
 
         ToggleRow {
