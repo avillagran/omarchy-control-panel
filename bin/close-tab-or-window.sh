@@ -44,9 +44,8 @@ if printf '%s' "$cls_lower" | grep -qiE "$BROWSERS"; then
     echo "$(date '+%H:%M:%S') no virtual keyboard tool (wtype/ydotool)" >> "$LOG"
   fi
 else
-  echo "$(date '+%H:%M:%S') BRANCH non-browser -> window.close" >> "$LOG"
-  # FIX: the legacy `windowclose` dispatcher was removed in the sensei/Hyprland
-  # rewrite and now errors ("expected a dispatcher"). Use the current form.
-  hyprctl dispatch "hl.dsp.window.close()" 2>>"$LOG" || echo "$(date '+%H:%M:%S') window.close failed" >> "$LOG"
+  echo "$(date '+%H:%M:%S') BRANCH non-browser -> killactive" >> "$LOG"
+  # Close the active window with the standard Hyprland dispatcher.
+  hyprctl dispatch killactive 2>>"$LOG" || echo "$(date '+%H:%M:%S') killactive failed" >> "$LOG"
 fi
 echo "$(date '+%H:%M:%S') done" >> "$LOG"
