@@ -493,7 +493,7 @@ Panel {
         '  if cls:match("chrome") or cls:match("chromium") or cls:match("firefox") or cls:match("edge") or cls:match("brave") or cls:match("opera") or cls:match("vivaldi") or cls:match("epiphany") or cls:match("gnome%-web") then',
         '    hl.dispatch(hl.dsp.exec_cmd("bash ' + scriptPath + ' \'" .. cls .. "\' &"))',
         '  else',
-        '    hl.dsp.window.close()',
+        '    hl.dispatch(hl.dsp.window.close())',
         '  end',
         'end)'
       ].join("\n"))
@@ -609,10 +609,18 @@ Panel {
     root.cursorSize = v
     saved.cursorSize = v
     // Hyprland does not expose input:cursor_size. Cursor size is controlled by
-    // the XCURSOR_SIZE / HYPRCURSOR_SIZE environment variables, which Omarchy
-    // sets in default.hypr.envs. Apply them live and persist in control-panel.lua.
+    // the XCURSOR_SIZE / HYPRCURSOR_SIZE environment variables and the current
+    // cursor theme. We update the env vars and reload the cursor theme live.
     Quickshell.execDetached(["hyprctl", "eval", 'hl.env("XCURSOR_SIZE", "' + v + '")'])
     Quickshell.execDetached(["hyprctl", "eval", 'hl.env("HYPRCURSOR_SIZE", "' + v + '")'])
+    // Reload the current cursor theme so the size change is visible immediately.
+    // Try the GNOME/GTK theme first, then fall back to common themes.
+    Quickshell.execDetached(["bash", "-lc",
+      "T=$(gsettings get org.gnome.desktop.interface cursor-theme 2>/dev/null | tr -d \"'\"); " +
+      "[ -z \"$T\" ] && T=${XCURSOR_THEME:-}; " +
+      "[ -z \"$T\" ] && T=${HYPRCURSOR_THEME:-}; " +
+      "[ -z \"$T\" ] && T=Adwaita; " +
+      "hyprctl setcursor \"$T\" " + v])
     writeLua()
     statusMessage = "Cursor size · " + v
   }
