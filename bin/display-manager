@@ -129,6 +129,7 @@ validate_config() {
 apply_monitor_row() {
   local row=$1 name name_lua expression mode mode_lua position_lua x y scale transform mirror mirror_lua
   name=$(jq -r '.name' <<<"$row")
+  printf '%s apply_monitor_row name=%s\n' "$(date -Iseconds)" "$name" >>/tmp/omarchy-cp-display.log
   name_lua=$(jq -Rn --arg value "$name" '$value')
   if [[ $(jq -r '.disabled // false' <<<"$row") == true ]]; then
     expression="hl.monitor({ output = $name_lua, disabled = true })"
@@ -162,7 +163,13 @@ apply_monitor_row() {
     fi
     expression+=" })"
   fi
-  hyprctl eval "$expression" >/dev/null || die "Hyprland rejected settings for $name"
+  printf '%s hyprctl_eval name=%s expr=%s\n' "$(date -Iseconds)" "$name" "$expression" >>/tmp/omarchy-cp-display.log
+  if hyprctl eval "$expression" >/dev/null 2>&1; then
+    printf '%s hyprctl_eval_ok name=%s\n' "$(date -Iseconds)" "$name" >>/tmp/omarchy-cp-display.log
+  else
+    printf '%s hyprctl_eval_fail name=%s\n' "$(date -Iseconds)" "$name" >>/tmp/omarchy-cp-display.log
+    die "Hyprland rejected settings for $name"
+  fi
 }
 
 # Build a temporary "safety" layout that moves every monitor that is NOT about
@@ -231,18 +238,15 @@ apply_config() {
                     or $got.mirror != ($want.mirror // "")))
             then
             {
-                want: ($want + { __priority: 0 }),
-                # Position-only changes are applied first. Scale/mode changes
-                # grow/shrink the logical geometry and can overlap neighbours
-                # that have not moved yet; applying neighbour moves first keeps
-                # every intermediate state valid.
-                priority: (
-                  if ($want.disabled != true and (
-                       (($got.scale - $want.scale) | fabs) > 0.06
-                       or $wm.w != $gm.w or $wm.h != $gm.h
-                       or (($wm.r | tonumber) - ($gm.r | tonumber) | fabs) > 0.25))
-                  then 1 else 0 end)
-              }
+              want: ($want + { __priority: (
+                if ($want.disabled != true and (
+                     (($got.scale - $want.scale) | fabs) > 0.06
+                     or $wm.w != $gm.w or $wm.h != $gm.h
+                     or (($wm.r | tonumber) - ($gm.r | tonumber) | fabs) > 0.25))
+                then 1 else 0 end
+              ) }),
+              priority: 0
+            }
             else empty end
         end
       ]
@@ -255,26 +259,31 @@ apply_config() {
   scaled_count=$(jq 'length' <<<"$scaled_names_json")
 
   if [[ $scaled_count -gt 0 ]]; then
-    # Phase A: apply only position changes (and any other non-scale changes),
-    # keeping the scaling monitor at its CURRENT scale/mode. The neighbours
-    # slide to their final positions while the scaling monitor has not grown
-    # yet, so there is no transient overlap.
-    local pre_scale_config
-    pre_scale_config=$(jq -cn --argjson requested "$config" --argjson live "$live" --argjson scaled "$scaled_names_json" '
-      $requested | map(. as $want
-        | ($live | map(select(.name == $want.name)) | first) as $got
-        | if (.name | IN($scaled[])) and $got != null then
-            $want + { mode: $got.mode, scale: $got.scale }
-          else $want
-        end)')
-    apply_rows "$pre_scale_config" 0.75
+    # Phase A: move every non-scaling monitor far away vertically so the scaling
+    # monitor can resize without any neighbour geometry around it.
+    printf '%s phase=A scaled_names=%s\n' "$(date -Iseconds)" "$scaled_names_json" >>/tmp/omarchy-cp-display.log
+    local safety_config scale_config
+    safety_config=$(compute_safety_config "$config" "$scaled_names_json")
+    printf '%s safety_config=%s\n' "$(date -Iseconds)" "$safety_config" >>/tmp/omarchy-cp-display.log
+    apply_rows "$safety_config" 0.50
 
-    # Phase B: now that everyone is in the final position, apply the scale/mode
-    # change to the selected monitor. Neighbours are already clear of its new
-    # logical geometry.
+    # Phase B: apply scale/mode changes while neighbours remain in the safety
+    # positions. The scaling monitor uses its final scale/mode; others keep the
+    # safety coordinates from Phase A.
+    printf '%s phase=B\n' "$(date -Iseconds)" >>/tmp/omarchy-cp-display.log
+    scale_config=$(jq -cn --argjson safety "$safety_config" --argjson final "$config" --argjson scaled "$scaled_names_json" '
+      $safety | map(. as $s
+        | ($final | map(select(.name == $s.name)) | first) as $f
+        | if ($s.name | IN($scaled[])) then $f else $s end)')
+    printf '%s scale_config=%s\n' "$(date -Iseconds)" "$scale_config" >>/tmp/omarchy-cp-display.log
+    apply_rows "$scale_config" 0.75
+
+    # Phase C: move every monitor to its final coordinates. The scaling monitor
+    # already has the right scale, so only positions change now.
+    printf '%s phase=C\n' "$(date -Iseconds)" >>/tmp/omarchy-cp-display.log
     apply_rows "$config" 0.75
   else
-    # No scale/mode changes: just apply the requested config normally.
+    printf '%s apply_rows_normal\n' "$(date -Iseconds)" >>/tmp/omarchy-cp-display.log
     apply_rows "$config" 0.75
   fi
 
