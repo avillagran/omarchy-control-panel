@@ -28,20 +28,42 @@ echo "$(date '+%H:%M:%S') class='$cls_lower'" >> "$LOG"
 
 if printf '%s' "$cls_lower" | grep -qiE "$BROWSERS"; then
   echo "$(date '+%H:%M:%S') BRANCH browser -> Ctrl+W" >> "$LOG"
-  # Wayland-first. wtype targets the active Wayland surface directly.
-  if command -v wtype >/dev/null; then
+
+  # Detect whether Chromium/Chrome is running under XWayland. wtype only
+  # reaches native Wayland surfaces; ydotool works at the input-device level
+  # and reaches both, but needs the ydotoold daemon.
+  raw=$(hyprctl activewindow -j 2>/dev/null)
+  if command -v jq >/dev/null 2>&1; then
+    is_xwayland=$(printf '%s' "$raw" | jq -r '.xwayland // false' 2>/dev/null || true)
+  else
+    is_xwayland=false
+  fi
+  echo "$(date '+%H:%M:%S') xwayland=$is_xwayland" >> "$LOG"
+
+  use_ydotool=false
+  if command -v wtype >/dev/null && [ "$is_xwayland" != "true" ]; then
     if wtype -M ctrl -k w -m ctrl 2>>"$LOG"; then
       echo "$(date '+%H:%M:%S') wtype ok" >> "$LOG"
     else
-      echo "$(date '+%H:%M:%S') wtype failed; trying ydotool" >> "$LOG"
-      command -v ydotool >/dev/null && ydotool key ctrl+w 2>>"$LOG" || echo "$(date '+%H:%M:%S') ydotool missing" >> "$LOG"
+      echo "$(date '+%H:%M:%S') wtype failed; will try ydotool" >> "$LOG"
+      use_ydotool=true
     fi
-  elif command -v ydotool >/dev/null; then
-    # ydotool works at the input-device level, so it reaches both Wayland and
-    # XWayland browser windows. Needs the ydotoold socket; fall back gracefully.
-    ydotool key ctrl+w 2>>"$LOG" || echo "$(date '+%H:%M:%S') ydotool failed" >> "$LOG"
   else
-    echo "$(date '+%H:%M:%S') no virtual keyboard tool (wtype/ydotool)" >> "$LOG"
+    echo "$(date '+%H:%M:%S') skipping wtype (xwayland or missing)" >> "$LOG"
+    use_ydotool=true
+  fi
+
+  if $use_ydotool; then
+    if ! pgrep -x ydotoold >/dev/null 2>&1; then
+      echo "$(date '+%H:%M:%S') starting ydotoold" >> "$LOG"
+      ydotoold >> "$LOG" 2>&1 &
+      sleep 0.4
+    fi
+    if ydotool key ctrl+w 2>>"$LOG"; then
+      echo "$(date '+%H:%M:%S') ydotool ok" >> "$LOG"
+    else
+      echo "$(date '+%H:%M:%S') ydotool failed" >> "$LOG"
+    fi
   fi
 else
   echo "$(date '+%H:%M:%S') BRANCH non-browser -> killactive" >> "$LOG"
