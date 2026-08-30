@@ -72,6 +72,8 @@ Panel {
   property bool flatAccel: false
   property int gapsIn: 6
   property int gapsOut: 10
+  property int fontBaseSize: 12
+  property int cursorSize: 24
   property string kbLayout: "us"
   property string currentLocale: ""
   property string customLocale: ""
@@ -374,6 +376,8 @@ Panel {
     wsAnimation: false,
     gapsIn: -1,
     gapsOut: -1,
+    fontBaseSize: 12,
+    cursorSize: 24,
     kbLayout: "",
     swipe3: false,
     tapToClick: false,
@@ -394,6 +398,8 @@ Panel {
     L.push("hl.config({ input = { touchpad = { tap_to_click = " + (saved.tapToClick ? "true" : "false") + " } } })")
     L.push("hl.config({ input = { sensitivity = " + Number(saved.sensitivity).toFixed(2) + " } })")
     L.push('hl.config({ input = { accel_profile = "' + (saved.flatAccel ? "flat" : "adaptive") + '" } })')
+    L.push('hl.env("XCURSOR_SIZE", "' + (saved.cursorSize >= 0 ? saved.cursorSize : 24) + '")')
+    L.push('hl.env("HYPRCURSOR_SIZE", "' + (saved.cursorSize >= 0 ? saved.cursorSize : 24) + '")')
     L.push("hl.config({ animations = { enabled = " + (saved.animations ? "true" : "false") + " } })")
     L.push('hl.animation({ leaf = "workspaces", enabled = ' + (saved.wsAnimation ? "true" : "false")
            + ', speed = 4, bezier = "easeOutQuint", style = "slide" })')
@@ -579,6 +585,36 @@ Panel {
     cursorSensitivity = v
     hyprSet("input", "sensitivity", Number(v).toFixed(2))
     writeLua()
+  }
+
+  function applyFontSize(v) {
+    v = Math.round(Math.max(9, Math.min(26, v)))
+    if (root.fontBaseSize === v) return
+    root.fontBaseSize = v
+    saved.fontBaseSize = v
+    var f = Quickshell.env("HOME") + "/.config/omarchy/shell.toml"
+    Quickshell.execDetached(["bash", "-lc",
+      "f='" + f + "'; mkdir -p \"$(dirname \"$f\")\"; " +
+      "if grep -q '^\\[font\\]' \"$f\" 2>/dev/null; then " +
+      "  if grep -q '^base-size *= ' \"$f\"; then sed -i 's/^base-size *= .*/base-size = " + v + "/' \"$f\"; " +
+      "  else sed -i '/^\\[font\\]/a\\base-size = " + v + "' \"$f\"; fi; " +
+      "else printf '\\n[font]\\nbase-size = " + v + "\\n' >> \"$f\"; fi; " +
+      "omarchy-restart-shell"])
+    statusMessage = "Font size · " + v + "px (restarting shell…)"
+  }
+
+  function applyCursorSize(v) {
+    v = Math.round(Math.max(8, Math.min(64, v)))
+    if (root.cursorSize === v) return
+    root.cursorSize = v
+    saved.cursorSize = v
+    // Hyprland does not expose input:cursor_size. Cursor size is controlled by
+    // the XCURSOR_SIZE / HYPRCURSOR_SIZE environment variables, which Omarchy
+    // sets in default.hypr.envs. Apply them live and persist in control-panel.lua.
+    Quickshell.execDetached(["hyprctl", "eval", 'hl.env("XCURSOR_SIZE", "' + v + '")'])
+    Quickshell.execDetached(["hyprctl", "eval", 'hl.env("HYPRCURSOR_SIZE", "' + v + '")'])
+    writeLua()
+    statusMessage = "Cursor size · " + v
   }
 
   function applyGaps(key, v) {
@@ -793,7 +829,8 @@ Panel {
       "echo DEV=$(hyprctl devices -j | jq -r '[.mice[] | select(.name | test(\"apple|mtp|touchpad|trackpad\")) | .scrollFactor][0] // empty'); " +
       "echo APFSD=$(pacman -Qq linux-apfs-rw-dkms >/dev/null 2>&1 && echo yes || echo no); " +
       "echo DTERM=$(omarchy-default-terminal 2>/dev/null); " +
-      "echo KITTY=$(command -v kitty >/dev/null 2>&1 && echo yes || echo no)"]
+      "echo KITTY=$(command -v kitty >/dev/null 2>&1 && echo yes || echo no); " +
+      "echo FSIZE=$(sed -n 's/^base-size *= *//p' \"$HOME/.config/omarchy/shell.toml\" 2>/dev/null | head -1)"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -816,6 +853,7 @@ Panel {
           else if (k === "KITTY") root.kittyInstalled = v === "yes"
           else if (k === "INERTIA") root.inertiaOn = v === "true"
           else if (k === "DTERM" && v !== "") root.defaultTerm = v
+          else if (k === "FSIZE") { var fs = parseInt(v, 10); if (!isNaN(fs) && fs > 0) { root.fontBaseSize = fs; root.saved.fontBaseSize = fs } }
         }
       }
     }
@@ -843,6 +881,7 @@ Panel {
       "echo GIN=$(printf '%s' \"$c\" | grep -oE 'gaps_in = [0-9]+' | head -1 | grep -oE '[0-9]+'); " +
       "echo GOUT=$(printf '%s' \"$c\" | grep -oE 'gaps_out = [0-9]+' | head -1 | grep -oE '[0-9]+'); " +
       "echo KB=$(printf '%s' \"$c\" | grep -oE 'kb_layout = \"[^\"]*\"' | head -1 | sed -E 's/kb_layout = \"([^\"]*)\"/\\1/'); " +
+      "echo CSIZE=$(printf '%s' \"$c\" | grep -oE 'HYPRCURSOR_SIZE\", \"[0-9]+' | grep -oE '[0-9]+' | head -1); " +
       "echo ACC=$(printf '%s' \"$c\" | grep -oE 'accel_profile = \"(flat|adaptive)\"' | head -1 | grep -oE '(flat|adaptive)')"]
     stdout: StdioCollector {
       waitForEnd: true
@@ -860,6 +899,7 @@ Panel {
           if (k === "GIN" && v !== "") { var gin = parseInt(v); if (!isNaN(gin)) { root.gapsIn = gin; root.saved.gapsIn = gin } }
           if (k === "GOUT" && v !== "") { var gout = parseInt(v); if (!isNaN(gout)) { root.gapsOut = gout; root.saved.gapsOut = gout } }
           if (k === "KB" && v !== "") { root.kbLayout = v; root.saved.kbLayout = v }
+          if (k === "CSIZE" && v !== "") { var csz = parseInt(v, 10); if (!isNaN(csz) && csz > 0) { root.cursorSize = csz; root.saved.cursorSize = csz } }
           if (k === "ACC" && (v === "flat" || v === "adaptive")) { root.flatAccel = (v === "flat"); root.saved.flatAccel = root.flatAccel }
         }
         // All persisted Lua values are now in saved.*. Regenerate the Lua so it
@@ -1489,6 +1529,22 @@ Panel {
           onMoved: root.applySensitivity(value)
         }
 
+        Text {
+          text: root.t(root.uiLang, "cursorSize") + ": " + root.cursorSize
+          color: root.fg
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+        }
+
+        Slider {
+          width: parent.width
+          from: 8
+          to: 64
+          stepSize: 1
+          value: root.cursorSize
+          onMoved: root.applyCursorSize(value)
+        }
+
         ToggleRow {
           label: root.t(root.uiLang, "flatAccel")
           checked: root.flatAccel
@@ -1589,6 +1645,22 @@ Panel {
             root.gapsOut = value
             root.applyGaps("gaps_out", value)
           }
+        }
+
+        Text {
+          text: root.t(root.uiLang, "fontSize") + ": " + root.fontBaseSize + "px"
+          color: root.fg
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+        }
+
+        Slider {
+          width: parent.width
+          from: 9
+          to: 26
+          stepSize: 1
+          value: root.fontBaseSize
+          onMoved: root.applyFontSize(value)
         }
       }
 
