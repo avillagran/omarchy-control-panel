@@ -103,12 +103,16 @@ Panel {
   readonly property bool hasKbBacklight: kbdLedFound
 
   property bool swipe3On: false
+  property bool trackpadGesturesInstalled: false
   property bool kittyInstalled: true
   property bool inertiaOn: false
   property bool tapToClick: false
+  property var trackpadNames: []
+  property var allMiceNames: []
   property bool middleBtnOff: false
-  property bool browserCloseTabOn: false
+  property bool browserCloseTabOn: true
   property string defaultTerm: ""
+  property string pluginDir: Qt.resolvedUrl(".").toString().replace("file://", "")
 
   // APFS (Extras): driver presence + detected partitions.
   property bool apfsInstalled: false
@@ -381,7 +385,7 @@ Panel {
     kbLayout: "",
     swipe3: false,
     tapToClick: false,
-    browserCloseTab: false,
+    browserCloseTab: true,
     middleButtonScreenshotOff: false,
     displays: []
   })
@@ -390,6 +394,8 @@ Panel {
   // early caller (e.g. the natural-scroll sync) regenerates control-panel.lua
   // with default values and silently drops the swipe gestures and toggles.
   property bool prefsLoaded: false
+  property bool readProcDone: false
+  property bool luaStateProcDone: false
 
   function writeLua() {
     if (!root.prefsLoaded) return
@@ -413,39 +419,19 @@ Panel {
     // consistent with the rest of the trackpad. Hyprland cannot unbind gestures,
     // so to avoid colliding with user.trackpad-gestures (which also defines a
     // 3-finger swipe) we disable that plugin's 3-finger assignment while our
-    // swipe3 toggle is on — see syncTrackpadGestures(). The two are mutually
-    // exclusive, so there is never a double definition / "overshadowed" warning.
-    if (saved.swipe3) {
-      var leftTarget = saved.naturalScroll ? "+1" : "-1"
-      var rightTarget = saved.naturalScroll ? "-1" : "+1"
-      var g = [
-        'local function ocp_swipe(dir)',
-        '  local distance, triggered = 0, false',
-        '  local function consume(event)',
-        '    if triggered then return end',
-        '    distance = distance + math.abs(event.delta.x)',
-        '    if distance >= 25 then',
-        '      triggered = true',
-        '      hl.dispatch(hl.dsp.focus({ workspace = dir }))',
-        '    end',
-        '  end',
-        '  return {',
-        '    start = function(e) distance = 0; triggered = false; consume(e) end,',
-        '    update = consume,',
-        '    finish = function() distance = 0; triggered = false end,',
-        '  }',
-        'end',
-        'hl.gesture({ fingers = 3, direction = "left", action = ocp_swipe("' + leftTarget + '") })',
-        'hl.gesture({ fingers = 3, direction = "right", action = ocp_swipe("' + rightTarget + '") })'
-      ]
-      L.push(g.join("\n"))
-    }
+    // 3-finger swipe gestures are persisted in a separate file
+    // (~/.config/hypr/control-panel-gestures.lua) that is required by input.lua,
+    // so Hyprland loads them at startup. See syncGesturesFile().
     // The Apple MTP is mouse-classified, so the global input:natural_scroll
     // often doesn't reach it. The working knob is the per-device
     // natural_scroll boolean. scroll_factor must stay >= 0 (negative is
     // rejected), so we pin it to 1 to cancel any stale negative factor and
     // let natural_scroll alone control direction.
-    L.push('hl.device({ name = "apple-mtp-multi-touch", natural_scroll = ' + (saved.naturalScroll ? "true" : "false") + ', scroll_factor = 1 })')
+    // Invert scroll on every mouse/touchpad so natural scrolling works everywhere.
+    var mice = root.allMiceNames
+    for (var mi = 0; mi < mice.length; mi++) {
+      L.push('hl.device({ name = "' + mice[mi] + '", natural_scroll = ' + (saved.naturalScroll ? "true" : "false") + ', scroll_factor = 1 })')
+    }
 
     // Persisted display layout (Displays tab). One hl.monitor rule per output,
     // same expressions the display helper sends to Hyprland. These reload with
@@ -481,23 +467,24 @@ Panel {
     // NOTE: sensei.lua wraps hl.bind(keys:string, dispatcher, options) — passing a
     // table as arg1 errors ("expected string, got table"), so use the string +
     // function form, same as the rest of the config.
-    if (saved.browserCloseTab) {
+      // SUPER+W: close browser tab (if browserCloseTab is on and active window is a
+      // known browser) or close the active window otherwise.
       var scriptPath = Qt.resolvedUrl("bin/close-tab-or-window.sh").toString().replace("file://", "")
-      L.push('-- SUPER+W closes browser tabs (toggle "Close tab in browsers")')
+      L.push('-- SUPER+W closes browser tabs when browserCloseTab is enabled, otherwise closes window')
       L.push('hl.unbind("SUPER + W")')
       L.push([
         'hl.bind("SUPER + W", function()',
         '  local ok, win = pcall(function() return hl.get_active_window() end)',
         '  local cls = ""',
         '  if ok and win and win.class then cls = string.lower(tostring(win.class)) end',
-        '  if cls:match("chrome") or cls:match("chromium") or cls:match("firefox") or cls:match("edge") or cls:match("brave") or cls:match("opera") or cls:match("vivaldi") or cls:match("epiphany") or cls:match("gnome%-web") then',
-        '    hl.dispatch(hl.dsp.exec_cmd("bash ' + scriptPath + ' \'" .. cls .. "\' &"))',
+        '  local isBrowser = cls:match("chrome") or cls:match("chromium") or cls:match("firefox") or cls:match("edge") or cls:match("brave") or cls:match("opera") or cls:match("vivaldi") or cls:match("epiphany") or cls:match("gnome%-web")',
+        '  if isBrowser and ' + (saved.browserCloseTab ? "true" : "false") + ' then',
+        '    hl.dispatch(hl.dsp.exec_cmd(string.format("bash ' + scriptPath + ' \'%s\' &", cls)))',
         '  else',
         '    hl.dispatch(hl.dsp.window.close())',
         '  end',
         'end, { release = true })'
       ].join("\n"))
-    }
 
     // When enabled, unbind the middle-mouse-button screenshot (mouse:274) that
     // the user.trackpad-gestures plugin defines — an uncomfortable combo for
@@ -520,17 +507,24 @@ Panel {
   // so only our (natural-scroll-aware, inverted) swipe is active; while OFF we
   // regenerate it from the plugin's defaults so it works on its own. The two are
   // mutually exclusive, so there is never a double definition.
+  function syncGesturesFile() {
+    var enabled = saved.swipe3 ? "true" : "false"
+    var leftTarget = saved.naturalScroll ? "+1" : "-1"
+    var rightTarget = saved.naturalScroll ? "-1" : "+1"
+    Quickshell.execDetached(["bash", "-lc",
+      "python3 '" + root.pluginDir + "/bin/sync-gestures-file.py' " +
+      "--enabled " + enabled + " --left '" + leftTarget + "' --right '" + rightTarget + "'"])
+  }
+
   function syncTrackpadGestures() {
     var tp = Quickshell.env("HOME") + "/.config/hypr/gestures-generated.lua"
+    var sh = Quickshell.env("HOME") + "/.config/omarchy/plugins/user.trackpad-gestures/apply-gestures.sh"
     if (root.saved.swipe3) {
       tpSync.command = ["bash", "-lc",
         "printf '%s\\n' '-- Cleared by omarchy-control-panel (swipe3 on): 3-finger swipe owned by control-panel' > '" + tp + "'"]
     } else {
-      var sh = Quickshell.env("HOME") + "/.config/omarchy/plugins/user.trackpad-gestures/apply-gestures.sh"
-      tpSync.command = ["bash", sh, "true", "clickfinger", "lrm", "threefinger", "screenshot", "false",
-        "none", "none", "none", "none", "none", "none",
-        "relative_workspace", "relative_workspace", "none", "none", "none", "none",
-        "none", "none", "none", "none", "none", "none"]
+      tpSync.command = ["bash", "-lc",
+        "if [ -f '" + sh + "' ]; then '" + sh + "' true clickfinger lrm threefinger screenshot false none none none none none none relative_workspace relative_workspace none none none none none none none none none none none none; else printf '%s\\n' '-- user.trackpad-gestures plugin not installed; cleared by omarchy-control-panel (swipe3 off)' > '" + tp + "'; fi"]
     }
     tpSync.running = true
   }
@@ -556,23 +550,27 @@ Panel {
     syncTimer.restart()
   }
 
-  // The Apple MTP touchpad is classified as a mouse by Hyprland, so the
-  // global input:natural_scroll never reaches it. Set it per-device (works
-  // via scrollFactor -1) plus globally for real touchpads.
+  // Natural scrolling applies to every pointing device the user might use, so we
+  // set the global input:natural_scroll flag and then invert scroll direction on
+  // every mouse/touchpad via scroll_factor. The M4 real touchpad already works
+  // with natural_scroll, so its scroll_factor stays neutral; everything else gets
+  // -1 to invert.
   function setNaturalScroll(on, quiet) {
-    console.info("[mcp] setNaturalScroll", on)
-    // Update the visible state FIRST: syncGestures below needs the fresh
-    // value, and the 450ms poll would otherwise feed it a stale one.
     saved.naturalScroll = on
     naturalScroll = on
-    // For the Apple MTP pad (mouse-classified) the deterministic knob is the
-    // per-device natural_scroll boolean. scroll_factor must stay >= 0, so we
-    // pin it to 1 to drop any stale negative factor; natural_scroll alone
-    // flips direction. (Global input:natural_scroll is ignored by this device.)
-    Quickshell.execDetached(["hyprctl", "eval",
-      'hl.device({ name = "apple-mtp-multi-touch", natural_scroll = ' + (on ? "true" : "false") + ', scroll_factor = 1 })'])
+
+    // Global flag for real touchpads.
     Quickshell.execDetached(["bash", "-lc",
       "hyprctl eval 'hl.config({ input = { natural_scroll = " + (on ? "true" : "false") + " } })'"])
+
+    // Per-device scroll inversion for every mouse/touchpad.
+    var names = root.allMiceNames
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i]
+      Quickshell.execDetached(["hyprctl", "eval",
+        'hl.device({ name = "' + n + '", natural_scroll = ' + (on ? "true" : "false") + ', scroll_factor = 1 })'])
+    }
+
     if (!quiet) statusMessage = root.t(root.uiLang, "invScroll") + " · " + (on ? "on" : "off")
     writeLua()
     syncGestures(on)
@@ -715,11 +713,17 @@ Panel {
 
   function syncGestures(naturalNow) {
     console.info("[mcp] syncGestures swipe=", saved.swipe3, "natural=", naturalNow)
-    // 3-finger swipe gestures are owned exclusively by the user.trackpad-gestures
-    // plugin (gestures-generated.lua + its shell.json). Do NOT call
-    // updateEntryInline here: it targets standard shell widget keys, not user
-    // plugins, and would both error and clobber the plugin's gesture config.
     writeLua()
+    root.syncTrackpadGestures()
+    root.syncGesturesFile()
+  }
+
+  function tryWriteLua() {
+    if (root.readProcDone && root.luaStateProcDone && root.prefsLoaded) {
+      root.writeLua()
+      root.syncTrackpadGestures()
+      root.syncGesturesFile()
+    }
   }
 
   function setInertia(on) {
@@ -832,7 +836,9 @@ Panel {
       "echo NL=$(omarchy-toggle-nightlight --status 2>/dev/null | jq -r .enabled); " +
       "echo WSA=$(hyprctl animations 2>/dev/null | awk '/^[[:space:]]*name: workspaces$/{f=1;next} f&&/enabled:/{print $2; exit}'); " +
       "echo LOCL=$(localectl status | sed -n 's/.*LANG=//p' | head -1); " +
-      "echo DEV=$(hyprctl devices -j | jq -r '[.mice[] | select(.name | test(\"apple|mtp|touchpad|trackpad\")) | .scrollFactor][0] // empty'); " +
+      "echo TPG=$(test -f ~/.config/omarchy/plugins/user.trackpad-gestures/apply-gestures.sh && echo yes || echo no); " +
+      "echo TPD=$(hyprctl devices -j | python3 '" + root.pluginDir + "/bin/detect-touchpads.py'); " +
+      "echo ALLMICE=$(hyprctl devices -j | python3 '" + root.pluginDir + "/bin/detect-all-mice.py'); " +
       "echo APFSD=$(pacman -Qq linux-apfs-rw-dkms >/dev/null 2>&1 && echo yes || echo no); " +
       "echo DTERM=$(omarchy-default-terminal 2>/dev/null); " +
       "echo KITTY=$(command -v kitty >/dev/null 2>&1 && echo yes || echo no); " +
@@ -852,13 +858,18 @@ Panel {
           else if (k === "NL") root.nightLightOn = v === "true"
           else if (k === "WSA") { var n = parseInt(v); if (n === 0 || n === 1) { root.wsAnimationOn = n >= 1 } }
           else if (k === "LOCL" && v !== "") root.currentLocale = v
+          else if (k === "TPG") root.trackpadGesturesInstalled = v === "yes"
           else if (k === "APFSD") { root.apfsInstalled = v === "yes"; if (!apfsProbe.running) apfsProbe.running = true }
+          else if (k === "TPD" && v !== "") { root.trackpadNames = v.split("|") }
+          else if (k === "ALLMICE" && v !== "") { root.allMiceNames = v.split("|") }
           else if (k === "SW3") root.swipe3On = v === "relative_workspace"
           else if (k === "KITTY") root.kittyInstalled = v === "yes"
           else if (k === "INERTIA") root.inertiaOn = v === "true"
           else if (k === "DTERM" && v !== "") root.defaultTerm = v
           else if (k === "FSIZE") { var fs = parseInt(v, 10); if (!isNaN(fs) && fs > 0) { root.fontBaseSize = fs; root.saved.fontBaseSize = fs } }
         }
+        root.readProcDone = true
+        root.tryWriteLua()
       }
     }
   }
@@ -910,7 +921,8 @@ Panel {
         // keeps these real values (do NOT let readProc/writeLua ever serialize
         // the object defaults). Only after prefs are loaded to avoid a write
         // race with the JSON side.
-        if (root.prefsLoaded) root.syncTrackpadGestures()
+        root.luaStateProcDone = true
+        root.tryWriteLua()
       }
     }
   }
