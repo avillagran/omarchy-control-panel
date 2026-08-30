@@ -1080,12 +1080,6 @@ Panel {
           root.displayKnownNames = currentNames
           root.displayStatusMessage = root.displayRefreshMessage
           root.displayRefreshMessage = ""
-          // Restore a pending Keep/Revert confirmation if a preview is still
-          // armed (e.g. the popup closed when the primary output reconfigured).
-          if (!root.displayAwaitingConfirmation && !displayPendingProc.running) {
-            displayPendingProc.command = [root.displayHelperPath, "pending"]
-            displayPendingProc.running = true
-          }
         }
       }
     }
@@ -2157,83 +2151,93 @@ Panel {
   // Keep/Revert confirmation as a GLOBAL LayerSurface. Changing a monitor's
   // scale reconfigures the output and Quickshell tears down the control-panel
   // popup, so the decision buttons must live here (independent of the popup)
-  // for the user to confirm/revert without reopening the panel. The card is
-  // centred and sized from its own content (implicitHeight) so it never clips.
-  PanelWindow {
-    id: confirmOverlay
-    visible: root.displayAwaitingConfirmation
-    color: "transparent"
-    exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    anchors { top: true; bottom: true; left: true; right: true }
+  // for the user to confirm/revert without reopening the panel.
+  //
+  // We use `Variants { model: Quickshell.screens }` (one PanelWindow per
+  // screen) instead of a single PanelWindow: when the output reconfigures on a
+  // scale change, Quickshell recreates the per-screen windows cleanly, so the
+  // overlay reliably re-appears the moment displayAwaitingConfirmation flips
+  // true — without needing a second interaction.
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: confirmOverlay
+      required property var modelData
+      screen: modelData
+      visible: root.displayAwaitingConfirmation
+      color: "transparent"
+      exclusionMode: ExclusionMode.Ignore
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      anchors { top: true; bottom: true; left: true; right: true }
 
-    Item {
-      id: box
-      anchors.centerIn: parent
-      width: Math.min(Style.space(460), parent.width - Style.space(40))
-      implicitHeight: inner.implicitHeight + Style.space(24)
-      // Fade in/out with the confirmation state.
-      opacity: root.displayAwaitingConfirmation ? 1 : 0
-      Behavior on opacity { NumberAnimation { duration: 160 } }
+      Item {
+        id: box
+        anchors.centerIn: parent
+        width: Math.min(Style.space(380), parent.width - Style.space(40))
+        implicitHeight: inner.implicitHeight + Style.space(24)
+        // Fade in/out with the confirmation state.
+        opacity: root.displayAwaitingConfirmation ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 160 } }
 
-      Rectangle {
-        anchors.fill: box
-        radius: Style.cornerRadius * 2
-        color: Color.popups.background
-        border.color: Color.accent
-        border.width: Style.normalBorderWidth
-        clip: true
-      }
-
-      Column {
-        id: inner
-        anchors.fill: box
-        anchors.margins: Style.space(12)
-        spacing: Style.space(10)
-
-        Text {
-          width: parent.width
-          text: root.t(root.uiLang, "keepChangesPrompt")
-          color: Color.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-          font.bold: true
-          wrapMode: Text.WordWrap
+        Rectangle {
+          anchors.fill: box
+          radius: Style.cornerRadius * 2
+          color: Color.popups.background
+          border.color: Color.accent
+          border.width: Style.normalBorderWidth
+          clip: true
         }
 
-        RowLayout {
-          width: parent.width
+        Column {
+          id: inner
+          anchors.fill: box
+          anchors.margins: Style.space(12)
           spacing: Style.space(10)
-          Text {
-            text: root.displaySecondsRemaining + "s"
-            color: Color.accent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.subtitle
-            font.bold: true
-            Layout.alignment: Qt.AlignVCenter
-          }
-          Item { Layout.fillWidth: true; height: 1 }
-          Button {
-            text: displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert")
-            foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-            onClicked: root.displayRevert()
-          }
-          Button {
-            text: displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges")
-            foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-            onClicked: root.displayKeep()
-          }
-        }
 
-        Text {
-          width: parent.width
-          visible: root.displaySecondsRemaining <= 5
-          text: root.t(root.uiLang, "displayRevertHint")
-          color: Qt.darker(Color.foreground, 1.4)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
+          Text {
+            width: parent.width
+            text: root.t(root.uiLang, "keepChangesPrompt")
+            color: Color.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
+            wrapMode: Text.WordWrap
+          }
+
+          RowLayout {
+            width: parent.width
+            spacing: Style.space(10)
+            Text {
+              text: root.displaySecondsRemaining + "s"
+              color: Color.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.subtitle
+              font.bold: true
+              Layout.alignment: Qt.AlignVCenter
+            }
+            Item { Layout.fillWidth: true; height: 1 }
+            Button {
+              text: displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert")
+              foreground: root.fg; fontFamily: root.fontFamily; bordered: true
+              onClicked: root.displayRevert()
+            }
+            Button {
+              text: displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges")
+              foreground: root.fg; fontFamily: root.fontFamily; bordered: true
+              onClicked: root.displayKeep()
+            }
+          }
+
+          Text {
+            width: parent.width
+            visible: root.displaySecondsRemaining <= 5
+            text: root.t(root.uiLang, "displayRevertHint")
+            color: Qt.darker(Color.foreground, 1.4)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
         }
       }
     }
