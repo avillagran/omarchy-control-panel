@@ -122,9 +122,6 @@ Panel {
   property var displayKnownNames: []
   property bool displayApplying: false
   property bool displayAwaitingConfirmation: false
-  // True while a scale is pre-selected and awaiting the user's confirm inside
-  // the panel (before any change is applied, so the popup stays open).
-  property bool displayConfirming: false
   property int displaySecondsRemaining: 15
   property string displayStatusMessage: ""
   property string displayRefreshMessage: ""
@@ -1104,7 +1101,6 @@ Panel {
       if (exitCode === 0) {
         var result = root.displayParse(displayApplyOutput.text)
         root.displayAwaitingConfirmation = true
-        root.displayConfirming = false
         root.displaySecondsRemaining = result && result.timeout ? Number(result.timeout) : 15
         root.displayStatusMessage = "Keep these display settings?"
         displayConfirmationTimer.restart()
@@ -1158,9 +1154,10 @@ Panel {
       var result = root.displayParse(displayPendingOutput.text)
       if (result && result.pending === true && !root.displayAwaitingConfirmation) {
         root.displayAwaitingConfirmation = true
-        root.displayConfirming = false
         root.displaySecondsRemaining = 15
         root.displayStatusMessage = "Confirm display settings?"
+        // Make sure the user lands on the Displays tab to see the dialog.
+        root.currentTab = 2
         displayConfirmationTimer.restart()
       }
     }
@@ -1979,16 +1976,15 @@ Panel {
 
         PanelSeparator { foreground: root.fg }
 
-        // The bottom region of the Displays tab alternates between the
-        // refresh/apply bar and the in-panel Keep/Revert confirmation. The
-        // confirmation lives INSIDE the popup (never a separate modal) and the
-        // popup only closes once the user actually confirms, because the scale
-        // is not applied until then.
+        // Bottom region of the Displays tab. When a preview is armed, the
+        // in-panel Keep/Revert confirmation replaces the refresh/apply bar so
+        // the user can decide when they reopen the panel. The preview snapshot
+        // persists on disk, so the dialog reappears after shell restart too.
         Item {
           id: actionHost
           width: parent.width
-          // Grow to fit whichever child is active; collapse the other to 0.
-          height: root.displayConfirming || root.displayAwaitingConfirmation ? confirmRow.height : barRow.height
+          // Grow to fit the active child; collapse the other to 0.
+          height: root.displayAwaitingConfirmation ? confirmRow.height : barRow.height
           Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
           clip: true
 
@@ -1997,7 +1993,7 @@ Panel {
             id: barRow
             width: parent.width
             spacing: Style.space(10)
-            opacity: root.displayConfirming || root.displayAwaitingConfirmation ? 0 : 1
+            opacity: root.displayAwaitingConfirmation ? 0 : 1
             Behavior on opacity { NumberAnimation { duration: 160 } }
             Text {
               Layout.fillWidth: true
@@ -2012,73 +2008,76 @@ Panel {
               Layout.alignment: Qt.AlignVCenter
               text: root.t(root.uiLang, "refresh")
               foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-              enabled: !(root.displayConfirming || root.displayAwaitingConfirmation)
+              enabled: !root.displayAwaitingConfirmation
               onClicked: root.displayRefresh()
             }
             Button {
               Layout.alignment: Qt.AlignVCenter
               text: root.displayApplying ? root.t(root.uiLang, "applying") : root.t(root.uiLang, "apply")
               foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-              enabled: root.displayValidLayout && !root.displayApplying && !root.displayAwaitingConfirmation && !root.displayConfirming
+              enabled: root.displayValidLayout && !root.displayApplying && !root.displayAwaitingConfirmation
               onClicked: root.displayApplyPreview()
             }
           }
 
-          // ----- In-panel Keep/Revert confirmation -----
+          // ----- In-panel Keep/Revert confirmation (large, visible) -----
+          Rectangle {
+            id: confirmCardBg
+            anchors.fill: confirmRow
+            color: Color.popups.background
+            border.color: Color.accent
+            border.width: Style.space(2)
+            radius: Style.cornerRadius * 2
+            opacity: confirmRow.opacity
+            visible: confirmRow.visible
+            z: -1
+          }
+
           Column {
             id: confirmRow
             width: parent.width
-            spacing: Style.space(8)
-            opacity: root.displayConfirming || root.displayAwaitingConfirmation ? 1 : 0
+            spacing: Style.space(16)
+            opacity: root.displayAwaitingConfirmation ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 160 } }
-            visible: root.displayConfirming || root.displayAwaitingConfirmation
+            visible: root.displayAwaitingConfirmation
 
             Text {
               width: parent.width
-              text: root.displayConfirming
-                ? (root.t(root.uiLang, "displayApplyPrompt") + " " + Math.round((root.displaySelected ? Number(root.displaySelected.scale) : 1) * 100) + "%?")
-                : root.t(root.uiLang, "keepChangesPrompt")
-              color: root.displayConfirming ? root.fg : Color.accent
+              text: root.t(root.uiLang, "keepChangesPrompt")
+              color: Color.accent
               font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.subtitle
               font.bold: true
               wrapMode: Text.WordWrap
             }
 
             RowLayout {
               width: parent.width
-              spacing: Style.space(10)
+              spacing: Style.space(16)
               Text {
                 text: root.displaySecondsRemaining + "s"
                 color: Color.accent
                 font.family: root.fontFamily
-                font.pixelSize: Style.font.subtitle
+                font.pixelSize: Style.font.title
                 font.bold: true
                 Layout.alignment: Qt.AlignVCenter
-                visible: root.displayAwaitingConfirmation
               }
-              Item { Layout.fillWidth: true; height: 1; visible: root.displayAwaitingConfirmation }
+              Item { Layout.fillWidth: true; height: 1 }
               Button {
-                text: root.displayConfirming ? root.t(root.uiLang, "apply") : (displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges"))
+                text: displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert")
                 foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-                onClicked: {
-                  if (root.displayConfirming) root.displayApplyPreview()
-                  else root.displayKeep()
-                }
+                onClicked: root.displayRevert()
               }
               Button {
-                text: root.displayConfirming ? root.t(root.uiLang, "cancel") : (displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert"))
+                text: displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges")
                 foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-                onClicked: {
-                  if (root.displayConfirming) root.displayConfirming = false
-                  else root.displayRevert()
-                }
+                onClicked: root.displayKeep()
               }
             }
 
             Text {
               width: parent.width
-              visible: root.displayAwaitingConfirmation && root.displaySecondsRemaining <= 5
+              visible: root.displaySecondsRemaining <= 5
               text: root.t(root.uiLang, "displayRevertHint")
               color: Qt.darker(Color.foreground, 1.4)
               font.family: root.fontFamily
@@ -2148,97 +2147,9 @@ Panel {
     dragActive: root.displayDragging
   }
 
-  // Keep/Revert confirmation as a GLOBAL LayerSurface. Changing a monitor's
-  // scale reconfigures the output and Quickshell tears down the control-panel
-  // popup, so the decision buttons must live here (independent of the popup)
-  // for the user to confirm/revert without reopening the panel.
-  //
-  // We use Variants { model: Quickshell.screens } (one PanelWindow per screen)
-  // so the overlay is recreated cleanly when the output reconfigures on scale
-  // change and reliably reappears as soon as the preview is armed.
-  Variants {
-    model: Quickshell.screens
-    PanelWindow {
-      id: confirmOverlay
-      required property var modelData
-      screen: modelData
-      visible: root.displayAwaitingConfirmation
-      color: "transparent"
-      exclusionMode: ExclusionMode.Ignore
-      WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-      anchors { top: true; bottom: true; left: true; right: true }
-
-      Item {
-        id: box
-        anchors.centerIn: parent
-        width: Math.min(Style.space(540), parent.width - Style.space(40))
-        implicitHeight: inner.implicitHeight + Style.space(40)
-        // Fade in/out with the confirmation state.
-        opacity: root.displayAwaitingConfirmation ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 160 } }
-
-        Rectangle {
-          anchors.fill: box
-          radius: Style.cornerRadius * 3
-          color: Color.popups.background
-          border.color: Color.accent
-          border.width: Style.space(2)
-          clip: true
-        }
-
-        Column {
-          id: inner
-          anchors.fill: box
-          anchors.margins: Style.space(20)
-          spacing: Style.space(16)
-
-          Text {
-            width: parent.width
-            text: root.t(root.uiLang, "keepChangesPrompt")
-            color: Color.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.subtitle
-            font.bold: true
-            wrapMode: Text.WordWrap
-          }
-
-          RowLayout {
-            width: parent.width
-            spacing: Style.space(16)
-            Text {
-              text: root.displaySecondsRemaining + "s"
-              color: Color.accent
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
-              Layout.alignment: Qt.AlignVCenter
-            }
-            Item { Layout.fillWidth: true; height: 1 }
-            Button {
-              text: displayRevertProc.running ? root.t(root.uiLang, "reverting") : root.t(root.uiLang, "revert")
-              foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-              onClicked: root.displayRevert()
-            }
-            Button {
-              text: displayConfirmProc.running ? root.t(root.uiLang, "keeping") : root.t(root.uiLang, "keepChanges")
-              foreground: root.fg; fontFamily: root.fontFamily; bordered: true
-              onClicked: root.displayKeep()
-            }
-          }
-
-          Text {
-            width: parent.width
-            visible: root.displaySecondsRemaining <= 5
-            text: root.t(root.uiLang, "displayRevertHint")
-            color: Qt.darker(Color.foreground, 1.4)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-        }
-      }
-    }
-  }
+  // Keep/Revert confirmation is shown INSIDE the Displays tab. The snapshot
+  // of the previous layout is kept on disk, so when the user reopens the
+  // panel (or restarts the shell) while a preview is still armed, the dialog
+  // reappears and lets them Keep or Revert.
 }
 
