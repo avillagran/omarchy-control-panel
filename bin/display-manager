@@ -255,25 +255,23 @@ apply_config() {
   scaled_count=$(jq 'length' <<<"$scaled_names_json")
 
   if [[ $scaled_count -gt 0 ]]; then
-    # Phase A: move non-scaling monitors to a safe vertical stack so they cannot
-    # collide while the scaling monitor changes size.
-    local safety_config
-    safety_config=$(compute_safety_config "$live" "$scaled_names_json")
-    apply_rows "$safety_config" 0.5
+    # Phase A: apply only position changes (and any other non-scale changes),
+    # keeping the scaling monitor at its CURRENT scale/mode. The neighbours
+    # slide to their final positions while the scaling monitor has not grown
+    # yet, so there is no transient overlap.
+    local pre_scale_config
+    pre_scale_config=$(jq -cn --argjson requested "$config" --argjson live "$live" --argjson scaled "$scaled_names_json" '
+      $requested | map(. as $want
+        | ($live | map(select(.name == $want.name)) | first) as $got
+        | if (.name | IN($scaled[])) and $got != null then
+            $want + { mode: $got.mode, scale: $got.scale }
+          else $want
+        end)')
+    apply_rows "$pre_scale_config" 0.75
 
-    # Phase B: apply scale/mode changes on the scaling monitor while it is
-    # alone (neighbours are far away).
-    local scale_config
-    scale_config=$(jq -cn --argjson requested "$config" --argjson live "$live" --argjson scaled "$scaled_names_json" '
-      $requested | map(
-        if (.name | IN($scaled[])) then
-          ($live | map(select(.name == .name)) | first) as $orig
-          | . + { x: ($orig.x // 0), y: ($orig.y // 0) }
-        else empty end
-      )')
-    apply_rows "$scale_config" 0.5
-
-    # Phase C: move everyone to the final requested positions.
+    # Phase B: now that everyone is in the final position, apply the scale/mode
+    # change to the selected monitor. Neighbours are already clear of its new
+    # logical geometry.
     apply_rows "$config" 0.75
   else
     # No scale/mode changes: just apply the requested config normally.
