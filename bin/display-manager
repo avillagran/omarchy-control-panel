@@ -123,6 +123,48 @@ validate_config() {
     || die "Invalid display configuration"
 }
 
+# Apply a single monitor row through `hyprctl eval`. Shared between the
+# position-first and scale/mode phases so both paths build the same Lua
+# expression.
+apply_monitor_row() {
+  local row=$1 name name_lua expression mode mode_lua position_lua x y scale transform mirror mirror_lua
+  name=$(jq -r '.name' <<<"$row")
+  name_lua=$(jq -Rn --arg value "$name" '$value')
+  if [[ $(jq -r '.disabled // false' <<<"$row") == true ]]; then
+    expression="hl.monitor({ output = $name_lua, disabled = true })"
+  else
+    mode=$(jq -r '.mode // "preferred"' <<<"$row")
+    # Hyprland reports EDID modes with a human-readable Hz suffix, while
+    # hl.monitor expects WIDTHxHEIGHT@RATE. Strip the suffix first...
+    mode=${mode%Hz}
+    # ...and normalise the refresh rate. hyprctl reports "@120.00000" but
+    # hl.monitor only honours "@120" (or "@120.00"); the full-precision
+    # string is accepted when the mode alone changes yet silently rejected
+    # when combined with a scale change, so round it to at most 2 decimals.
+    if [[ $mode =~ ^([0-9]+x[0-9]+)@([0-9]+\.[0-9]+)$ ]]; then
+      local mres=${BASH_REMATCH[1]} mrate=${BASH_REMATCH[2]}
+      # Keep up to 2 decimals, drop a trailing ".00".
+      mrate=$(printf '%.2f' "$mrate")
+      mrate=${mrate%.00}
+      mode="${mres}@${mrate}"
+    fi
+    x=$(jq -r '.x // 0' <<<"$row")
+    y=$(jq -r '.y // 0' <<<"$row")
+    scale=$(jq -r '.scale // 1' <<<"$row")
+    transform=$(jq -r '.transform // 0' <<<"$row")
+    mirror=$(jq -r '.mirror // ""' <<<"$row")
+    mode_lua=$(jq -Rn --arg value "$mode" '$value')
+    position_lua=$(jq -Rn --arg value "${x}x${y}" '$value')
+    expression="hl.monitor({ output = $name_lua, mode = $mode_lua, position = $position_lua, scale = $scale, transform = $transform"
+    if [[ -n $mirror ]]; then
+      mirror_lua=$(jq -Rn --arg value "$mirror" '$value')
+      expression+=", mirror = $mirror_lua"
+    fi
+    expression+=" })"
+  fi
+  hyprctl eval "$expression" >/dev/null || die "Hyprland rejected settings for $name"
+}
+
 apply_config() {
   local config=$1 expression
   validate_config "$config"
@@ -160,8 +202,8 @@ apply_config() {
                     or $got.transform != $want.transform
                     or $got.mirror != ($want.mirror // "")))
             then
-              {
-                want: $want,
+            {
+                want: ($want + { __priority: 0 }),
                 # Position-only changes are applied first. Scale/mode changes
                 # grow/shrink the logical geometry and can overlap neighbours
                 # that have not moved yet; applying neighbour moves first keeps
@@ -180,46 +222,39 @@ apply_config() {
     | map(.want)')
   [[ -n $changed && $changed != "[]" ]] || { printf '{"ok":true,"unchanged":true}\n'; return 0; }
 
-  while IFS= read -r encoded; do
-    local row name name_lua
-    row=$(base64 -d <<<"$encoded")
-    name=$(jq -r '.name' <<<"$row")
-    name_lua=$(jq -Rn --arg value "$name" '$value')
-    if [[ $(jq -r '.disabled // false' <<<"$row") == true ]]; then
-      expression="hl.monitor({ output = $name_lua, disabled = true })"
-    else
-      local mode mode_lua position_lua x y scale transform mirror mirror_lua
-      mode=$(jq -r '.mode // "preferred"' <<<"$row")
-      # Hyprland reports EDID modes with a human-readable Hz suffix, while
-      # hl.monitor expects WIDTHxHEIGHT@RATE. Strip the suffix first...
-      mode=${mode%Hz}
-      # ...and normalise the refresh rate. hyprctl reports "@120.00000" but
-      # hl.monitor only honours "@120" (or "@120.00"); the full-precision
-      # string is accepted when the mode alone changes yet silently rejected
-      # when combined with a scale change, so round it to at most 2 decimals.
-      if [[ $mode =~ ^([0-9]+x[0-9]+)@([0-9]+\.[0-9]+)$ ]]; then
-        local mres=${BASH_REMATCH[1]} mrate=${BASH_REMATCH[2]}
-        # Keep up to 2 decimals, drop a trailing ".00".
-        mrate=$(printf '%.2f' "$mrate")
-        mrate=${mrate%.00}
-        mode="${mres}@${mrate}"
-      fi
-      x=$(jq -r '.x // 0' <<<"$row")
-      y=$(jq -r '.y // 0' <<<"$row")
-      scale=$(jq -r '.scale // 1' <<<"$row")
-      transform=$(jq -r '.transform // 0' <<<"$row")
-      mirror=$(jq -r '.mirror // ""' <<<"$row")
-      mode_lua=$(jq -Rn --arg value "$mode" '$value')
-      position_lua=$(jq -Rn --arg value "${x}x${y}" '$value')
-      expression="hl.monitor({ output = $name_lua, mode = $mode_lua, position = $position_lua, scale = $scale, transform = $transform"
-      if [[ -n $mirror ]]; then
-        mirror_lua=$(jq -Rn --arg value "$mirror" '$value')
-        expression+=", mirror = $mirror_lua"
-      fi
-      expression+=" })"
-    fi
-    hyprctl eval "$expression" >/dev/null || die "Hyprland rejected settings for $name"
-  done < <(jq -r '.[] | @base64' <<<"$changed")
+  local has_pos has_scale
+  has_pos=$(jq -e 'any(.[]; .__priority == 0)' <<<"$changed" >/dev/null 2>&1 && echo 1 || echo 0)
+  has_scale=$(jq -e 'any(.[]; .__priority == 1)' <<<"$changed" >/dev/null 2>&1 && echo 1 || echo 0)
+
+  # Phase 1: apply position/transform/mirror/disabled changes first so the
+  # layout is already in place before a scale/mode change grows/shrinks any
+  # monitor. This avoids a transient collision between neighbours.
+  if [[ $has_pos -eq 1 ]]; then
+    while IFS= read -r encoded; do
+      local row priority
+      row=$(base64 -d <<<"$encoded")
+      priority=$(jq -r '.__priority' <<<"$row")
+      [[ $priority == 0 ]] || continue
+      apply_monitor_row "$row"
+    done < <(jq -r '.[] | @base64' <<<"$changed")
+  fi
+
+  # Give Hyprland a moment to settle the new positions before applying the
+  # scale/mode changes that depend on them.
+  if [[ $has_pos -eq 1 && $has_scale -eq 1 ]]; then
+    sleep 0.5
+  fi
+
+  # Phase 2: apply scale/mode changes.
+  if [[ $has_scale -eq 1 ]]; then
+    while IFS= read -r encoded; do
+      local row priority
+      row=$(base64 -d <<<"$encoded")
+      priority=$(jq -r '.__priority' <<<"$row")
+      [[ $priority == 1 ]] || continue
+      apply_monitor_row "$row"
+    done < <(jq -r '.[] | @base64' <<<"$changed")
+  fi
 
   # Hyprland can accept a monitor rule even when the DRM backend rejects its
   # mode. Give the compositor a moment to modeset, then verify the result so a
