@@ -165,6 +165,34 @@ apply_monitor_row() {
   hyprctl eval "$expression" >/dev/null || die "Hyprland rejected settings for $name"
 }
 
+# Build a temporary "safety" layout that moves every monitor that is NOT about
+# to change scale/mode far away vertically, so the scaling monitor can resize
+# without colliding with neighbours. The scaled monitor keeps its intended
+# position; others are stacked at x=0 with a 5000px vertical gap. This is the
+# "separate, then apply, then join back" strategy.
+compute_safety_config() {
+  local config=$1 scaled_json=$2
+  jq -cn --argjson config "$config" --argjson scaled "$scaled_json" '
+    $config as $c | $scaled as $s | $c | to_entries | map(
+      if .value.disabled then .value
+      elif (.value.name | IN($s[])) then .value
+      else .value + { x: 0, y: (10000 + (.key * 5000)) }
+      end
+    )'
+}
+
+# Apply a list of monitor rows to Hyprland, one by one, then wait for the
+# compositor to settle. Used for the intermediate safety/scale/final phases.
+apply_rows() {
+  local rows=$1 settle=${2:-0.5}
+  while IFS= read -r encoded; do
+    local row
+    row=$(base64 -d <<<"$encoded")
+    apply_monitor_row "$row"
+  done < <(jq -r '.[] | @base64' <<<"$rows")
+  sleep "$settle"
+}
+
 apply_config() {
   local config=$1 expression
   validate_config "$config"
@@ -222,38 +250,34 @@ apply_config() {
     | map(.want)')
   [[ -n $changed && $changed != "[]" ]] || { printf '{"ok":true,"unchanged":true}\n'; return 0; }
 
-  local has_pos has_scale
-  has_pos=$(jq -e 'any(.[]; .__priority == 0)' <<<"$changed" >/dev/null 2>&1 && echo 1 || echo 0)
-  has_scale=$(jq -e 'any(.[]; .__priority == 1)' <<<"$changed" >/dev/null 2>&1 && echo 1 || echo 0)
+  local scaled_names_json scaled_count
+  scaled_names_json=$(jq -c '[.[] | select(.__priority == 1) | .name]' <<<"$changed")
+  scaled_count=$(jq 'length' <<<"$scaled_names_json")
 
-  # Phase 1: apply position/transform/mirror/disabled changes first so the
-  # layout is already in place before a scale/mode change grows/shrinks any
-  # monitor. This avoids a transient collision between neighbours.
-  if [[ $has_pos -eq 1 ]]; then
-    while IFS= read -r encoded; do
-      local row priority
-      row=$(base64 -d <<<"$encoded")
-      priority=$(jq -r '.__priority' <<<"$row")
-      [[ $priority == 0 ]] || continue
-      apply_monitor_row "$row"
-    done < <(jq -r '.[] | @base64' <<<"$changed")
-  fi
+  if [[ $scaled_count -gt 0 ]]; then
+    # Phase A: move non-scaling monitors to a safe vertical stack so they cannot
+    # collide while the scaling monitor changes size.
+    local safety_config
+    safety_config=$(compute_safety_config "$live" "$scaled_names_json")
+    apply_rows "$safety_config" 0.5
 
-  # Give Hyprland a moment to settle the new positions before applying the
-  # scale/mode changes that depend on them.
-  if [[ $has_pos -eq 1 && $has_scale -eq 1 ]]; then
-    sleep 0.5
-  fi
+    # Phase B: apply scale/mode changes on the scaling monitor while it is
+    # alone (neighbours are far away).
+    local scale_config
+    scale_config=$(jq -cn --argjson requested "$config" --argjson live "$live" --argjson scaled "$scaled_names_json" '
+      $requested | map(
+        if (.name | IN($scaled[])) then
+          ($live | map(select(.name == .name)) | first) as $orig
+          | . + { x: ($orig.x // 0), y: ($orig.y // 0) }
+        else empty end
+      )')
+    apply_rows "$scale_config" 0.5
 
-  # Phase 2: apply scale/mode changes.
-  if [[ $has_scale -eq 1 ]]; then
-    while IFS= read -r encoded; do
-      local row priority
-      row=$(base64 -d <<<"$encoded")
-      priority=$(jq -r '.__priority' <<<"$row")
-      [[ $priority == 1 ]] || continue
-      apply_monitor_row "$row"
-    done < <(jq -r '.[] | @base64' <<<"$changed")
+    # Phase C: move everyone to the final requested positions.
+    apply_rows "$config" 0.75
+  else
+    # No scale/mode changes: just apply the requested config normally.
+    apply_rows "$config" 0.75
   fi
 
   # Hyprland can accept a monitor rule even when the DRM backend rejects its
