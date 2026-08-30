@@ -404,11 +404,15 @@ restore_pending() {
 preview() {
   local config=${1:-} snapshot_tmp apply_error schedule_error
   [[ -n $config ]] || die "preview requires a JSON configuration"
+  # Log every preview request so we can inspect the exact config the panel sent
+  # and what happened, even after a shell restart or log rotation.
+  printf '%s config=%s\n' "$(date -Iseconds)" "$config" >>/tmp/omarchy-cp-display.log
   validate_config "$config"
   snapshot_tmp=$(mktemp "$state_root/pending.XXXXXX")
   state >"$snapshot_tmp"
   mv "$snapshot_tmp" "$pending_file"
   if ! apply_error=$(apply_config "$config" 2>&1); then
+    printf '%s apply_error=%s\n' "$(date -Iseconds)" "$apply_error" >>/tmp/omarchy-cp-display.log
     if ! (apply_config "$(<"$pending_file")") >/dev/null 2>&1; then
       die "Preview failed and the previous layout could not be restored; the recovery snapshot remains at $pending_file"
     fi
@@ -417,12 +421,14 @@ preview() {
     return 1
   fi
   if ! schedule_error=$(schedule_rollback 2>&1); then
+    printf '%s schedule_error=%s\n' "$(date -Iseconds)" "$schedule_error" >>/tmp/omarchy-cp-display.log
     if ! (apply_config "$(<"$pending_file")") >/dev/null 2>&1; then
       die "Automatic rollback could not be scheduled and the previous layout could not be restored; the recovery snapshot remains at $pending_file"
     fi
     rm -f "$pending_file"
     die "Could not schedule automatic rollback: $schedule_error"
   fi
+  printf '%s result={"ok":true,"timeout":15}\n' "$(date -Iseconds)" >>/tmp/omarchy-cp-display.log
   printf '{"ok":true,"timeout":15}\n'
 }
 
