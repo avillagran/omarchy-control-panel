@@ -17,8 +17,8 @@ Item {
 
   signal clicked()
 
+  width: parent.width
   implicitHeight: Math.max(track.implicitHeight, labelText.implicitHeight)
-  implicitWidth: Style.space(240)
 
   Text {
     id: labelText
@@ -26,7 +26,6 @@ Item {
     color: root.foreground
     font.family: root.fontFamily
     font.pixelSize: root.titleSize
-    font.bold: true
     elide: Text.ElideRight
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
