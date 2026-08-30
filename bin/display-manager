@@ -147,7 +147,7 @@ apply_config() {
     def dims: (.mode // "") | capture("^(?<w>[0-9]+)x(?<h>[0-9]+)@(?<r>[0-9.]+)");
     [ $requested[] as $want
       | ($live | map(select(.name == $want.name)) | first // null) as $got
-      | if $got == null then $want
+      | if $got == null then { want: $want, priority: 0 }
         else
           ($want | dims) as $wm
           | ($got | dims) as $gm
@@ -159,9 +159,25 @@ apply_config() {
                     or (($got.scale - $want.scale) | fabs) > 0.06
                     or $got.transform != $want.transform
                     or $got.mirror != ($want.mirror // "")))
-            then $want
+            then
+              {
+                want: $want,
+                # Position-only changes are applied first. Scale/mode changes
+                # grow/shrink the logical geometry and can overlap neighbours
+                # that have not moved yet; applying neighbour moves first keeps
+                # every intermediate state valid.
+                priority: (
+                  if ($want.disabled != true and (
+                       (($got.scale - $want.scale) | fabs) > 0.06
+                       or $wm.w != $gm.w or $wm.h != $gm.h
+                       or (($wm.r | tonumber) - ($gm.r | tonumber) | fabs) > 0.25))
+                  then 1 else 0 end)
+              }
             else empty end
-        end ]')
+        end
+      ]
+    | sort_by(.priority)
+    | map(.want)')
   [[ -n $changed && $changed != "[]" ]] || { printf '{"ok":true,"unchanged":true}\n'; return 0; }
 
   while IFS= read -r encoded; do
