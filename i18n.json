@@ -63,6 +63,8 @@
     "revert": "Revert",
     "keeping": "Keeping…",
     "keepChanges": "Keep changes",
+    "keep": "Keep",
+    "displayConfirmPrompt": "Keep these display settings? Reverting in",
     "invScroll": "Inverted (natural) scrolling",
     "swipe3": "3-finger swipe switches workspaces",
     "kittyInstall": "Install Kitty · smooth scrolling",
@@ -74,7 +76,16 @@
     "keepChangesPrompt": "Keep these display settings?",
     "displayRevertHint": "If you don't choose, the previous layout will be restored automatically.",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "profiles": "Profiles",
+    "profileDefault": "Default",
+    "profileRetina": "Retina",
+    "profilePersonal": "Personal",
+    "profileNew": "New profile",
+    "profileDuplicate": "Duplicate",
+    "profileApply": "Apply",
+    "profileSave": "Save configuration",
+    "profileDelete": "Delete"
   },
   "es": {
     "naturalMac": "Scroll natural (como Mac)",
@@ -140,6 +151,8 @@
     "revert": "Revertir",
     "keeping": "Guardando…",
     "keepChanges": "Mantener cambios",
+    "keep": "Mantener",
+    "displayConfirmPrompt": "¿Mantener configuración de pantalla? Se revertirá en",
     "invScroll": "Scroll invertido (natural)",
     "swipe3": "Swipe de 3 dedos cambia de escritorio",
     "kittyInstall": "Instalar Kitty · scroll suave",
@@ -151,7 +164,16 @@
     "keepChangesPrompt": "¿Mantener esta configuración de pantalla?",
     "displayRevertHint": "Si no eliges, la configuración anterior se restaurará automáticamente.",
     "displayApplyPrompt": "Aplicar",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "profiles": "Perfiles",
+    "profileDefault": "Default",
+    "profileRetina": "Retina",
+    "profilePersonal": "Personal",
+    "profileNew": "Nuevo perfil",
+    "profileDuplicate": "Duplicar",
+    "profileApply": "Aplicar",
+    "profileSave": "Guardar configuración",
+    "profileDelete": "Eliminar"
   },
   "pt": {
     "naturalMac": "Rolagem natural (estilo Mac)",

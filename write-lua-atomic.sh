@@ -8,9 +8,23 @@
 # - NO `>>` shell redirection anywhere (that is the symlink-append vector).
 # - Every read is byte-capped with `timeout 5 head -c 65536` so a huge or
 #   FIFO/hostile file cannot hang the helper or exhaust memory.
+#
+# IDEMPOTENT: if the new content is byte-identical to the existing file, skip
+# the write entirely. Otherwise Quickshell/Omarchy's file-watch on ~/.config/hypr
+# sees a changed mtime on every refresh and reloads the plugin in a loop, which
+# makes Hyprland re-register binds/config and "jumps" the windows.
 set -uo pipefail
 
 f="$1"; content="$2"
+
+# If the file already exists with identical content, do nothing (keep mtime).
+if [ -f "$f" ]; then
+  existing="$(timeout 5 head -c 65536 "$f" 2>/dev/null)"
+  if [ "$existing" = "$content" ]; then
+    exit 0
+  fi
+fi
+
 d="$(dirname -- "$f")"
 TMP="$(mktemp "$d/.ocp-lua.XXXXXX")"
 chmod 644 "$TMP" 2>/dev/null || true
