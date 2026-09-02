@@ -41,6 +41,7 @@ def main():
     parser.add_argument("--right", default="-1")
     parser.add_argument("--input", default=os.path.expanduser("~/.config/hypr/input.lua"))
     parser.add_argument("--output", default=os.path.expanduser("~/.config/hypr/control-panel-gestures.lua"))
+    parser.add_argument("--no-reload", action="store_true", help="Skip hyprctl reload")
     args = parser.parse_args()
 
     enabled = args.enabled == "true"
@@ -79,7 +80,7 @@ hl.gesture({{ fingers = 3, direction = "right", action = ocp_swipe("{args.right}
         print(f"Could not ensure marker in {args.input}", file=sys.stderr)
         sys.exit(1)
 
-    if enabled:
+    if enabled and not args.no_reload:
         sig = hypr_instance_signature()
         if sig:
             env = os.environ.copy()
