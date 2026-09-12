@@ -25,6 +25,19 @@ function canonicalMode(mode) {
   return p ? p.width + "x" + p.height + "@" + (Math.round(p.refresh * 100) / 100) : String(mode || "preferred")
 }
 
+// Only mode (resolution/refresh) and orientation can make the picture
+// unusable. Position, scale, mirror and enable/disable are applied directly.
+function requiresConfirmation(current, applied) {
+  var baseline = {}
+  ;(applied || []).forEach(function(d) { baseline[d.name] = d })
+  return (current || []).some(function(d) {
+    var old = baseline[d.name]
+    if (!old) return false
+    return canonicalMode(d.mode) !== canonicalMode(old.mode)
+      || Number(d.transform || 0) !== Number(old.transform || 0)
+  })
+}
+
 function modesForResolution(modes, wanted) {
   return (modes || []).filter(function(mode) { return resolution(mode) === wanted })
 }

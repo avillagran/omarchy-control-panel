@@ -1,0 +1,604 @@
+#!/usr/bin/env python3
+"""Credential-free LAN discovery and GVfs connection helper.
+
+JSON request is read from stdin; the action is argv[1].  The helper never scans
+outside directly-connected private IPv4 networks and performs active probes only
+for ``scan`` requests containing ``{"deep": true}``.
+"""
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+from urllib.parse import quote, unquote, urlsplit
+
+
+class DeviceError(ValueError):
+    """Stable, redacted error code intended for UI handling."""
+
+
+SERVICE_TYPES = {
+    "_smb._tcp": ("smb", "Microsoft Windows Network"),
+    "microsoft windows network": ("smb", "Microsoft Windows Network"),
+    "_afpovertcp._tcp": ("afp", "Apple File Sharing"),
+    "apple file sharing": ("afp", "Apple File Sharing"),
+    "_adisk._tcp": ("timemachine", "Apple TimeMachine"),
+    "apple timemachine": ("timemachine", "Apple TimeMachine"),
+    "_airport._tcp": ("airport", "Apple AirPort"),
+    "apple airport": ("airport", "Apple AirPort"),
+    "_ssh._tcp": ("ssh", "Secure Shell"),
+    "secure shell": ("ssh", "Secure Shell"),
+    "_sftp-ssh._tcp": ("sftp", "SFTP File Transfer"),
+    "sftp file transfer": ("sftp", "SFTP File Transfer"),
+    "_googlecast._tcp": ("googlecast", "Google Cast"),
+    "google cast": ("googlecast", "Google Cast"),
+    "_http._tcp": ("http", "Web Service"),
+    "web site": ("http", "Web Service"),
+    "_https._tcp": ("https", "Secure Web Service"),
+    "_printer._tcp": ("printer", "Network Printer"),
+    "_ipp._tcp": ("ipp", "Internet Printer"),
+    "_ipps._tcp": ("ipps", "Secure Internet Printer"),
+    "_workstation._tcp": ("workstation", "Workstation"),
+    "_device-info._tcp": ("device", "Device Information"),
+    "_rfb._tcp": ("vnc", "Screen Sharing"),
+}
+MAC_RE = re.compile(r"(?i)(?:wama|mac)\s*=\s*([0-9a-f]{2}(?:[:-][0-9a-f]{2}){5})")
+AUTH_REACHED = ("NT_STATUS_LOGON_FAILURE", "NT_STATUS_ACCESS_DENIED", "session setup failed", "IPC$")
+NEGOTIATION_FAILED = ("protocol negotiation failed", "NT_STATUS_NOT_SUPPORTED", "NT_STATUS_INVALID_NETWORK_RESPONSE", "no protocol supported")
+
+
+def avahi_decode(value):
+    data = bytearray()
+    index = 0
+    while index < len(value):
+        if value[index] == "\\":
+            token = value[index + 1:index + 4]
+            if len(token) != 3 or not token.isdecimal() or int(token) > 255:
+                raise ValueError("invalid_escape")
+            data.append(int(token))
+            index += 4
+        else:
+            data.extend(value[index].encode())
+            index += 1
+    text = data.decode("utf-8")
+    if any(ord(char) < 32 or ord(char) == 127 for char in text):
+        raise ValueError("invalid_text")
+    return text
+
+
+def normalize_mac(value):
+    if not isinstance(value, str):
+        return None
+    compact = re.sub(r"[:-]", "", value)
+    if not re.fullmatch(r"(?i)[0-9a-f]{12}", compact):
+        return None
+    return ":".join(compact[i:i + 2] for i in range(0, 12, 2)).upper()
+
+
+def valid_host(value):
+    if not isinstance(value, str) or not value or len(value) > 253 or any(c in value for c in "%/@\\"):
+        raise DeviceError("invalid_host")
+    raw = value[1:-1] if value.startswith("[") and value.endswith("]") else value
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        pass
+    value = value.rstrip(".").lower()
+    labels = value.split(".")
+    if any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in labels):
+        raise DeviceError("invalid_host")
+    return value
+
+
+def run_process(argv, timeout=5, env=None):
+    try:
+        return subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                              errors="replace", timeout=timeout, check=False,
+                              env={**os.environ, "LC_ALL": "C", **(env or {})})
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(argv, 127, "", "")
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(argv, 124, "", "")
+    except OSError:
+        return subprocess.CompletedProcess(argv, 126, "", "")
+
+
+def json_command(argv, timeout=5):
+    result = run_process(argv, timeout)
+    if result.returncode:
+        return []
+    try:
+        data = json.loads(result.stdout)
+        return data if isinstance(data, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+def nmblookup(address):
+    result = run_process(["nmblookup", "-A", address], timeout=2)
+    if result.returncode:
+        return None, None
+    name_match = re.search(r"(?m)^\s*([^\s<]+)\s+<00>\s+-.*<ACTIVE>", result.stdout)
+    mac_match = re.search(r"(?i)MAC Address\s*=\s*([0-9a-f:-]{17})", result.stdout)
+    return (name_match.group(1) if name_match else None,
+            normalize_mac(mac_match.group(1)) if mac_match else None)
+
+
+def resolve_hostnames(addresses):
+    """Bounded getent plus NetBIOS fallback; returns no subprocess diagnostics."""
+    def one(address):
+        result = run_process(["getent", "hosts", address], timeout=1)
+        name = None
+        if result.returncode == 0 and result.stdout.split():
+            fields = result.stdout.split()
+            if len(fields) > 1:
+                try:
+                    name = valid_host(fields[1])
+                except DeviceError:
+                    pass
+        netbios, mac = nmblookup(address)
+        return address, {"name": name or (netbios.lower() if netbios else None), "mac": mac}
+    resolved = {}
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(addresses)))) as pool:
+        futures = [pool.submit(one, address) for address in addresses]
+        for future in as_completed(futures):
+            try:
+                address, info = future.result()
+                if info["name"] or info["mac"]:
+                    resolved[address] = info
+            except Exception:
+                continue
+    return resolved
+
+
+def parse_avahi(output):
+    records = []
+    for line in output.splitlines():
+        fields = line.split(";")
+        if len(fields) < 9 or fields[0] != "=":
+            continue
+        try:
+            raw_service = avahi_decode(fields[4]).strip()
+            mapping = SERVICE_TYPES.get(raw_service.casefold())
+            if not mapping:
+                type_match = re.fullmatch(r"_([A-Za-z0-9-]+)\._(?:tcp|udp)", raw_service)
+                protocol = type_match.group(1).lower() if type_match else re.sub(r"[^a-z0-9]+", "-", raw_service.casefold()).strip("-")
+                mapping = (protocol or "service", raw_service)
+            name = avahi_decode(fields[3]).strip()
+            host = valid_host(avahi_decode(fields[6]))
+            address = str(ipaddress.ip_address(fields[7]))
+            port = int(fields[8])
+            if not name or not 1 <= port <= 65535:
+                continue
+            txt = avahi_decode(";".join(fields[9:]))
+        except (ValueError, UnicodeError, DeviceError):
+            continue
+        match = MAC_RE.search(txt)
+        records.append({"name": name, "host": host, "address": address,
+                        "interface": fields[1], "mac": normalize_mac(match.group(1)) if match else None,
+                        "service": {"protocol": mapping[0], "port": port, "name": mapping[1]}})
+    return records
+
+
+def directly_connected_networks(routes, addresses):
+    result = []
+    for route in routes:
+        if route.get("dst") in (None, "default") or route.get("gateway"):
+            continue
+        if route.get("scope") != "link" and route.get("protocol") != "kernel":
+            continue
+        try:
+            network = ipaddress.ip_network(route["dst"], strict=False)
+            if network.version == 4 and network.is_private and not network.is_link_local:
+                result.append((network, route.get("dev")))
+        except (ValueError, TypeError):
+            pass
+    for interface in addresses:
+        for info in interface.get("addr_info", []):
+            try:
+                if info.get("family") == "inet" and info.get("scope") in (None, "global"):
+                    network = ipaddress.ip_network(f'{info["local"]}/{info["prefixlen"]}', strict=False)
+                    if network.is_private and not network.is_link_local:
+                        result.append((network, interface.get("ifname")))
+            except (ValueError, KeyError, TypeError):
+                continue
+    unique = {(str(network), dev): (network, dev) for network, dev in result}
+    return [unique[key] for key in sorted(unique)]
+
+
+def address_rank(value, direct, reachable=False):
+    ip = ipaddress.ip_address(value)
+    on_direct = any(ip in network for network, _dev in direct)
+    return (0 if on_direct and reachable else 1 if on_direct else 2 if ip.version == 4 and ip.is_private and not ip.is_link_local else 3 if ip.version == 4 and not ip.is_link_local else 4, value)
+
+
+def stable_id(mac, host, addresses):
+    identity = "mac:" + mac if mac else "host:" + host if host else "address:" + (addresses[0] if addresses else "unknown")
+    return "net-" + hashlib.sha256(identity.encode()).hexdigest()[:16]
+
+
+def scan(req):
+    avahi = run_process(["avahi-browse", "-artp"], timeout=8)
+    records = parse_avahi(avahi.stdout if avahi.returncode == 0 else "")
+    neighbors = json_command(["ip", "-j", "neigh"])
+    routes = json_command(["ip", "-j", "route", "show"])
+    addresses = json_command(["ip", "-j", "address", "show"])
+    direct = directly_connected_networks(routes, addresses)
+    neighbor_addresses = []
+    for neighbor in neighbors:
+        try:
+            neighbor_addresses.append(str(ipaddress.ip_address(neighbor.get("dst"))))
+        except (ValueError, TypeError):
+            pass
+    resolved = resolve_hostnames(sorted(set(neighbor_addresses)))
+
+    entities = []
+    for record in records:
+        entities.append({"names": [record["name"]], "hosts": [record["host"]],
+                         "addresses": [record["address"]], "macs": [record["mac"]] if record["mac"] else [],
+                         "services": [record["service"]], "interfaces": [record["interface"]], "states": []})
+    for neighbor in neighbors:
+        try:
+            address = str(ipaddress.ip_address(neighbor.get("dst")))
+        except (ValueError, TypeError):
+            continue
+        info = resolved.get(address, {})
+        if isinstance(info, str):
+            info = {"name": info, "mac": None}
+        hostname = info.get("name")
+        mac = normalize_mac(neighbor.get("lladdr")) or normalize_mac(info.get("mac"))
+        entities.append({"names": [], "hosts": [hostname] if hostname else [], "addresses": [address],
+                         "macs": [mac] if mac else [], "services": [], "interfaces": [neighbor.get("dev")],
+                         "states": neighbor.get("state", []) if isinstance(neighbor.get("state", []), list) else [neighbor.get("state", "")]})
+
+    # Merge repeatedly on any strong identity: MAC, hostname, normalized display name, or address.
+    groups = []
+    def tokens(entity):
+        return ({"m:" + x for x in entity["macs"]} |
+                {"h:" + x.casefold().rstrip(".") for x in entity["hosts"] if x} |
+                {"n:" + re.sub(r"[^a-z0-9]", "", x.casefold()) for x in entity["names"] if x} |
+                {"a:" + x for x in entity["addresses"]})
+    for entity in entities:
+        matching = [group for group in groups if tokens(group) & tokens(entity)]
+        if not matching:
+            groups.append(entity)
+            continue
+        target = matching[0]
+        for key in target:
+            target[key].extend(entity[key])
+        for extra in matching[1:]:
+            for key in target:
+                target[key].extend(extra[key])
+            groups.remove(extra)
+
+    devices = []
+    active_states = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT", "NOARP"}
+    for group in groups:
+        mac = sorted(set(group["macs"]))[0] if group["macs"] else None
+        hosts = sorted(set(group["hosts"]), key=lambda x: (not x.endswith(".local"), x.casefold()))
+        host = hosts[0].lower().rstrip(".") if hosts else ""
+        state_reachable = bool(active_states & {str(x).upper() for x in group["states"]})
+        unique_addresses = sorted(set(group["addresses"]), key=lambda x: address_rank(x, direct, state_reachable))
+        services = sorted({(s["protocol"], s["port"], s["name"]) for s in group["services"]})
+        service_list = [{"protocol": p, "port": port, "name": name} for p, port, name in services]
+        protocols = {item["protocol"] for item in service_list}
+        names = sorted(set(group["names"]), key=lambda x: ("timecapsule" not in re.sub(r"[^a-z0-9]", "", x.casefold()), x.casefold()))
+        if names:
+            name = names[0]
+        elif host:
+            name = host.split(".")[0]
+        else:
+            name = unique_addresses[0]
+        lower_identity = " ".join(names + hosts).casefold().replace(" ", "").replace("-", "")
+        if protocols & {"timemachine", "airport"} or "timecapsule" in lower_identity:
+            kind = "timeCapsule"
+        elif "googlecast" in protocols:
+            kind = "chromecast"
+        elif protocols & {"ipp", "ipps", "printer"}:
+            kind = "printer"
+        elif protocols & {"smb", "afp"}:
+            kind = "nas"
+        elif protocols & {"ssh", "sftp", "workstation"}:
+            kind = "computer"
+        else:
+            kind = "networkDevice"
+        preferred = unique_addresses[0] if unique_addresses else host
+        interface = next((dev for network, dev in direct if preferred and ipaddress.ip_address(preferred) in network), None) if unique_addresses else None
+        devices.append({"id": stable_id(mac, host, unique_addresses), "name": name, "host": host or preferred,
+                        "addresses": unique_addresses, "mac": mac, "kind": kind, "services": service_list,
+                        "connection": {"preferredAddress": preferred, "interface": interface,
+                                       "reachable": state_reachable, "probed": False,
+                                       "protocols": {}, "legacySmb": False, "adapter": None}})
+
+    if req.get("deep"):
+        deep_probe(devices, direct)
+    devices.sort(key=lambda d: (d["name"].casefold(), d["id"]))
+    return {"devices": devices, "networks": [{"subnet": str(network), "interface": dev} for network, dev in direct]}
+
+
+def tcp_probe(address, port, timeout=0.45):
+    try:
+        with socket.create_connection((address, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def deep_probe(devices, direct):
+    work = []
+    for device in devices:
+        address = next((address for address in device["addresses"]
+                        if ipaddress.ip_address(address).version == 4 and
+                        any(ipaddress.ip_address(address) in network for network, _dev in direct)), None)
+        if address:
+            for port in (22, 445, 548):
+                work.append((device, address, port))
+            device["connection"]["probed"] = True
+    with ThreadPoolExecutor(max_workers=min(24, max(1, len(work)))) as pool:
+        futures = {pool.submit(tcp_probe, address, port, 0.45): (device, address, port)
+                   for device, address, port in work}
+        for future in as_completed(futures):
+            device, address, port = futures[future]
+            try:
+                opened = bool(future.result())
+            except Exception:
+                opened = False
+            protocol = {22: "ssh", 445: "smb", 548: "afp"}[port]
+            device["connection"]["protocols"][protocol] = {"port": port, "open": opened}
+            if opened:
+                device["connection"]["reachable"] = True
+    for device in devices:
+        smb = device["connection"]["protocols"].get("smb")
+        if smb and smb["open"]:
+            status = probe_smb(device["connection"]["preferredAddress"])
+            smb.update(status)
+            device["connection"]["legacySmb"] = bool(status.get("legacySmb"))
+            if status.get("legacySmb") and device["kind"] == "timeCapsule":
+                device["connection"]["adapter"] = {"status": "required", "reason": "legacy_smb_requires_adapter"}
+
+
+def smb_result_reached(result):
+    text = result.stdout + "\n" + result.stderr
+    return result.returncode == 0 or any(marker.casefold() in text.casefold() for marker in AUTH_REACHED)
+
+
+def probe_smb(host):
+    if not shutil.which("smbclient"):
+        return {"available": False, "legacySmb": False, "reason": "smbclient_unavailable"}
+    argv = ["smbclient", "-L", "//" + host, "-N"]
+    modern = run_process(argv, timeout=4)
+    modern_text = modern.stdout + "\n" + modern.stderr
+    if smb_result_reached(modern) and not any(x.casefold() in modern_text.casefold() for x in NEGOTIATION_FAILED):
+        return {"available": True, "legacySmb": False, "authenticationRequired": modern.returncode != 0,
+                "compatibility": "modern"}
+    with tempfile.TemporaryDirectory(prefix="network-smb-") as directory:
+        config = Path(directory) / "client.conf"
+        config.write_text("[global]\nclient min protocol = NT1\nclient max protocol = NT1\nclient use spnego = no\nclient ntlmv2 auth = no\n")
+        os.chmod(config, 0o600)
+        legacy = run_process(argv, timeout=4, env={"SMB_CONF_PATH": str(config)})
+    if smb_result_reached(legacy):
+        return {"available": True, "legacySmb": True, "authenticationRequired": legacy.returncode != 0,
+                "compatibility": "smb1_nt1", "adapterStatus": "process_scoped_available"}
+    return {"available": False, "legacySmb": False, "reason": "smb_negotiation_failed",
+            "compatibility": "unknown"}
+
+
+def validate_scan(req):
+    if not isinstance(req, dict) or set(req) - {"deep"} or type(req.get("deep", False)) is not bool:
+        raise DeviceError("invalid_request")
+    return req
+
+
+def clean_device(value):
+    if not isinstance(value, dict) or set(value) - {"id", "name", "host", "addresses", "mac", "kind", "services", "connection"}:
+        raise DeviceError("invalid_device")
+    host = valid_host(value.get("host"))
+    connection = value.get("connection", {})
+    if not isinstance(connection, dict):
+        raise DeviceError("invalid_device")
+    return host, value.get("kind"), connection
+
+
+def connect(req):
+    if not isinstance(req, dict) or set(req) - {"device", "protocol", "share", "user", "port"}:
+        raise DeviceError("invalid_request")
+    host, kind, connection = clean_device(req.get("device"))
+    protocol = req.get("protocol")
+    if protocol not in ("smb", "sftp", "ssh", "afp"):
+        raise DeviceError("invalid_protocol")
+    if protocol == "afp":
+        return {"supported": False, "opened": False, "connected": False,
+                "reason": "afp_connector_unavailable",
+                "explanation": "Current Linux GVfs has no AFP connector; use SMB if the device supports it."}
+    if protocol == "smb" and kind == "timeCapsule" and connection.get("legacySmb"):
+        return {"supported": False, "opened": False, "connected": False,
+                "reason": "legacy_smb_requires_adapter", "adapterStatus": connection.get("adapter")}
+    share = req.get("share", "")
+    user = req.get("user", "")
+    if not isinstance(share, str) or share in (".", "..") or any(c in share for c in "/\\:@%?#"):
+        raise DeviceError("invalid_share")
+    if not isinstance(user, str) or user and not re.fullmatch(r"[A-Za-z0-9_.-]+", user):
+        raise DeviceError("invalid_user")
+    port = req.get("port", 445 if protocol == "smb" else 22)
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise DeviceError("invalid_port")
+    uri_host = "[" + host + "]" if ":" in host else host
+    if protocol == "smb":
+        if port != 445:
+            raise DeviceError("unsupported_smb_port")
+        uri = "smb://" + uri_host + "/" + quote(share, safe="")
+    else:
+        authority = (quote(user, safe="") + "@" if user else "") + uri_host
+        uri = "sftp://" + authority + ":" + str(port) + "/"
+    result = run_process(["gio", "open", uri], timeout=10)
+    if result.returncode:
+        raise DeviceError("open_failed")
+    return {"uri": uri, "opened": True, "connected": False}
+
+
+def gvfs_root():
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR", "/run/user/" + str(os.getuid())))
+    if not runtime.is_absolute():
+        raise DeviceError("invalid_runtime_dir")
+    return runtime / "gvfs"
+
+
+def read_mountinfo():
+    return Path("/proc/self/mountinfo").read_text()
+
+
+def gvfs_is_mounted(root):
+    try:
+        for line in read_mountinfo().splitlines():
+            left, separator, right = line.partition(" - ")
+            fields = left.split()
+            if separator and len(fields) > 5 and right.split()[0] == "fuse.gvfsd-fuse":
+                point = re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), fields[4])
+                if Path(point) == root:
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def parse_mount_uri(uri):
+    try:
+        parsed = urlsplit(uri)
+        if parsed.scheme not in ("smb", "sftp") or parsed.password is not None or parsed.query or parsed.fragment:
+            raise ValueError()
+        host = valid_host(parsed.hostname)
+        parts = [unquote(x) for x in parsed.path.split("/") if x]
+        if any(x in (".", "..") or "/" in x or "\\" in x for x in parts):
+            raise ValueError()
+        return parsed.scheme, host, parts[0] if parsed.scheme == "smb" and parts else ""
+    except (ValueError, TypeError, DeviceError):
+        raise DeviceError("invalid_uri") from None
+
+
+def live_mount_uris():
+    result = run_process(["gio", "mount", "-li"], timeout=5)
+    if result.returncode:
+        return []
+    uris = []
+    for line in result.stdout.splitlines():
+        match = re.match(r"^\s*Mount\(\d+\):.* -> ((?:smb|sftp)://\S+)\s*$", line)
+        if match:
+            try:
+                parse_mount_uri(match.group(1))
+                uris.append(match.group(1))
+            except DeviceError:
+                pass
+    return sorted(set(uris))
+
+
+def mount_folder_identity(path):
+    scheme, separator, tail = path.name.partition(":")
+    if not separator or scheme not in ("smb-share", "sftp"):
+        return None
+    fields = {}
+    for part in tail.split(","):
+        key, separator, value = part.partition("=")
+        if not separator or key in fields:
+            return None
+        fields[key] = unquote(value)
+    protocol = "smb" if scheme == "smb-share" else "sftp"
+    try:
+        host = valid_host(fields.get("server" if protocol == "smb" else "host"))
+    except DeviceError:
+        return None
+    return protocol, host, fields.get("share", "")
+
+
+def mounts(_req):
+    root = gvfs_root()
+    if not gvfs_is_mounted(root):
+        return {"mounts": []}
+    live = live_mount_uris()
+    live_identities = {parse_mount_uri(uri): uri for uri in live}
+    result = []
+    try:
+        children = sorted(root.iterdir())
+    except OSError:
+        return {"mounts": []}
+    for child in children:
+        identity = mount_folder_identity(child)
+        if identity in live_identities and child.is_dir() and not child.is_symlink():
+            protocol, host, share = identity
+            result.append({"uri": live_identities[identity], "protocol": protocol,
+                           "host": host, "share": share, "path": str(child)})
+    return {"mounts": result}
+
+
+def disconnect(req):
+    if not isinstance(req, dict) or set(req) != {"uri"} or not isinstance(req["uri"], str):
+        raise DeviceError("invalid_request")
+    parse_mount_uri(req["uri"])
+    if req["uri"] not in live_mount_uris():
+        raise DeviceError("not_mounted")
+    result = run_process(["gio", "mount", "-u", req["uri"]], timeout=10)
+    if result.returncode:
+        raise DeviceError("disconnect_failed")
+    return {"disconnected": True, "uri": req["uri"]}
+
+
+def reject_secret_keys(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if str(key).casefold() in {"password", "passwd", "secret", "token", "credential", "uri", "url"}:
+                raise DeviceError("unsupported_field")
+            reject_secret_keys(child)
+    elif isinstance(value, list):
+        for child in value:
+            reject_secret_keys(child)
+
+
+def main(action, req):
+    # disconnect deliberately accepts one validated credential-free URI so it can
+    # unmount only an exact URI present in GIO's live mount inventory.
+    if action != "disconnect":
+        reject_secret_keys(req)
+    if action == "scan":
+        return scan(validate_scan(req))
+    if action == "connect":
+        return connect(req)
+    if action == "mounts":
+        if not isinstance(req, dict) or req:
+            raise DeviceError("invalid_request")
+        return mounts(req)
+    if action == "disconnect":
+        # URI is required for exact live-mount matching; it never contains credentials.
+        if isinstance(req, dict) and set(req) == {"uri"}:
+            return disconnect(req)
+        raise DeviceError("invalid_request")
+    raise DeviceError("unknown_action")
+
+
+def cli():
+    try:
+        raw = sys.stdin.read(65537)
+        if len(raw) > 65536:
+            raise DeviceError("request_too_large")
+        req = json.loads(raw or "{}")
+        response = main(sys.argv[1] if len(sys.argv) == 2 else "", req)
+        print(json.dumps({"ok": True, "error": None, **response}, sort_keys=True))
+        return 0
+    except DeviceError as error:
+        reason = str(error)
+    except (ValueError, TypeError, RecursionError):
+        reason = "invalid_request"
+    except Exception:
+        reason = "io_error"
+    print(json.dumps({"ok": False, "error": reason, "reason": reason}, sort_keys=True))
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(cli())

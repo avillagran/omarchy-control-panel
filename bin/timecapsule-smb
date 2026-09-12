@@ -1,0 +1,722 @@
+#!/usr/bin/env python3
+"""Process-isolated SMB1 client for an explicitly selected Time Capsule.
+
+The first stdin line is JSON control data. Authenticated actions accept either a
+password on the second line or ``"savedCredential": true``. Secrets are never
+accepted in JSON and are never placed in argv, ordinary environment variables,
+or persistent files.
+"""
+import ipaddress
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import socket
+import stat
+import subprocess
+import sys
+import tempfile
+
+CONTROL_LIMIT = 16 * 1024
+PASSWORD_LIMIT = 1024
+TIMEOUT = 8
+TRANSFER_TIMEOUT = 24 * 60 * 60
+AUTH_MARKERS = (b"nt_status_logon_failure", b"nt_status_access_denied", b"session setup failed")
+TARGET_KEYS = {"host", "address", "mac"}
+AUTH_KEYS = TARGET_KEYS | {"user", "savedCredential"}
+SHARE_KEYS = AUTH_KEYS | {"share"}
+SNAPSHOT_RE = re.compile(r"[0-9]{8}T[0-9]{12}Z-[a-f0-9]{12}")
+REMOTE_ROOT = "OmarchyControlPanel"
+MAC_RE = re.compile(r"[0-9A-F]{2}(?::[0-9A-F]{2}){5}")
+HOST_LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.I)
+USER_RE = re.compile(r"[A-Za-z0-9_. -]{1,128}")
+SHARE_RE = re.compile(r"[A-Za-z0-9 _.$()+'-]{1,128}")
+SAFE_IPV4 = tuple(ipaddress.ip_network(value) for value in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16",
+))
+
+
+class HelperError(ValueError):
+    """Stable, redacted error intended for callers."""
+
+
+def clean_env(extra=None):
+    env = dict(os.environ)
+    for key in ("PASSWD", "PASSWD_FILE", "PASSWD_FD"):
+        env.pop(key, None)
+    env["LC_ALL"] = "C"
+    if extra:
+        env.update(extra)
+    return env
+
+
+def capabilities(req):
+    if req != {}:
+        raise HelperError("invalid_request")
+    return {
+        "smbclient": bool(shutil.which("smbclient")),
+        "secretService": bool(shutil.which("secret-tool")),
+        "mountSupported": False,
+        "uploadSupported": True,
+        "downloadSupported": True,
+        "historySupported": True,
+        "connectedMeaning": "authenticated_protocol_and_share_accessible",
+    }
+
+
+def system_json(argv):
+    try:
+        result = subprocess.run(
+            argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, timeout=3, check=False, env=clean_env(),
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        raise HelperError("network_state_unavailable") from None
+    if result.returncode:
+        raise HelperError("network_state_unavailable")
+    try:
+        value = json.loads(result.stdout)
+    except (ValueError, TypeError, UnicodeError):
+        raise HelperError("network_state_unavailable") from None
+    if not isinstance(value, list):
+        raise HelperError("network_state_unavailable")
+    return value
+
+
+def normalize_mac(value):
+    if not isinstance(value, str):
+        raise HelperError("invalid_mac")
+    value = value.replace("-", ":").upper()
+    if not MAC_RE.fullmatch(value):
+        raise HelperError("invalid_mac")
+    return value
+
+
+def clean_host(value):
+    if not isinstance(value, str) or len(value) > 253:
+        raise HelperError("invalid_host")
+    value = value.lower().rstrip(".")
+    if not value or any(not HOST_LABEL_RE.fullmatch(label) for label in value.split(".")):
+        raise HelperError("invalid_host")
+    return value
+
+
+def direct_networks():
+    routes = system_json(["ip", "-j", "route", "show"])
+    addresses = system_json(["ip", "-j", "address", "show"])
+    networks = []
+    for route in routes:
+        if not isinstance(route, dict) or route.get("gateway") or route.get("dst") in (None, "default"):
+            continue
+        if route.get("scope") != "link" and route.get("protocol") != "kernel":
+            continue
+        try:
+            network = ipaddress.ip_network(route["dst"], strict=False)
+        except (ValueError, KeyError, TypeError):
+            continue
+        if network.version == 4 and any(network.subnet_of(safe) for safe in SAFE_IPV4):
+            networks.append((network, route.get("dev")))
+    for interface in addresses:
+        if not isinstance(interface, dict):
+            continue
+        for info in interface.get("addr_info", []):
+            if not isinstance(info, dict) or info.get("family") != "inet":
+                continue
+            try:
+                network = ipaddress.ip_network(f'{info["local"]}/{info["prefixlen"]}', strict=False)
+            except (ValueError, KeyError, TypeError):
+                continue
+            if network.version == 4 and any(network.subnet_of(safe) for safe in SAFE_IPV4):
+                networks.append((network, interface.get("ifname")))
+    return networks
+
+
+def validate_target(req):
+    if not isinstance(req, dict) or not TARGET_KEYS.issubset(req):
+        raise HelperError("target_required")
+    host = clean_host(req.get("host"))
+    try:
+        address_obj = ipaddress.ip_address(req.get("address"))
+    except (ValueError, TypeError):
+        raise HelperError("invalid_address") from None
+    if address_obj.version != 4 or not any(address_obj in network for network in SAFE_IPV4):
+        raise HelperError("unsafe_address")
+    address = str(address_obj)
+    mac = normalize_mac(req.get("mac"))
+    matching = [(network, dev) for network, dev in direct_networks() if address_obj in network]
+    if not matching:
+        raise HelperError("not_directly_connected")
+    allowed_devices = {dev for _network, dev in matching if dev}
+    neighbors = system_json(["ip", "-j", "neigh", "show", address])
+    neighbor_macs = set()
+    for neighbor in neighbors:
+        if not isinstance(neighbor, dict) or neighbor.get("dst") != address:
+            continue
+        if allowed_devices and neighbor.get("dev") not in allowed_devices:
+            continue
+        try:
+            neighbor_macs.add(normalize_mac(neighbor.get("lladdr")))
+        except HelperError:
+            continue
+    if not neighbor_macs:
+        raise HelperError("neighbor_identity_unavailable")
+    if mac not in neighbor_macs:
+        raise HelperError("mac_mismatch")
+    return {"host": host, "address": address, "mac": mac}
+
+
+def clean_user(value):
+    if not isinstance(value, str) or not USER_RE.fullmatch(value) or value.strip() != value:
+        raise HelperError("invalid_user")
+    return value
+
+
+def clean_share(value):
+    if not isinstance(value, str) or not SHARE_RE.fullmatch(value) or value.strip() != value or value in (".", ".."):
+        raise HelperError("invalid_share")
+    return value
+
+
+def validate_auth_request(req, require_share=False, allow_saved=True):
+    allowed = SHARE_KEYS if require_share else AUTH_KEYS
+    if not isinstance(req, dict) or set(req) - allowed:
+        raise HelperError("invalid_request")
+    target = dict(validate_target(req))
+    target["user"] = clean_user(req.get("user"))
+    if require_share:
+        target["share"] = clean_share(req.get("share"))
+    saved = req.get("savedCredential", False)
+    if type(saved) is not bool or (saved and not allow_saved):
+        raise HelperError("invalid_request")
+    if allow_saved and saved:
+        target["savedCredential"] = True
+    return target
+
+
+def credential_attributes(req):
+    return [
+        "app", "omarchy-control-panel",
+        "protocol", "smb1",
+        "mac", req["mac"],
+        "host", req["host"],
+        "user", req["user"],
+    ]
+
+
+def private_config():
+    directory = tempfile.mkdtemp(prefix="omarchy-timecapsule-smb-")
+    os.chmod(directory, 0o700)
+    path = Path(directory) / "smb.conf"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    content = (
+        "[global]\n"
+        "client min protocol = NT1\n"
+        "client max protocol = NT1\n"
+        "client ipc min protocol = NT1\n"
+        "client ipc max protocol = NT1\n"
+        "client use spnego = no\n"
+        "client ntlmv2 auth = no\n"
+    ).encode("ascii")
+    try:
+        os.write(fd, content)
+    finally:
+        os.close(fd)
+    return Path(directory), path
+
+
+def secret_lookup(req):
+    if not shutil.which("secret-tool"):
+        raise HelperError("secret_service_unavailable")
+    try:
+        process = subprocess.Popen(
+            ["secret-tool", "lookup", *credential_attributes(req)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            env=clean_env(), close_fds=True, start_new_session=True,
+        )
+    except OSError:
+        raise HelperError("secret_service_unavailable") from None
+    if process.stdout is None:
+        process.kill()
+        raise HelperError("secret_service_unavailable")
+    return process
+
+
+def run_smb(req, password=None, saved=False, list_shares=False, share=None,
+            anonymous=False, command=None, cwd=None, timeout=TIMEOUT):
+    if not shutil.which("smbclient"):
+        raise HelperError("smbclient_unavailable")
+    directory, config = private_config()
+    read_fd = None
+    lookup = None
+    try:
+        env = clean_env({"SMB_CONF_PATH": str(config)})
+        argv = ["smbclient", "-s", str(config), "-g", "-d0", "--use-kerberos=off", "-I", req["address"]]
+        pass_fds = ()
+        if anonymous:
+            argv.append("-N")
+        else:
+            argv += ["-U", req["user"]]
+            if saved:
+                lookup = secret_lookup(req)
+                read_fd = lookup.stdout.fileno()
+            else:
+                if password is None:
+                    raise HelperError("credential_required")
+                read_fd, write_fd = os.pipe()
+                try:
+                    os.write(write_fd, password + b"\n")
+                finally:
+                    os.close(write_fd)
+            env["PASSWD_FD"] = str(read_fd)
+            pass_fds = (read_fd,)
+        if list_shares:
+            argv += ["-L", "//" + req["host"]]
+        elif share is not None:
+            argv += ["//" + req["host"] + "/" + share, "-c", command or "ls"]
+        else:
+            argv += ["-L", "//" + req["host"]]
+        try:
+            process = subprocess.Popen(
+                argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, env=env, pass_fds=pass_fds,
+                close_fds=True, start_new_session=True, cwd=cwd,
+            )
+        except OSError:
+            raise HelperError("smbclient_unavailable") from None
+        finally:
+            if lookup is not None and lookup.stdout is not None:
+                lookup.stdout.close()
+                read_fd = None
+            elif read_fd is not None:
+                os.close(read_fd)
+                read_fd = None
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise HelperError("timeout") from None
+        if lookup is not None:
+            try:
+                lookup_code = lookup.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                lookup.kill()
+                lookup.wait()
+                raise HelperError("secret_service_unavailable") from None
+            if lookup_code:
+                raise HelperError("credential_not_found")
+        return process.returncode, stdout or b"", stderr or b"", argv
+    finally:
+        if read_fd is not None:
+            os.close(read_fd)
+        if lookup is not None and lookup.returncode is None:
+            lookup.kill()
+            try:
+                lookup.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        try:
+            config.unlink(missing_ok=True)
+            directory.rmdir()
+        except OSError:
+            pass
+
+
+def smb_reached(code, stdout, stderr):
+    text = (stdout + b"\n" + stderr).lower()
+    return code == 0 or any(marker in text for marker in AUTH_MARKERS)
+
+
+def shares(req, password):
+    clean = validate_auth_request(req)
+    saved = clean.pop("savedCredential", False)
+    if saved and password is not None:
+        raise HelperError("ambiguous_credential")
+    code, stdout, _stderr, _argv = run_smb(clean, password=password, saved=saved, list_shares=True)
+    if code:
+        raise HelperError("authentication_or_access_failed")
+    result = []
+    for raw in stdout.decode("utf-8", "replace").splitlines():
+        fields = raw.split("|", 2)
+        if len(fields) != 3 or fields[0] != "Disk":
+            continue
+        try:
+            name = clean_share(fields[1])
+        except HelperError:
+            continue
+        comment = "".join(char for char in fields[2] if char.isprintable())[:256]
+        result.append({"name": name, "comment": comment})
+    return {"shares": result, "connected": True, "mounted": False}
+
+
+def verify(req, password, saved=False):
+    clean = validate_auth_request(req, require_share=True)
+    requested_saved = clean.pop("savedCredential", False)
+    saved = saved or requested_saved
+    if saved and password is not None:
+        raise HelperError("ambiguous_credential")
+    share = clean["share"]
+    code, _stdout, _stderr, _argv = run_smb(clean, password=password, saved=saved, share=share)
+    if code:
+        raise HelperError("authentication_or_access_failed")
+    return {"connected": True, "mounted": False, "share": share}
+
+
+def local_file(value):
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise HelperError("invalid_local_file")
+    path = Path(value)
+    if not path.is_absolute() or ".." in path.parts:
+        raise HelperError("invalid_local_file")
+    for item in (path, *path.parents):
+        if item.is_symlink():
+            raise HelperError("invalid_local_file")
+    if not path.is_file():
+        raise HelperError("invalid_local_file")
+    return path
+
+
+def snapshot_id(value):
+    if not isinstance(value, str) or not SNAPSHOT_RE.fullmatch(value):
+        raise HelperError("invalid_snapshot")
+    return value
+
+
+def sha256_file(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def copy_regular(source, destination):
+    try:
+        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        raise HelperError("invalid_local_file") from None
+    try:
+        with os.fdopen(descriptor, "rb") as inp:
+            if not stat.S_ISREG(os.fstat(inp.fileno()).st_mode):
+                raise HelperError("invalid_local_file")
+            with destination.open("xb") as out:
+                shutil.copyfileobj(inp, out)
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+
+
+def checked_manifest(path, ident):
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, ValueError, UnicodeError):
+        raise HelperError("invalid_manifest") from None
+    if (not isinstance(value, dict) or value.get("id") != ident or
+            value.get("encrypted") is not True or value.get("format") != 1 or
+            not re.fullmatch(r"[a-f0-9]{64}", value.get("payloadSha256", "")) or
+            type(value.get("payloadSize")) is not int or value["payloadSize"] < 0):
+        raise HelperError("invalid_manifest")
+    return value
+
+
+def transfer_request(req, fields):
+    allowed = SHARE_KEYS | {"snapshot", *fields}
+    if not isinstance(req, dict) or set(req) != allowed:
+        raise HelperError("invalid_request")
+    clean = validate_auth_request(
+        {key: req[key] for key in SHARE_KEYS}, require_share=True)
+    if clean.pop("savedCredential", False) is not True:
+        raise HelperError("saved_credential_required")
+    clean["snapshot"] = snapshot_id(req.get("snapshot"))
+    for field in fields:
+        clean[field] = local_file(req.get(field))
+    return clean
+
+
+def saved_share_request(req):
+    if not isinstance(req, dict) or set(req) != SHARE_KEYS:
+        raise HelperError("invalid_request")
+    clean = validate_auth_request(req, require_share=True)
+    if clean.pop("savedCredential", False) is not True:
+        raise HelperError("saved_credential_required")
+    return clean
+
+
+def local_empty_directory(value):
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise HelperError("invalid_destination")
+    path = Path(value)
+    if not path.is_absolute() or ".." in path.parts:
+        raise HelperError("invalid_destination")
+    for item in (path, *path.parents):
+        if item.is_symlink():
+            raise HelperError("invalid_destination")
+    if not path.is_dir() or any(path.iterdir()):
+        raise HelperError("destination_not_empty")
+    return path
+
+
+def remote_listing(clean):
+    code, stdout, _stderr, _argv = run_smb(
+        clean, saved=True, share=clean["share"], command=f"ls {REMOTE_ROOT}")
+    if code:
+        raise HelperError("list_failed")
+    text = stdout.decode("utf-8", "replace")
+    complete = sorted(set(re.findall(
+        rf"(?<![A-Za-z0-9_.-])({SNAPSHOT_RE.pattern})\.manifest\.json(?![A-Za-z0-9_.-])", text)))
+    partials = sorted(set(re.findall(
+        rf"(?<![A-Za-z0-9_.-])({SNAPSHOT_RE.pattern}\.(?:payload\.tar\.age|manifest\.json)\.part)(?![A-Za-z0-9_.-])", text)))
+    return complete, partials
+
+
+def upload(req):
+    clean = transfer_request(req, {"payloadFile", "manifestFile"})
+    ident = clean["snapshot"]
+    payload = clean["payloadFile"]
+    manifest_path = clean["manifestFile"]
+    manifest = checked_manifest(manifest_path, ident)
+    if (payload.stat().st_size != manifest["payloadSize"] or
+            sha256_file(payload) != manifest["payloadSha256"]):
+        raise HelperError("payload_integrity_failed")
+    with tempfile.TemporaryDirectory(prefix="omarchy-smb-upload-") as temporary:
+        stage = Path(temporary)
+        copy_regular(payload, stage / "payload.tar.age")
+        copy_regular(manifest_path, stage / "manifest.json")
+        staged_payload = stage / "payload.tar.age"
+        staged_manifest = checked_manifest(stage / "manifest.json", ident)
+        if (staged_payload.stat().st_size != staged_manifest["payloadSize"] or
+                sha256_file(staged_payload) != staged_manifest["payloadSha256"]):
+            raise HelperError("payload_integrity_failed")
+        base = f"{REMOTE_ROOT}/{ident}"
+        command = "; ".join([
+            f"mkdir {REMOTE_ROOT}",
+            f"put payload.tar.age {base}.payload.tar.age.part",
+            f"rename {base}.payload.tar.age.part {base}.payload.tar.age",
+            f"put manifest.json {base}.manifest.json.part",
+            f"rename {base}.manifest.json.part {base}.manifest.json",
+        ])
+        code, _stdout, _stderr, _argv = run_smb(
+            clean, saved=True, share=clean["share"], command=command, cwd=stage,
+            timeout=TRANSFER_TIMEOUT)
+        if code:
+            raise HelperError("upload_failed")
+    return {"uploaded": True, "snapshot": ident}
+
+
+def download(req):
+    if not isinstance(req, dict) or set(req) != SHARE_KEYS | {"snapshot", "destination"}:
+        raise HelperError("invalid_request")
+    clean = saved_share_request({key: req[key] for key in SHARE_KEYS})
+    ident = snapshot_id(req.get("snapshot"))
+    destination = local_empty_directory(req.get("destination"))
+    with tempfile.TemporaryDirectory(prefix=".omarchy-smb-download-", dir=destination.parent) as temporary:
+        stage = Path(temporary)
+        base = f"{REMOTE_ROOT}/{ident}"
+        command = "; ".join([
+            f"get {base}.payload.tar.age payload.tar.age",
+            f"get {base}.manifest.json manifest.json",
+        ])
+        code, _stdout, _stderr, _argv = run_smb(
+            clean, saved=True, share=clean["share"], command=command, cwd=stage,
+            timeout=TRANSFER_TIMEOUT)
+        if code:
+            raise HelperError("download_failed")
+        payload = stage / "payload.tar.age"
+        manifest_path = stage / "manifest.json"
+        if not payload.is_file() or payload.is_symlink() or not manifest_path.is_file() or manifest_path.is_symlink():
+            raise HelperError("download_incomplete")
+        manifest = checked_manifest(manifest_path, ident)
+        if (payload.stat().st_size != manifest["payloadSize"] or
+                sha256_file(payload) != manifest["payloadSha256"]):
+            raise HelperError("payload_integrity_failed")
+        if any(destination.iterdir()):
+            raise HelperError("destination_not_empty")
+        os.rename(payload, destination / "payload.tar.age")
+        os.rename(manifest_path, destination / "manifest.json")
+    return {"downloaded": True, "snapshot": ident,
+            "payloadSha256": manifest["payloadSha256"]}
+
+
+def list_manifests(req):
+    clean = saved_share_request(req)
+    identifiers, _partials = remote_listing(clean)
+    snapshots = []
+    with tempfile.TemporaryDirectory(prefix="omarchy-smb-list-") as temporary:
+        stage = Path(temporary)
+        for ident in identifiers:
+            manifest_path = stage / "manifest.json"
+            manifest_path.unlink(missing_ok=True)
+            command = f"get {REMOTE_ROOT}/{ident}.manifest.json manifest.json"
+            code, _stdout, _stderr, _argv = run_smb(
+                clean, saved=True, share=clean["share"], command=command, cwd=stage)
+            if code or not manifest_path.is_file() or manifest_path.is_symlink():
+                raise HelperError("list_failed")
+            snapshots.append(checked_manifest(manifest_path, ident))
+    return {"snapshots": snapshots}
+
+
+def remove_partials(req):
+    clean = saved_share_request(req)
+    _identifiers, partials = remote_listing(clean)
+    if not partials:
+        return {"removed": 0}
+    command = "; ".join(f"del {REMOTE_ROOT}/{name}" for name in partials)
+    code, _stdout, _stderr, _argv = run_smb(
+        clean, saved=True, share=clean["share"], command=command)
+    if code:
+        raise HelperError("remove_partials_failed")
+    return {"removed": len(partials)}
+
+
+def store_credential(req, password):
+    if password is None:
+        raise HelperError("credential_required")
+    if not shutil.which("secret-tool"):
+        raise HelperError("secret_service_unavailable")
+    argv = ["secret-tool", "store", "--label=Omarchy Control Panel Time Capsule", *credential_attributes(req)]
+    try:
+        process = subprocess.Popen(
+            argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, env=clean_env(), close_fds=True,
+            start_new_session=True,
+        )
+        process.communicate(password, timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        raise HelperError("timeout") from None
+    except OSError:
+        raise HelperError("secret_service_unavailable") from None
+    if process.returncode:
+        raise HelperError("credential_store_failed")
+
+
+def forget_credential(req):
+    clean = validate_auth_request(req, allow_saved=False)
+    if not shutil.which("secret-tool"):
+        raise HelperError("secret_service_unavailable")
+    try:
+        result = subprocess.run(
+            ["secret-tool", "clear", *credential_attributes(clean)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, env=clean_env(), timeout=TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise HelperError("secret_service_unavailable") from None
+    if result.returncode:
+        raise HelperError("credential_not_found")
+    return {"forgotten": True}
+
+
+def tcp_reachable(address, port):
+    try:
+        with socket.create_connection((address, port), timeout=0.8):
+            return True
+    except OSError:
+        return False
+
+
+def probe(req):
+    if not isinstance(req, dict) or set(req) != TARGET_KEYS:
+        raise HelperError("invalid_request")
+    clean = validate_target(req)
+    if not shutil.which("smbclient"):
+        return {"available": False, "legacySmb": False, "afpReachable": tcp_reachable(clean["address"], 548), "reason": "smbclient_unavailable"}
+    code, stdout, stderr, _argv = run_smb(clean, anonymous=True, list_shares=True)
+    reached = smb_reached(code, stdout, stderr)
+    return {
+        "available": reached,
+        "legacySmb": reached,
+        "authenticationRequired": code != 0 and reached,
+        "afpReachable": tcp_reachable(clean["address"], 548),
+        "compatibility": "smb1_nt1" if reached else "unknown",
+    }
+
+
+def main(action, req, password=None):
+    if action == "capabilities":
+        return capabilities(req)
+    if action == "probe":
+        if password is not None:
+            raise HelperError("password_not_allowed")
+        return probe(req)
+    if action == "shares":
+        return shares(req, password)
+    if action == "verify":
+        return verify(req, password)
+    if action == "save-credential":
+        clean = validate_auth_request(req, require_share=True, allow_saved=False)
+        if password is None:
+            raise HelperError("credential_required")
+        verified = verify(clean, password)
+        store_credential(clean, password)
+        return {"saved": True, **verified}
+    if action == "forget-credential":
+        if password is not None:
+            raise HelperError("password_not_allowed")
+        return forget_credential(req)
+    if action == "upload":
+        if password is not None:
+            raise HelperError("password_not_allowed")
+        return upload(req)
+    if action == "download":
+        if password is not None:
+            raise HelperError("password_not_allowed")
+        return download(req)
+    if action == "list":
+        if password is not None:
+            raise HelperError("password_not_allowed")
+        return list_manifests(req)
+    if action == "remove-partials":
+        if password is not None:
+            raise HelperError("password_not_allowed")
+        return remove_partials(req)
+    raise HelperError("invalid_action")
+
+
+def read_line(stream, limit):
+    value = stream.readline(limit + 2)
+    present = value != b""
+    if len(value) > limit + 1 or (len(value) == limit + 1 and not value.endswith(b"\n")):
+        raise HelperError("invalid_input")
+    if value.endswith(b"\n"):
+        value = value[:-1]
+    return value, present
+
+
+def cli():
+    try:
+        if len(sys.argv) != 2:
+            raise HelperError("invalid_action")
+        action = sys.argv[1]
+        control, control_present = read_line(sys.stdin.buffer, CONTROL_LIMIT)
+        if not control_present or not control:
+            raise HelperError("invalid_input")
+        try:
+            req = json.loads(control)
+        except (ValueError, UnicodeError):
+            raise HelperError("invalid_input") from None
+        if not isinstance(req, dict):
+            raise HelperError("invalid_request")
+        second, second_present = read_line(sys.stdin.buffer, PASSWORD_LIMIT)
+        password = second if second_present else None
+        trailing = sys.stdin.buffer.read(1)
+        if trailing:
+            raise HelperError("invalid_input")
+        if action in ("probe", "capabilities", "forget-credential", "upload", "download", "list", "remove-partials") and second_present:
+            raise HelperError("password_not_allowed")
+        if action in ("shares", "verify", "save-credential") and not req.get("savedCredential") and not second_present:
+            raise HelperError("credential_required")
+        result = main(action, req, password)
+        print(json.dumps({"ok": True, **result}, separators=(",", ":")))
+        return 0
+    except HelperError as error:
+        print(json.dumps({"ok": False, "error": str(error)}, separators=(",", ":")))
+        return 1
+    except Exception:
+        print('{"ok":false,"error":"internal_error"}')
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(cli())

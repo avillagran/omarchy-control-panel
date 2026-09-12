@@ -10,9 +10,9 @@ sleep 0.2
 
 # Launch with proper environment
 cd "$DIR"
-export QML2_IMPORT_PATH="$DIR/qs:/usr/share/omarchy/shell:/usr/lib/qt6/qml"
-export QML_IMPORT_PATH="$DIR/qs:/usr/share/omarchy/shell:/usr/lib/qt6/qml"
+export QML2_IMPORT_PATH="$DIR:/usr/share/omarchy/shell:/usr/lib/qt6/qml"
+export QML_IMPORT_PATH="$DIR:/usr/share/omarchy/shell:/usr/lib/qt6/qml"
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1001}"
 
-exec quickshell -p "$DIR/shell.qml"
+exec quickshell --daemonize -p "$DIR/shell.qml"

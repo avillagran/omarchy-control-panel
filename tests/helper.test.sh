@@ -6,6 +6,19 @@ fixture_dir=$(mktemp -d)
 trap 'rm -rf "$fixture_dir"' EXIT
 mkdir -p "$fixture_dir/bin" "$fixture_dir/state"
 
+# Mocking hyprctl alone is insufficient: persist_layout writes Lua directly,
+# which the real compositor watches. Isolate every user path before any helper.
+export HOME="$fixture_dir/home"
+export XDG_CONFIG_HOME="$fixture_dir/config"
+export XDG_DATA_HOME="$fixture_dir/data"
+export XDG_CACHE_HOME="$fixture_dir/cache"
+export XDG_RUNTIME_DIR="$fixture_dir/runtime"
+unset HYPRLAND_INSTANCE_SIGNATURE WAYLAND_DISPLAY DISPLAY DBUS_SESSION_BUS_ADDRESS
+mkdir -p "$HOME" "$XDG_CONFIG_HOME/hypr" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+# Exercise persistence too, but only inside the fixture.
+printf '%s\n' '-- isolated display test configuration' >"$XDG_CONFIG_HOME/hypr/control-panel.lua"
+
 cat >"$fixture_dir/monitors.json" <<'JSON'
 [
   {"name":"eDP-1","description":"Internal","make":"BOE","model":"Panel","serial":"ABC","disabled":false,"focused":true,"width":1920,"height":1200,"refreshRate":60.001,"x":0,"y":0,"scale":1,"transform":0,"mirrorOf":"none","availableModes":["1920x1200@60.001","1280x800@60"]},
@@ -109,6 +122,9 @@ SH
 chmod +x "$fixture_dir/bin/"*
 
 export PATH="$fixture_dir/bin:$PATH"
+for mocked_command in hyprctl systemd-run systemctl; do
+  [[ $(command -v "$mocked_command") == "$fixture_dir/bin/$mocked_command" ]] || exit 1
+done
 export XDG_STATE_HOME="$fixture_dir/state"
 export TEST_MONITORS="$fixture_dir/monitors.json"
 export TEST_CALLS="$fixture_dir/calls"
@@ -180,7 +196,9 @@ $helper apply "$state" >/dev/null
 
 config=$(jq -c '[.[0] + {x:3840,transform:1,mode:"1920x1200@60.001Hz"}, .[1] + {x:0}]' <<<"$state")
 $helper preview "$config" >/dev/null
-grep -q '^hl.monitor({ output = "eDP-1", mode = "1920x1200@60.001", position = "3840x0", scale = 1, transform = 1 })$' "$TEST_CALLS"
+# The helper canonicalizes refresh rates to at most two decimals before eval;
+# 60.001 therefore becomes 60, matching what Hyprland reliably honours.
+grep -q '^hl.monitor({ output = "eDP-1", mode = "1920x1200@60", position = "3840x0", scale = 1, transform = 1 })$' "$TEST_CALLS"
 grep -q 'display-manager rollback$' "$TEST_SYSTEMD_CALLS"
 $helper state | jq -e '.[0].x == 3840 and .[0].transform == 1 and .[1].x == 0' >/dev/null
 $helper confirm >/dev/null

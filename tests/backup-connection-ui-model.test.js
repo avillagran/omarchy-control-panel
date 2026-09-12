@@ -1,0 +1,13 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const model = {};
+vm.createContext(model);
+vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../desktop/BackupModel.js'), 'utf8').replace(/^\.pragma library\s*/, ''), model);
+assert.equal(typeof model.connectionStage, 'function', 'progressive connection states required');
+assert.equal(model.connectionStage('', false, false, false), 'discover');
+assert.equal(model.connectionStage('capsule.local', false, false, false), 'connect');
+assert.equal(model.connectionStage('capsule.local', true, false, false), 'authenticate');
+assert.equal(model.connectionStage('', false, true, false), 'folder');
+assert.equal(model.connectionStage('capsule.local', true, true, true), 'ready');
+console.log('Connection UI progressive disclosure tests passed');

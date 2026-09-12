@@ -284,7 +284,10 @@ apply_config() {
     apply_rows "$config" 0.75
   else
     printf '%s apply_rows_normal\n' "$(date -Iseconds)" >>/tmp/omarchy-cp-display.log
-    apply_rows "$config" 0.75
+    # No scale/mode transition: apply only the rows proven different above.
+    # Re-emitting an unchanged monitor rule can blank that output and destroy
+    # the panel surface hosted on it.
+    apply_rows "$changed" 0.75
   fi
 
   # Hyprland can accept a monitor rule even when the DRM backend rejects its

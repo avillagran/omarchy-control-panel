@@ -1,0 +1,515 @@
+#!/usr/bin/env python3
+"""Fixture-testable backup CLI. See docs/backup.md for the storage contract."""
+import hashlib
+import datetime
+import fcntl
+import fnmatch
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tarfile
+import tempfile
+import uuid
+
+CATEGORIES = {
+    'omarchy': ['.config/omarchy', '.config/hypr'],
+    'apps': ['.config/alacritty', '.config/kitty', '.config/ghostty', '.config/nvim', '.config/gtk-3.0', '.config/gtk-4.0', '.local/share/applications'],
+    'themes': ['.local/share/omarchy/themes', '.local/share/themes', '.themes'],
+    'hermes': ['.hermes/skills', '.hermes/templates'],
+    'profiles': ['.hermes/profiles/*/skills', '.hermes/profiles/*/templates', '.local/state/omarchy/control-panel-profiles.json', '.local/state/omarchy/control-panel-prefs.json'],
+}
+EXCLUDED = ['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.cache', '.git', '.env', '.env.*', '*.pem', '*.key', '*credential*', '*token*', '*secret*', '*password*', 'id_rsa*', 'id_ed25519*', 'auth.json', 'auth.yaml', '.netrc', '.npmrc', '.pypirc', '.bash_history', '.zsh_history', 'keyrings', 'chromium', 'google-chrome', '.mozilla', 'rclone', 'Cache', 'node_modules']
+TOOLS = ['git', 'rsync', 'age', 'rclone']
+ID = re.compile(r'^[0-9]{8}T[0-9]{12}Z-[a-f0-9]{12}$')
+TIMECAPSULE_KEYS = {'host', 'address', 'mac', 'user', 'share', 'savedCredential'}
+
+
+def run(args, **kwargs):
+    env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+    env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null', GIT_TERMINAL_PROMPT='0', LC_ALL='C')
+    result = subprocess.run(args, capture_output=True, env=env, **kwargs)
+    if result.returncode:
+        raise ValueError(f'{Path(args[0]).name} failed (exit {result.returncode})')
+    return result.stdout
+
+
+def absolute(value):
+    if not isinstance(value, str) or not value or '\x00' in value:
+        raise ValueError('Expected an absolute path')
+    path = Path(value)
+    if not path.is_absolute() or '..' in path.parts:
+        raise ValueError('Expected an absolute path without ..')
+    for item in [path, *path.parents]:
+        if item.is_symlink():
+            raise ValueError('Symlink paths are not allowed')
+    return path
+
+
+def relative(value):
+    if not isinstance(value, str) or not value or '\x00' in value:
+        raise ValueError('Invalid relative path')
+    path = PurePosixPath(value)
+    if path.is_absolute() or '..' in path.parts:
+        raise ValueError('Paths must stay within home')
+    return path
+
+
+def excluded(parts):
+    if '.hermes' in parts:
+        index = parts.index('.hermes')
+        tail = parts[index + 1:]
+        if not tail:
+            return False
+        if tail[0] not in ('skills', 'templates', 'profiles'):
+            return True
+        if tail[0] == 'profiles' and len(tail) > 2 and tail[2] not in ('skills', 'templates'):
+            return True
+    return any(fnmatch.fnmatchcase(p.lower(), pattern.lower()) for p in parts for pattern in EXCLUDED)
+
+
+def copy_safe(source, target, filtering=False):
+    """Copy only ordinary files, opening each source with O_NOFOLLOW."""
+    if not source.exists() or source.is_symlink():
+        return
+    def visit(src, dst, parts):
+        if filtering and excluded(parts):
+            return
+        mode = src.lstat().st_mode
+        if stat.S_ISDIR(mode):
+            dst.mkdir(parents=True, exist_ok=True)
+            for child in sorted(src.iterdir()):
+                visit(child, dst / child.name, parts + [child.name])
+        elif stat.S_ISREG(mode):
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as inp:
+                if not stat.S_ISREG(os.fstat(inp.fileno()).st_mode):
+                    raise ValueError('Source changed during backup')
+                with dst.open('wb') as out:
+                    shutil.copyfileobj(inp, out)
+            os.chmod(dst, stat.S_IMODE(mode) & 0o777)
+            metadata = src.stat(follow_symlinks=False)
+            os.utime(dst, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+    visit(source, target, list(source.parts))
+
+
+def payload_index(payload):
+    absolute(str(payload))
+    result = {}
+    for current, dirs, files in os.walk(payload, followlinks=False):
+        for name in dirs + files:
+            path = Path(current) / name
+            mode = path.lstat().st_mode
+            if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+                raise ValueError('Unsafe entry in backup payload')
+            if stat.S_ISREG(mode) and path != payload / 'index.json':
+                with path.open('rb') as inp:
+                    result[str(path.relative_to(payload))] = hashlib.file_digest(inp, 'sha256').hexdigest()
+    return result
+
+
+def verify_payload(payload):
+    actual = payload_index(payload)
+    index = payload / 'index.json'
+    if not index.is_file() or actual != json.loads(index.read_text()):
+        raise ValueError('Snapshot integrity check failed')
+
+
+def inventory():
+    packages = []
+    if shutil.which('pacman'):
+        packages = run(['pacman', '-Qqe'], text=True).splitlines()
+    return {'manager': 'pacman' if shutil.which('pacman') else None, 'packages': packages}
+
+
+def manifests(root):
+    result = []
+    for child in sorted(root.iterdir()):
+        if ID.fullmatch(child.name) and child.is_dir() and not child.is_symlink():
+            manifest = child / 'manifest.json'
+            if manifest.is_file() and not manifest.is_symlink():
+                data = json.loads(manifest.read_text())
+                if data.get('id') != child.name:
+                    raise ValueError('Invalid snapshot manifest')
+                result.append(data)
+    return result
+
+
+def git(path, *args):
+    return run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.attributesFile=/dev/null', '-C', str(path), *args])
+
+
+def backup(req, root, home):
+    ident = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ-') + uuid.uuid4().hex[:12]
+    history = manifests(root)
+    with tempfile.TemporaryDirectory(prefix='.pending-', dir=None if req['encrypted'] else root) as scratch:
+        stage = Path(scratch)
+        payload = stage / 'payload'
+        payload.mkdir()
+        if req['configurations']:
+            config = payload / 'config'
+            previous = next((x for x in reversed(history) if x['configurations'] and not x['encrypted']), None)
+            if previous:
+                verify_payload(root / previous['id'] / 'payload')
+                copy_safe(root / previous['id'] / 'payload/config/.git', config / '.git')
+                # Never execute filter drivers or includes from stored Git config.
+                (config / '.git/config').write_text('[core]\nrepositoryformatversion = 0\nbare = false\n')
+            config.mkdir(exist_ok=True)
+            for patterns in CATEGORIES.values():
+                for pattern in patterns:
+                    for source in home.glob(pattern):
+                        if not any(p.is_symlink() for p in [source, *source.parents]):
+                            copy_safe(source, config / source.relative_to(home), True)
+            git(config, 'init', '-q')
+            git(config, 'add', '--all', '--force')
+            git(config, '-c', 'user.name=Omarchy Backup', '-c', 'user.email=backup@localhost', 'commit', '--allow-empty', '-qm', ident)
+        if req['files']:
+            selected = stage / 'selected'
+            selected.mkdir()
+            for name in req['paths']:
+                rel = relative(name)
+                source = home / rel
+                if not any(p.is_symlink() for p in [source, *source.parents]):
+                    copy_safe(source, selected / rel, True)
+            dest = payload / 'files'
+            dest.mkdir()
+            args = ['rsync', '-rlt', '--perms', '--checksum']
+            previous = next((x for x in reversed(history) if x['files'] and not x['encrypted']), None)
+            if previous:
+                verify_payload(root / previous['id'] / 'payload')
+                args.append('--link-dest=' + str(root / previous['id'] / 'payload/files'))
+            run(args + ['--', str(selected) + '/', str(dest) + '/'])
+            shutil.rmtree(selected)
+        (payload / 'packages.json').write_text(json.dumps(inventory()))
+        (payload / 'index.json').write_text(json.dumps(payload_index(payload), sort_keys=True))
+        manifest = {'id': ident, 'created': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'configurations': req['configurations'], 'files': req['files'], 'encrypted': req['encrypted'], 'format': 1}
+        if req['encrypted']:
+            archive = stage / 'payload.tar'
+            with tarfile.open(archive, 'w', dereference=False) as tar:
+                tar.add(payload, arcname='payload')
+            run(['age', '-r', req['ageRecipient'], '-o', str(stage / 'payload.tar.age'), str(archive)])
+            archive.unlink()
+            shutil.rmtree(payload)
+        (stage / 'manifest.json').write_text(json.dumps(manifest))
+        if req['encrypted']:
+            with tempfile.TemporaryDirectory(prefix='.publish-', dir=root) as publication:
+                copy_safe(stage, Path(publication))
+                os.rename(publication, root / ident)
+        else:
+            os.rename(stage, root / ident)
+    return {'snapshot': ident, 'manifest': manifest}
+
+
+def restore(req, root, home):
+    ident = req.get('snapshot', '')
+    if not isinstance(ident, str) or not ID.fullmatch(ident):
+        raise ValueError('Invalid snapshot ID')
+    target = absolute(req.get('target'))
+    if target == home or home in target.parents or target == root or root in target.parents or target in root.parents:
+        raise ValueError('Restore target must be outside home and backup storage')
+    if not target.is_dir() or any(target.iterdir()):
+        raise ValueError('Restore target must be an existing empty directory')
+    manifest = next((x for x in manifests(root) if x['id'] == ident), None)
+    if not manifest:
+        raise ValueError('Snapshot not found')
+    if manifest['encrypted']:
+        if not shutil.which('age'):
+            raise ValueError('Missing tools: age')
+        identity = absolute(req.get('identityFile'))
+        if not identity.is_file():
+            raise ValueError('identityFile must be a regular file')
+        archive = absolute(str(root / ident / 'payload.tar.age'))
+        with tempfile.TemporaryDirectory(prefix='omarchy-decrypt-') as scratch:
+            temporary = Path(scratch)
+            plain = temporary / 'decrypted.tar'
+            run(['age', '-d', '-i', str(identity), '-o', str(plain), str(archive)])
+            snapshot = temporary / ident
+            snapshot.mkdir()
+            with tarfile.open(plain, 'r:') as tar:
+                members = tar.getmembers()
+                seen = set()
+                for member in members:
+                    rel = relative(member.name)
+                    if not rel.parts or rel.parts[0] != 'payload' or not (member.isdir() or member.isfile()) or str(rel) in seen:
+                        raise ValueError('Unsafe encrypted archive entry')
+                    seen.add(str(rel))
+                for member in members:
+                    dest = snapshot / relative(member.name)
+                    if member.isdir():
+                        dest.mkdir(parents=True, exist_ok=True)
+                    else:
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        with tar.extractfile(member) as inp, dest.open('xb') as out:
+                            shutil.copyfileobj(inp, out)
+                        os.chmod(dest, member.mode & 0o777)
+            (snapshot / 'manifest.json').write_text(json.dumps(manifest | {'encrypted': False}))
+            return restore(req, temporary, home)
+    payload = root / ident / 'payload'
+    verify_payload(payload)
+    with tempfile.TemporaryDirectory(prefix='.restore-', dir=target.parent) as scratch:
+        stage = Path(scratch)
+        copy_safe(payload / 'files', stage / 'home')
+        config = payload / 'config'
+        if config.is_dir():
+            for child in config.iterdir():
+                if child.name != '.git':
+                    copy_safe(child, stage / 'home' / child.name)
+        copy_safe(payload / 'packages.json', stage / 'packages.json')
+        if not (stage / 'packages.json').is_file():
+            raise ValueError('Incomplete snapshot')
+        if any(target.iterdir()):
+            raise ValueError('Restore target is no longer empty')
+        for child in stage.iterdir():
+            os.rename(child, target / child.name)
+    return {'snapshot': ident, 'target': str(target)}
+
+
+def remote_action(action, req):
+    destination = req.get('destination')
+    if not isinstance(destination, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]*:[A-Za-z0-9_./ -]+', destination):
+        raise ValueError('Use a configured rclone remote:subdirectory')
+    name, path = destination.split(':', 1)
+    if not relative(path).parts:
+        raise ValueError('Remote subdirectory must not be empty')
+    with tempfile.TemporaryDirectory(prefix='omarchy-remote-') as scratch:
+        root = Path(scratch)
+        local_req = req | {'transport': 'local', 'destination': str(root)}
+        if action == 'plan':
+            result = main(action, local_req)
+            result['required'].append('rclone')
+            if not shutil.which('rclone'):
+                result['missing'].append('rclone')
+            result['warnings'].append('Remote history is staged locally; configure SFTP host-key verification in rclone')
+            return result
+        if not shutil.which('rclone'):
+            raise ValueError('Missing tools: rclone')
+        remotes = run(['rclone', 'listremotes', '--long'], text=True)
+        if not any(line.split() == [name + ':', 'sftp'] for line in remotes.splitlines()):
+            raise ValueError('Destination must name a configured SFTP remote')
+        # Validate the complete backup request before creating remote directories.
+        if action == 'backup':
+            validation = main('plan', local_req)
+            if validation['missing']:
+                raise ValueError('Missing tools: ' + ', '.join(validation['missing']))
+            run(['rclone', 'mkdir', destination])
+        listing = json.loads(run(['rclone', 'lsjson', '--dirs-only', destination], text=True))
+        for item in listing:
+            ident = item.get('Name', '')
+            if ID.fullmatch(ident):
+                run(['rclone', 'copy', '--create-empty-src-dirs', destination + '/' + ident, str(root / ident)])
+        result = main(action, local_req)
+        if action == 'backup':
+            ident = result['snapshot']
+            local = str(root / ident)
+            remote = destination + '/' + ident
+            run(['rclone', 'copy', '--immutable', '--create-empty-src-dirs', '--exclude', '/manifest.json', local, remote])
+            run(['rclone', 'check', '--download', '--exclude', '/manifest.json', local, remote])
+            run(['rclone', 'copyto', '--immutable', local + '/manifest.json', remote + '/manifest.json'])
+            verified = json.loads(run(['rclone', 'cat', remote + '/manifest.json'], text=True))
+            if verified != result['manifest']:
+                raise ValueError('Remote manifest verification failed')
+        return result
+
+
+def timecapsule_target(value):
+    if not isinstance(value, dict) or set(value) != TIMECAPSULE_KEYS:
+        raise ValueError('Direct Time Capsule destination has invalid fields')
+    if value.get('savedCredential') is not True:
+        raise ValueError('Direct Time Capsule requires a saved credential')
+    validators = {
+        'host': r'[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?',
+        'address': r'(?:[0-9]{1,3}\.){3}[0-9]{1,3}',
+        'mac': r'[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}',
+        'user': r'[A-Za-z0-9_. -]{1,128}',
+        'share': r"[A-Za-z0-9 _.$()+'-]{1,128}",
+    }
+    for key, pattern in validators.items():
+        item = value.get(key)
+        if not isinstance(item, str) or item.strip() != item or not re.fullmatch(pattern, item):
+            raise ValueError('Direct Time Capsule destination is invalid')
+    if value['share'] in ('.', '..'):
+        raise ValueError('Direct Time Capsule destination is invalid')
+    return dict(value)
+
+
+def invoke_timecapsule(action, request):
+    helper = Path(__file__).with_name('timecapsule-smb')
+    if not helper.is_file():
+        raise ValueError('Missing tools: timecapsule-smb')
+    env = {key: value for key, value in os.environ.items()
+           if key not in ('PASSWD', 'PASSWD_FILE', 'PASSWD_FD')}
+    env['LC_ALL'] = 'C'
+    try:
+        result = subprocess.run(
+            [sys.executable, str(helper), action],
+            input=(json.dumps(request, separators=(',', ':')) + '\n').encode(),
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env,
+            timeout=24 * 60 * 60, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise ValueError('Time Capsule transport failed') from None
+    try:
+        response = json.loads(result.stdout)
+    except (ValueError, UnicodeError):
+        raise ValueError('Time Capsule transport failed') from None
+    if result.returncode or not isinstance(response, dict) or response.get('ok') is not True:
+        error = response.get('error') if isinstance(response, dict) else None
+        if not isinstance(error, str) or not re.fullmatch(r'[a-z0-9_]+', error):
+            error = 'transport_failed'
+        raise ValueError('Time Capsule: ' + error)
+    return {key: value for key, value in response.items() if key != 'ok'}
+
+
+def timecapsule_action(action, req, home):
+    target = timecapsule_target(req.get('destination'))
+    if action in ('plan', 'backup') and req.get('encrypted') is not True:
+        raise ValueError('Direct Time Capsule backups must be age-encrypted full snapshots')
+    with tempfile.TemporaryDirectory(prefix='omarchy-timecapsule-') as scratch:
+        root = Path(scratch)
+        local_req = req | {'transport': 'local', 'destination': str(root), 'encrypted': True}
+        if action == 'plan':
+            result = main('plan', local_req)
+            for tool in ('smbclient', 'secret-tool'):
+                if tool not in result['required']:
+                    result['required'].append(tool)
+                if not shutil.which(tool) and tool not in result['missing']:
+                    result['missing'].append(tool)
+            result['summary'] = 'Age-encrypted full snapshot uploaded directly over SMB1'
+            result['warnings'].append('SMB1 is weak; use only on a trusted directly connected LAN')
+            return result
+        if action == 'history':
+            return invoke_timecapsule('list', target)
+        if action == 'backup':
+            result = main('backup', local_req)
+            ident = result['snapshot']
+            snapshot = root / ident
+            payload = snapshot / 'payload.tar.age'
+            manifest_path = snapshot / 'manifest.json'
+            with payload.open('rb') as stream:
+                digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+            manifest = result['manifest'] | {
+                'payloadSha256': digest,
+                'payloadSize': payload.stat().st_size,
+            }
+            manifest_path.write_text(json.dumps(manifest))
+            invoke_timecapsule('upload', target | {
+                'snapshot': ident, 'payloadFile': str(payload),
+                'manifestFile': str(manifest_path),
+            })
+            return {'snapshot': ident, 'manifest': manifest}
+        ident = req.get('snapshot', '')
+        if not isinstance(ident, str) or not ID.fullmatch(ident):
+            raise ValueError('Invalid snapshot ID')
+        snapshot = root / ident
+        snapshot.mkdir()
+        invoke_timecapsule('download', target | {
+            'snapshot': ident, 'destination': str(snapshot),
+        })
+        return main('restore', local_req | {
+            'snapshot': ident, 'target': req.get('target'),
+            'identityFile': req.get('identityFile'),
+        })
+
+
+def create_key(req):
+    """Generate an age identity, returning only its public recipient."""
+    if not shutil.which('age-keygen'):
+        raise ValueError('Missing tools: age-keygen (install age)')
+    identity = absolute(req.get('identityFile'))
+    if identity.suffix != '.key':
+        raise ValueError('Recovery key filename must end in .key so backups exclude it')
+    if not identity.parent.is_dir() or identity.exists():
+        raise ValueError('Choose a new recovery key file in an existing directory')
+    with tempfile.TemporaryDirectory(prefix='.age-key-', dir=identity.parent) as scratch:
+        temporary = Path(scratch) / 'identity.key'
+        run(['age-keygen', '-o', str(temporary)])
+        os.chmod(temporary, 0o600)
+        recipient = run(['age-keygen', '-y', str(temporary)], text=True).strip()
+        if not re.fullmatch(r'age1[0-9a-z]{58}', recipient):
+            raise ValueError('age-keygen returned an unsupported public key')
+        # Exclusive creation avoids overwriting even if the picker raced a writer.
+        fd = os.open(identity, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        try:
+            with os.fdopen(fd, 'wb') as out, temporary.open('rb') as inp:
+                shutil.copyfileobj(inp, out)
+                out.flush()
+                os.fsync(out.fileno())
+        except Exception:
+            identity.unlink(missing_ok=True)
+            raise
+    return {'identityFile': str(identity), 'ageRecipient': recipient}
+
+
+def main(action, req):
+    if not isinstance(req, dict):
+        raise ValueError('Request must be a JSON object')
+    tools = {name: bool(shutil.which(name)) for name in TOOLS}
+    if action == 'capabilities':
+        return {'tools': tools, 'transports': ['local', 'smb', 'timecapsule', 'sftp'], 'encryption': 'age', 'plaintext': True}
+    if action == 'create-key':
+        return create_key(req)
+    if action not in ('plan', 'backup', 'history', 'restore'):
+        raise ValueError('Unknown action')
+    for key in ('configurations', 'files', 'encrypted'):
+        if not isinstance(req.get(key, False), bool):
+            raise ValueError(key + ' must be boolean')
+        req.setdefault(key, False)
+    if 'passwordFile' in req:
+        raise ValueError('passwordFile is unsupported; use ageRecipient / identityFile')
+    home = absolute(req.get('home', str(Path.home())))
+    if not home.is_dir():
+        raise ValueError('Home directory does not exist')
+    transport = req.get('transport', 'local')
+    if transport not in ('local', 'smb', 'timecapsule', 'sftp'):
+        raise ValueError('Unsupported transport')
+    if transport == 'sftp':
+        return remote_action(action, req)
+    if transport == 'timecapsule' and isinstance(req.get('destination'), dict):
+        return timecapsule_action(action, req, home)
+    root = absolute(req.get('destination'))
+    if not root.is_dir() or root == home or home in root.parents or root in home.parents:
+        raise ValueError('Destination must exist outside home')
+    req.setdefault('paths', ['.'])
+    if not isinstance(req['paths'], list) or not req['paths']:
+        raise ValueError('paths must be a nonempty array')
+    for name in req['paths']:
+        relative(name)
+    if action in ('backup', 'plan') and not (req['configurations'] or req['files']):
+        raise ValueError('Select configurations and/or files')
+    if req['encrypted'] and action in ('plan', 'backup'):
+        recipient = req.get('ageRecipient', '')
+        if not isinstance(recipient, str) or not re.fullmatch(r'age1[0-9a-z]{58}', recipient):
+            raise ValueError('ageRecipient must be a native age public key')
+    required = (['git'] if req['configurations'] else []) + (['rsync'] if req['files'] else []) + (['age'] if req['encrypted'] else [])
+    if action in ('history', 'restore'):
+        required = []
+    missing = [name for name in required if not tools[name]]
+    if action == 'plan':
+        return {'summary': 'Git configurations and rsync files; restore into empty staging only', 'categories': CATEGORIES, 'exclusions': EXCLUDED, 'paths': req['paths'], 'required': required, 'missing': missing, 'warnings': ['Filename exclusions cannot detect all secrets', 'Symlinks are skipped']}
+    if missing:
+        raise ValueError('Missing tools: ' + ', '.join(missing))
+    lockpath = root / '.control-panel-backup.lock'
+    fd = os.open(lockpath, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if action == 'history':
+            return {'snapshots': manifests(root)}
+        if action == 'backup':
+            return backup(req, root, home)
+        return restore(req, root, home)
+
+
+if __name__ == '__main__':
+    os.umask(0o077)
+    try:
+        request = json.loads(sys.stdin.read() or '{}')
+        response = main(sys.argv[1] if len(sys.argv) == 2 else '', request)
+        print(json.dumps({'ok': True, 'error': None, **response}))
+    except Exception as error:
+        print(json.dumps({'ok': False, 'error': str(error)}))
+        sys.exit(1)
