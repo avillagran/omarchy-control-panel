@@ -26,10 +26,11 @@ Item {
     color: root.foreground
     font.family: root.fontFamily
     font.pixelSize: root.titleSize
-    elide: Text.ElideRight
+    wrapMode: Text.WordWrap
+    maximumLineCount: 2
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
-    width: parent.width - track.width - Style.spacing.rowPaddingX
+    width: Math.max(0, parent.width - track.width - Style.spacing.rowPaddingX - Style.space(8))
   }
 
   ToggleSwitch {

@@ -1,0 +1,431 @@
+#!/usr/bin/env python3
+"""Backup wizard connection contract (stdlib; never handles passwords).
+
+Invoke: backup-connection ACTION, one JSON object on stdin; one JSON on stdout.
+Success: {ok:true,error:null,...}; failure: {ok:false,error:REASON,reason:REASON}.
+Actions: capabilities, discover, connect, folders, verify, local-devices, mount.
+Request: transport (local/default, smb, timecapsule, sftp), optional host, user,
+port (integer), share, path. Unknown fields (including passwords/URLs) rejected.
+Time Capsule is SMB, not proof of device model. Discover/folders label it smb.
+connect requires host; native file manager owns authentication. Its response
+{uri,opened:true,connected:false} means only that gio accepted opening the URI.
+After authentication, refresh folders, select a folder, then verify its path.
+folders returns {folders:[{name,path,host,transport}]}, only live GVFS mounts.
+verify returns {destination,transport:'local'} for the main backup adapter;
+this is a read-only directory/mount check, NOT a write/access or backup test.
+capabilities gives tools, missing (tool names), missingPackages (package hints),
+transports; it never installs. Request the selected transport for relevant hints.
+verify network requests require a live matching transport/host (and optional
+share/port/user); arbitrary local paths fail not_connected. Local requests still
+check GVFS mount liveness. HOME and its descendants fail destination_inside_home;
+HOME ancestors fail destination_contains_home. Offer an external backup folder,
+not the default HOME FolderDialog location. Never show a green connected state
+from connect alone. Only verify's destination/local pair goes to backup helper.
+Stable errors: invalid_request, unsupported_field, invalid_transport, invalid_host,
+invalid_user, invalid_share, invalid_port, invalid_path, host_required,
+network_transport_required, unsupported_smb_port, missing_tool, timeout,
+command_failed, invalid_runtime_dir, mount_check_failed, symlink_path,
+destination_inside_home, destination_contains_home, not_connected,
+directory_missing, unknown_action, request_too_large, io_error.
+discover gives {devices:[{name,host,port,transport}]}; avahi is bounded to 8s.
+Mount checks use /proc/self/mountinfo AND gio mount -li authority, not gio open.
+Tests can inject Python functions; no production mount-check environment bypass.
+"""
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+from urllib.parse import quote, unquote, urlsplit
+
+TRANSPORTS = ('local', 'smb', 'timecapsule', 'sftp')
+
+
+class ConnectionError(ValueError):
+    """A stable UI reason code; never include input or subprocess output."""
+
+
+def host_name(value):
+    if not isinstance(value, str) or not value or len(value) > 253 or '%' in value:
+        raise ConnectionError('invalid_host')
+    raw = value[1:-1] if value.startswith('[') and value.endswith(']') else value
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        pass
+    if not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9.])?', value):
+        raise ConnectionError('invalid_host')
+    if any(not label or len(label) > 63 or label.startswith('-') or label.endswith('-') for label in value.rstrip('.').split('.')):
+        raise ConnectionError('invalid_host')
+    return value.lower().rstrip('.')
+
+
+def validate(req):
+    if not isinstance(req, dict):
+        raise ConnectionError('invalid_request')
+    if set(req) - {'transport', 'host', 'user', 'port', 'share', 'path', 'device'}:
+        raise ConnectionError('unsupported_field')
+    req = dict(req)
+    if req.get('transport', 'local') not in TRANSPORTS:
+        raise ConnectionError('invalid_transport')
+    req.setdefault('transport', 'local')
+    for field in ('host', 'user', 'share', 'path', 'device'):
+        if field in req and (not isinstance(req[field], str) or len(req[field]) > 4096 or any(ord(c) < 32 or ord(c) == 127 for c in req[field])):
+            raise ConnectionError('invalid_' + field)
+    if '://' in req.get('path', ''):
+        picker_uri(req['path'])
+    if req.get('host'):
+        req['host'] = host_name(req['host'])
+    if req.get('user') and not re.fullmatch(r'[A-Za-z0-9_.-]+', req['user']):
+        raise ConnectionError('invalid_user')
+    if req.get('share') and (req['share'] in ('.', '..') or any(c in req['share'] for c in '/\\:@%?#')):
+        raise ConnectionError('invalid_share')
+    if 'port' in req and (type(req['port']) is not int or not 1 <= req['port'] <= 65535):
+        raise ConnectionError('invalid_port')
+    return req
+
+
+def command(argv, timeout=8, capture=True):
+    try:
+        result = subprocess.run(argv, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, timeout=timeout,
+                                text=True, encoding='utf-8', errors='replace', check=False,
+                                env={**os.environ, 'LC_ALL': 'C'})
+    except FileNotFoundError:
+        raise ConnectionError('missing_tool') from None
+    except subprocess.TimeoutExpired:
+        raise ConnectionError('timeout') from None
+    except OSError:
+        raise ConnectionError('command_failed') from None
+    if result.returncode:
+        raise ConnectionError('command_failed')
+    return result.stdout if capture else ''
+
+
+def local_devices():
+    """Return mounted or mountable external filesystem partitions only."""
+    output = command(['lsblk', '-J', '-o',
+                      'NAME,PATH,TYPE,FSTYPE,LABEL,UUID,SIZE,RM,HOTPLUG,MOUNTPOINTS,TRAN'])
+    try:
+        roots = json.loads(output).get('blockdevices', [])
+    except (ValueError, TypeError, AttributeError):
+        raise ConnectionError('command_failed') from None
+    result = []
+
+    def visit(node, external=False):
+        if not isinstance(node, dict):
+            return
+        external = external or node.get('rm') is True or node.get('hotplug') is True or node.get('tran') in ('usb', 'firewire', 'mmc')
+        fstype = node.get('fstype') or ''
+        device = node.get('path') or ''
+        if (external and node.get('type') in ('part', 'crypt') and fstype
+                and fstype not in ('swap', 'crypto_LUKS')
+                and re.fullmatch(r'/dev/[A-Za-z0-9._/+:-]+', device)):
+            mountpoints = [p for p in (node.get('mountpoints') or []) if isinstance(p, str) and p]
+            mountpoint = mountpoints[0] if mountpoints else ''
+            result.append({
+                'device': device,
+                'name': node.get('label') or node.get('name') or Path(device).name,
+                'filesystem': fstype,
+                'size': node.get('size') or '',
+                'uuid': node.get('uuid') or '',
+                'mounted': bool(mountpoint),
+                'mountpoint': mountpoint,
+            })
+        for child in node.get('children') or []:
+            visit(child, external)
+
+    for root in roots:
+        visit(root)
+    result.sort(key=lambda item: (item['name'].casefold(), item['device']))
+    return {'devices': result}
+
+
+def mount_device(req):
+    device = req.get('device')
+    before = {item['device']: item for item in local_devices()['devices']}
+    if not isinstance(device, str) or device not in before:
+        raise ConnectionError('invalid_device')
+    if not before[device]['mounted']:
+        command(['udisksctl', 'mount', '--block-device', device,
+                 '--no-user-interaction'], timeout=30, capture=False)
+    after = {item['device']: item for item in local_devices()['devices']}
+    mounted = after.get(device)
+    if not mounted or not mounted['mounted'] or not mounted['mountpoint']:
+        raise ConnectionError('mount_failed')
+    path = safe_path(mounted['mountpoint'])
+    if not path.is_dir():
+        raise ConnectionError('mount_failed')
+    return {'device': device, 'destination': str(path), 'mounted': True}
+
+
+def capabilities(req):
+    tools = {name: bool(shutil.which(name)) for name in ('gio', 'avahi-browse', 'nautilus')}
+    backends = {name: any((Path(base) / name).is_file() for base in ('/usr/lib', '/usr/libexec', '/usr/lib/gvfs'))
+                for name in ('gvfsd-fuse', 'gvfsd-smb', 'gvfsd-sftp')}
+    required = [] if req['transport'] == 'local' else ['gio', 'avahi-browse', 'gvfsd-fuse', 'gvfsd-sftp' if req['transport'] == 'sftp' else 'gvfsd-smb']
+    available = {**tools, **backends}
+    missing = [name for name in required if not available[name]]
+    packages = {'gio': 'glib2', 'avahi-browse': 'avahi', 'gvfsd-fuse': 'gvfs', 'gvfsd-sftp': 'gvfs', 'gvfsd-smb': 'gvfs-smb'}
+    return {'tools': available, 'transports': list(TRANSPORTS), 'missing': missing,
+            'missingPackages': sorted({packages[name] for name in missing})}
+
+
+def avahi_decode(value):
+    data = bytearray()
+    index = 0
+    while index < len(value):
+        if value[index] == '\\':
+            token = value[index + 1:index + 4]
+            if len(token) != 3 or not token.isascii() or not token.isdecimal() or int(token) > 255:
+                raise ValueError('invalid_escape')
+            data.append(int(token))
+            index += 4
+        else:
+            data.extend(value[index].encode('utf-8'))
+            index += 1
+    decoded = data.decode('utf-8')
+    if any(ord(c) < 32 or ord(c) == 127 for c in decoded):
+        raise ValueError('invalid_name')
+    return decoded
+
+
+def discover(req):
+    output = command(['avahi-browse', '-artp'])
+    devices = {}
+    services = {'_smb._tcp': 'smb', '_sftp-ssh._tcp': 'sftp'}
+    wanted = 'smb' if req['transport'] == 'timecapsule' else req['transport']
+    for line in output.splitlines():
+        fields = line.split(';')
+        if len(fields) < 9 or fields[0] != '=' or fields[4] not in services:
+            continue
+        try:
+            name, host = avahi_decode(fields[3]), host_name(avahi_decode(fields[6]))
+            port = int(fields[8])
+            if not name or not 1 <= port <= 65535:
+                continue
+        except (ValueError, UnicodeError):
+            continue
+        transport = services[fields[4]]
+        if wanted != 'local' and transport != wanted or req.get('host') and req['host'] != host:
+            continue
+        key = (host, port, transport)
+        devices.setdefault(key, {'name': name, 'host': host, 'port': port, 'transport': transport})
+    return {'devices': sorted(devices.values(), key=lambda d: (d['name'].casefold(), d['host'], d['port']))}
+
+
+def gvfs_root():
+    runtime = Path(os.environ.get('XDG_RUNTIME_DIR', '/run/user/' + str(os.getuid())))
+    if not runtime.is_absolute():
+        raise ConnectionError('invalid_runtime_dir')
+    return runtime / 'gvfs'
+
+
+def read_mountinfo():
+    # Deliberately fixed: request/environment cannot override kernel evidence.
+    return Path('/proc/self/mountinfo').read_text()
+
+
+def safe_path(value):
+    if not isinstance(value, str) or not value or value.startswith('//') or not Path(value).is_absolute() or '..' in Path(value).parts:
+        raise ConnectionError('invalid_path')
+    path = Path(value)
+    if any(p.is_symlink() for p in (path, *path.parents)):
+        raise ConnectionError('symlink_path')
+    return path
+
+
+def mounted_root(root):
+    safe_path(str(root))
+    try:
+        lines = read_mountinfo().splitlines()
+    except OSError:
+        raise ConnectionError('mount_check_failed') from None
+    for line in lines:
+        left, sep, right = line.partition(' - ')
+        fields = left.split()
+        if sep and len(fields) >= 6 and right.split()[0] == 'fuse.gvfsd-fuse':
+            point = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), fields[4])
+            if Path(point) == root:
+                return True
+    return False
+
+
+def mount_identity(uri):
+    parsed = urlsplit(uri)
+    if parsed.scheme not in ('smb', 'sftp') or parsed.password is not None or parsed.query or parsed.fragment:
+        raise ValueError('invalid_mount_uri')
+    host = host_name(parsed.hostname)
+    share = unquote(parsed.path).strip('/') if parsed.scheme == 'smb' else ''
+    return (parsed.scheme, host, share, parsed.port or (445 if parsed.scheme == 'smb' else 22), unquote(parsed.username or ''))
+
+
+def live_mounts():
+    output = command(['gio', 'mount', '-li'])
+    mounts = set()
+    for line in output.splitlines():
+        match = re.match(r'^\s*Mount\(\d+\):.* -> ((?:smb|sftp)://\S+)\s*$', line)
+        if match:
+            try:
+                mounts.add(mount_identity(match[1]))
+            except (ValueError, UnicodeError):
+                continue
+    return mounts
+
+
+def folder_identity(path):
+    scheme, sep, spec = path.name.partition(':')
+    if not sep or scheme not in ('smb-share', 'sftp'):
+        raise ValueError('invalid_mount_name')
+    fields = {}
+    for part in spec.split(','):
+        key, sep, value = part.partition('=')
+        if not sep or key in fields or key not in ('server', 'host', 'share', 'user', 'port', 'domain'):
+            raise ValueError('invalid_mount_name')
+        fields[key] = unquote(value)
+    transport = 'smb' if scheme == 'smb-share' else 'sftp'
+    host = host_name(fields.get('server' if transport == 'smb' else 'host'))
+    share = fields.get('share', '') if transport == 'smb' else ''
+    if transport == 'smb' and (not share or '/' in share):
+        raise ValueError('invalid_mount_name')
+    return (transport, host, share, int(fields.get('port', 445 if transport == 'smb' else 22)), fields.get('user', ''))
+
+
+def folders(req):
+    root = gvfs_root()
+    if not mounted_root(root):
+        return {'folders': []}
+    authorities = live_mounts()
+    wanted = 'smb' if req['transport'] == 'timecapsule' else req['transport']
+    result = []
+    for child in sorted(root.iterdir()):
+        try:
+            ident = folder_identity(child)
+            transport, host, share, port, user = ident
+            # SMB username is sometimes omitted by gvfsd-fuse; server/share/port
+            # must still match an actual GIO Mount, not a browsable Volume.
+            live = any(ident[:4] == mount[:4] and (not user or user == mount[4]) for mount in authorities)
+            if not live or wanted != 'local' and transport != wanted or req.get('host') and req['host'] != host:
+                continue
+            if req.get('share') and share != req['share'] or req.get('port') and port != req['port'] or req.get('user') and user != req['user']:
+                continue
+            safe_path(str(child))
+            if child.is_dir():
+                result.append({'name': share or host, 'path': str(child), 'host': host, 'transport': transport})
+        except (ValueError, OSError):
+            continue
+    return {'folders': result}
+
+
+def picker_uri(value):
+    """Validate native chooser URLs without accepting embedded passwords."""
+    try:
+        uri = urlsplit(value)
+        if uri.scheme not in ('smb', 'sftp') or uri.password is not None or uri.query or uri.fragment:
+            raise ValueError()
+        host = host_name(uri.hostname)
+        parts = [unquote(part) for part in uri.path.split('/') if part]
+        if any(part in ('.', '..') or '/' in part or '\\' in part or any(ord(c) < 32 for c in part) for part in parts):
+            raise ValueError()
+        user = unquote(uri.username or '')
+        if user and not re.fullmatch(r'[A-Za-z0-9_.-]+', user):
+            raise ValueError()
+        port = uri.port or (445 if uri.scheme == 'smb' else 22)
+        if not 1 <= port <= 65535 or uri.scheme == 'smb' and not parts:
+            raise ValueError()
+        return uri.scheme, host, port, user, parts
+    except (ValueError, TypeError):
+        raise ConnectionError('invalid_path') from None
+
+
+def verify(req):
+    value = req.get('path')
+    if isinstance(value, str) and '://' in value:
+        scheme, host, port, user, parts = picker_uri(value)
+        matches = []
+        for folder in folders(req)['folders']:
+            identity = folder_identity(Path(folder['path']))
+            if identity[0] == scheme and identity[1] == host and identity[3] == port and (not user or identity[4] == user):
+                if scheme == 'smb' and identity[2] != parts[0]:
+                    continue
+                matches.append(Path(folder['path']).joinpath(*(parts[1:] if scheme == 'smb' else parts)))
+        if len(matches) != 1:
+            raise ConnectionError('not_connected')
+        path = safe_path(str(matches[0]))
+    else:
+        path = safe_path(value)
+    home = Path.home().resolve()
+    if path == home or home in path.parents:
+        raise ConnectionError('destination_inside_home')
+    if path in home.parents:
+        raise ConnectionError('destination_contains_home')
+    root = gvfs_root()
+    if root == path or root in path.parents or 'gvfs' in path.parts or req['transport'] != 'local':
+        # A local folder is not a substitute for a requested network connection.
+        matches = folders(req)['folders']
+        if not any(Path(folder['path']) == path or Path(folder['path']) in path.parents for folder in matches):
+            raise ConnectionError('not_connected')
+    if not path.is_dir():
+        raise ConnectionError('directory_missing')
+    return {'destination': str(path), 'transport': 'local'}
+
+
+def main(action, req):
+    req = validate(req)
+    if action == 'local-devices':
+        return local_devices()
+    if action == 'mount':
+        return mount_device(req)
+    if action == 'folders':
+        return folders(req)
+    if action == 'verify':
+        return verify(req)
+    if action == 'capabilities':
+        return capabilities(req)
+    if action == 'discover':
+        return discover(req)
+    if action != 'connect':
+        raise ConnectionError('unknown_action')
+    if req['transport'] == 'local':
+        raise ConnectionError('network_transport_required')
+    if not req.get('host'):
+        raise ConnectionError('host_required')
+    host = req['host']
+    if ':' in host:
+        host = '[' + host + ']'
+    if req['transport'] == 'sftp':
+        user = quote(req['user'], safe='') + '@' if req.get('user') else ''
+        uri = 'sftp://' + user + host + ':' + str(req.get('port', 22)) + '/'
+    else:
+        if req.get('port', 445) != 445:
+            raise ConnectionError('unsupported_smb_port')
+        uri = 'smb://' + host + '/' + quote(req.get('share', ''), safe='')
+    command(['gio', 'open', uri], timeout=10, capture=False)
+    return {'uri': uri, 'opened': True, 'connected': False}
+
+
+def cli():
+    try:
+        raw = sys.stdin.read(16385)
+        if len(raw) > 16384:
+            raise ConnectionError('request_too_large')
+        req = json.loads(raw or '{}')
+        response = main(sys.argv[1] if len(sys.argv) == 2 else '', req)
+        print(json.dumps({'ok': True, 'error': None, **response}))
+        return 0
+    except ConnectionError as error:
+        reason = str(error)
+    except (ValueError, TypeError, RecursionError):
+        reason = 'invalid_request'
+    except Exception:
+        reason = 'io_error'
+    print(json.dumps({'ok': False, 'error': reason, 'reason': reason}))
+    return 1
+
+
+if __name__ == '__main__':
+    sys.exit(cli())

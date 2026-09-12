@@ -14,14 +14,45 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   - Inertial scrolling
   - 3-finger swipe to switch workspaces
 - **Animations**: system animations, workspace transition, flat pointer acceleration, speed/sensitivity
-- **Windows**: inner/outer gaps
+- **Windows**: inner/outer gaps, font size, animations and workspace distribution
+- **Displays**: layout, resolution/refresh/orientation/scale, a color per monitor, and square/rounded/circle/none workspace indicators in the bar
 - **Devices**: keyboard backlight, APFS (macOS disks)
 - **Keyboard & Language**: physical layout, system language
 - **Night light**, and more
 
+## Backup and recovery (development)
+
+Backup, Network Devices, QuickView and the SUPER+W browser override are development features hidden by default. Enable **Dev mode** from the Profiles title only when testing them.
+
+The standalone desktop panel includes a Backup page, before Profiles, with
+independent configuration and file selections, preview/confirmation, snapshot
+history, and restore into an existing empty staging directory outside home.
+Configurations use Git commits; plaintext file versions use rsync and hard links
+where supported. Optional age public-key encryption uses full encrypted snapshots.
+
+The UI is a four-step wizard: destination, connection/folder, content, review.
+Time Capsule offers discovery or manual address entry. SMB and SFTP open the
+system file manager for authentication, then verify the actual GVfs mount before
+continuing. Passwords never enter the panel. Native folder pickers replace raw
+paths; technical output lives under expandable details. Encryption can generate
+a recovery key through a save dialog (keep it separate from backup storage).
+
+Git and rsync are required for their respective streams; `age` enables encryption.
+Guided network setup uses GIO/GVfs (`gvfs-smb` for SMB and Time Capsule), with
+Avahi for discovery. The direct CLI also supports preconfigured rclone SFTP
+remotes, but the wizard uses verified mounted folders for all network types.
+Legacy Time Capsule firmware may require SMB options unsupported by modern
+clients; compatibility must be tested with the actual device, not assumed.
+
+This is not yet an unattended migration wizard or an exact full-home clone:
+credential stores and symlinks are excluded, package inventory is saved but
+packages are not reinstalled, and staged configurations are not activated.
+Review restored data before applying it. See [the backup contract](docs/backup.md)
+for exclusions, format, recovery procedure, limitations and fixture-only tests.
+
 ## Internationalization
 
-- **19 UI languages**, fully translated: `en`, `es`, `pt`, `fr`, `de`, `it`, `nl`, `pl`, `ru`, `ja`, `ko`, `zh`, `ar`, `tr`, `sv`, `da`, `no`, `fi`, `cs`.
+- **19 UI languages**: `en`, `es`, `pt`, `fr`, `de`, `it`, `nl`, `pl`, `ru`, `ja`, `ko`, `zh`, `ar`, `tr`, `sv`, `da`, `no`, `fi`, `cs`. The new backup wizard currently has English and Spanish strings; other languages use the English fallback.
 - The UI language is **auto-detected** from the system locale (no manual selector needed).
 - All UI strings live in `i18n.json`, editable as plain data without touching the QML.
 - The **language and keyboard-layout pickers** are searchable dropdowns (`SearchableDropdown`): they list every locale/layout available on the system with type-to-filter.

@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Install or remove the color-aware workspace bar module."""
+
+import json
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import time
+
+MODULE_PREFIX = "workspacescolored"
+LEGACY_MODULE_ID = "control-panel-workspaces"
+BUILTIN_ID = "omarchy.workspaces"
+
+
+def entry_id(entry):
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict):
+        return str(entry.get("id", ""))
+    return ""
+
+
+def is_ours(identifier):
+    return identifier in (MODULE_PREFIX, LEGACY_MODULE_ID) or identifier.startswith(MODULE_PREFIX + "-")
+
+
+def update(config, module_id, module_source, uninstall=False):
+    bar = config.setdefault("bar", {})
+    layout = bar.setdefault("layout", {})
+    sections = ("left", "center", "right")
+    replacement = {"id": BUILTIN_ID} if uninstall else {
+        "id": module_id,
+        "type": "qml",
+        "source": str(module_source),
+    }
+
+    present = {
+        entry_id(entry)
+        for section in sections
+        for entry in layout.setdefault(section, [])
+    }
+    if not uninstall and any(is_ours(identifier) for identifier in present):
+        for section in sections:
+            entries = layout[section]
+            for index, entry in enumerate(entries):
+                if is_ours(entry_id(entry)):
+                    if (isinstance(entry, dict)
+                            and entry_id(entry) == module_id
+                            and entry.get("type") == replacement["type"]
+                            and entry.get("source") == replacement["source"]):
+                        return False
+                    entries[index] = replacement
+                    return True
+    if uninstall and BUILTIN_ID in present and not any(is_ours(identifier) for identifier in present):
+        return False
+
+    for section in sections:
+        entries = layout.setdefault(section, [])
+        for index, entry in enumerate(entries):
+            identifier = entry_id(entry)
+            if (not uninstall and identifier == BUILTIN_ID) or (uninstall and is_ours(identifier)):
+                entries[index] = replacement
+                return True
+
+    if uninstall:
+        return False
+
+    left = layout.setdefault("left", [])
+    insert_at = 0
+    for index, entry in enumerate(left):
+        if entry_id(entry) == "omarchy.menu":
+            insert_at = index + 1
+            break
+    left.insert(insert_at, replacement)
+    return True
+
+
+def atomic_write(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def sync_settings(config):
+    prefs_path = Path(os.environ.get(
+        "OMARCHY_CONTROL_PANEL_PREFS",
+        Path.home() / ".local/state/omarchy/control-panel-prefs.json",
+    ))
+    try:
+        prefs = json.loads(prefs_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        prefs = {}
+    settings = {
+        "workspaceIndicatorMode": prefs.get("workspaceIndicatorMode", "none"),
+        "workspaceIndicatorPadding": prefs.get("workspaceIndicatorPadding", 4),
+        "workspaceVisuals": prefs.get("workspaceVisuals", {}),
+    }
+    changed = False
+    layout = config.get("bar", {}).get("layout", {})
+    for section in ("left", "center", "right"):
+        for entry in layout.get(section, []):
+            if isinstance(entry, dict) and is_ours(entry_id(entry)):
+                for key, value in settings.items():
+                    if entry.get(key) != value:
+                        entry[key] = value
+                        changed = True
+    return changed
+
+
+def main():
+    valid_actions = ("--uninstall", "--sync-settings")
+    if len(sys.argv) > 2 or (len(sys.argv) == 2 and sys.argv[1] not in valid_actions):
+        print(f"Usage: {Path(sys.argv[0]).name} [--uninstall|--sync-settings]", file=sys.stderr)
+        return 2
+    action = sys.argv[1] if len(sys.argv) == 2 else ""
+    uninstall = action == "--uninstall"
+    path = Path(os.environ.get("OMARCHY_SHELL_CONFIG", Path.home() / ".config/omarchy/shell.json"))
+    try:
+        config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"version": 1}
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"Cannot read {path}: {error}", file=sys.stderr)
+        return 1
+    if action == "--sync-settings":
+        changed = sync_settings(config)
+        if changed:
+            atomic_write(path, config)
+        print(json.dumps({"ok": True, "changed": changed, "settingsSynced": True}))
+        return 0
+    original_config = json.loads(json.dumps(config))
+    previous_ids = {
+        entry_id(entry)
+        for section in ("left", "center", "right")
+        for entry in config.get("bar", {}).get("layout", {}).get(section, [])
+        if is_ours(entry_id(entry))
+    }
+    source = Path(__file__).resolve().parent.parent / "workspace-colors.qml"
+    palette_source = source.parent / "ThemePalette.js"
+    if not source.is_file() or not palette_source.is_file():
+        print(f"Cannot read widget sources in {source.parent}", file=sys.stderr)
+        return 1
+    digest = hashlib.sha256(source.read_bytes() + palette_source.read_bytes()).hexdigest()[:12]
+    module_id = f"{MODULE_PREFIX}-{digest}"
+    module_dir = Path(os.environ.get("OMARCHY_MODULE_DIR", Path.home() / ".config/omarchy/bar/modules"))
+    module = module_dir / module_id / f"{MODULE_PREFIX}.qml"
+    changed = update(config, module_id, module, uninstall)
+    if not uninstall:
+        changed = sync_settings(config) or changed
+    if uninstall:
+        if module_dir.exists():
+            for candidate in module_dir.glob(f"{MODULE_PREFIX}*.qml"):
+                candidate.unlink()
+            for candidate in module_dir.glob(f"{MODULE_PREFIX}-*"):
+                if candidate.is_dir():
+                    shutil.rmtree(candidate)
+    else:
+        module.parent.mkdir(parents=True, exist_ok=True)
+        temporary_module = module.with_suffix(".qml.tmp")
+        shutil.copyfile(source, temporary_module)
+        os.replace(temporary_module, module)
+        palette_module = module.parent / "ThemePalette.js"
+        temporary_palette = palette_module.with_suffix(".js.tmp")
+        shutil.copyfile(palette_source, temporary_palette)
+        os.replace(temporary_palette, palette_module)
+        for candidate in module_dir.glob(f"{MODULE_PREFIX}*.qml"):
+            candidate.unlink()
+        for candidate in module_dir.glob(f"{MODULE_PREFIX}-*"):
+            if candidate != module.parent and candidate.is_dir():
+                shutil.rmtree(candidate)
+    if changed:
+        # Replacing an entry at the same array index can leave one monitor's
+        # Loader alive with the previous component. Remove it for one config
+        # cycle first so every bar window destroys the old delegate.
+        if not uninstall and previous_ids and module_id not in previous_ids:
+            intermediate = json.loads(json.dumps(original_config))
+            layout = intermediate.get("bar", {}).get("layout", {})
+            for section in ("left", "center", "right"):
+                layout[section] = [
+                    entry for entry in layout.get(section, [])
+                    if not is_ours(entry_id(entry))
+                ]
+            atomic_write(path, intermediate)
+            time.sleep(0.4)
+        atomic_write(path, config)
+    print(json.dumps({"ok": True, "changed": changed, "installed": not uninstall,
+                      "moduleId": None if uninstall else module_id}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

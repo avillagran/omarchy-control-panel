@@ -42,6 +42,11 @@ assert.deepStrictEqual(context.normalizePositions([
   { name: "B", x: 0, y: 0, disabled: false }
 ]).map(function(d) { return d.x + ":" + d.y }), ["1920:100", "0:0"])
 assert.deepStrictEqual(context.canonicalMode("1920x1080@60.00"), "1920x1080@60")
+var confirmBase = [{name:"A", mode:"1920x1080@60", transform:0, x:0, y:0, scale:1}]
+assert.strictEqual(context.requiresConfirmation([{name:"A", mode:"1920x1080@60.00Hz", transform:0, x:1920, y:40, scale:2}], confirmBase), false, "position and scale are safe")
+assert.strictEqual(context.requiresConfirmation([{name:"A", mode:"2560x1440@60", transform:0, x:0, y:0, scale:1}], confirmBase), true, "resolution requires confirmation")
+assert.strictEqual(context.requiresConfirmation([{name:"A", mode:"1920x1080@120", transform:0, x:0, y:0, scale:1}], confirmBase), true, "refresh requires confirmation")
+assert.strictEqual(context.requiresConfirmation([{name:"A", mode:"1920x1080@60", transform:1, x:0, y:0, scale:1}], confirmBase), true, "orientation requires confirmation")
 
 // snapEdges: a display dropped near a neighbour snaps flush; a distant one
 // stays put. Layout: A at 0,0 (1920x1080 logical), B dragged near A.
