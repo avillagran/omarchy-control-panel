@@ -298,6 +298,10 @@ ShellRoot {
                 contentHeight: core.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
+                // Match native kinetic-scroll feel: small content movement per
+                // wheel tick and a short, springy flick deceleration.
+                maximumFlickVelocity: 1400
+                flickDeceleration: 2600
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                 Core {
                   id: core
