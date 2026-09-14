@@ -1045,6 +1045,40 @@ Item {
     if (!quiet) root.statusMessage = root.t(root.uiLang, "scrollIgnoreApplied")
   }
 
+  // "Config like macOS": one click applies the whole macOS-style trackpad
+  // bundle — natural (inverted) scrolling, tap to click, two-finger right
+  // click, pause while typing, 3-finger workspace swipe, middle-button
+  // screenshot off, inertial scrolling (Adaptive preset, except browsers and
+  // terminals when the patch knows scroll_ignore_classes), system animations
+  // and the workspace slide transition. Every setter applies live AND
+  // rewrites control-panel.lua, so the bundle survives logout/login.
+  // Scroll values use the Adaptive preset: its speed/cap/decel match the
+  // macOS coasting feel the patch was tuned for.
+  function applyMacOSConfig() {
+    root.setNaturalScroll(true, true)
+    root.setTapToClick(true)
+    root.setDisableWhileTyping(true)
+    root.setClickfingerBehavior(true)
+    root.setSwipe3(true)
+    root.setMiddleBtnOff(true)
+    root.setInertia(true)
+    root.applyAnimations(true)
+    root.animSet(true)
+    // writeLua() only persists disable_while_typing / clickfinger_behavior /
+    // scroll_factor once the user has configured the trackpad feel — mark it
+    // so the macOS bundle actually survives a relogin.
+    root.trackpadFeelConfigured = true
+    root.saved.trackpadFeelConfigured = true
+    if (root.scrollPatchSupported) {
+      root.selectScrollPreset("adaptive")
+      if (root.scrollIgnoreSupported)
+        root.updateScrollIgnoreMode("browsers", true)
+    }
+    root.writeLua()
+    root.savePrefs()
+    root.statusMessage = root.t(root.uiLang, "macConfigApplied")
+  }
+
   Process {
     id: scrollProbeProc
     command: ["hyprctl", "getoption", "input:touchpad:scroll_decel", "-j"]
@@ -2973,6 +3007,25 @@ Item {
                 : root.t(root.uiLang, "scrollFeelUnsupported")
               color: root.scrollPatchSupported ? root.fg : Color.urgent
               opacity: root.scrollPatchSupported ? 0.66 : 1
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Button {
+              width: parent.width
+              text: root.t(root.uiLang, "macConfig")
+              bordered: true
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              onClicked: root.applyMacOSConfig()
+            }
+
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              text: root.t(root.uiLang, "macConfigHint")
+              color: root.fg
+              opacity: 0.66
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }

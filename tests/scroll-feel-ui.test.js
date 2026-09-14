@@ -77,6 +77,27 @@ assert.match(core, /scrollFeelConfigured: scrollFeelConfigured,\s*scrollIgnoreMo
   'savePrefs must persist the scroll fields');
 assert.match(core, /scrollDecel: saved\.scrollDecel,/, 'currentSettings must include scroll values for profiles');
 
+// "Config like macOS" bundle: one click must flip every macOS-style toggle
+// on, mark the trackpad feel configured (writeLua persistence gate), apply
+// the Adaptive preset and the browsers ignore mode — all live.
+assert.match(core, /function applyMacOSConfig\(\) \{\s*root\.setNaturalScroll\(true, true\)/,
+  'macOS config must start with natural scroll (quiet)');
+for (const fn of ['setTapToClick\\(true\\)', 'setDisableWhileTyping\\(true\\)',
+  'setClickfingerBehavior\\(true\\)', 'setSwipe3\\(true\\)', 'setMiddleBtnOff\\(true\\)',
+  'setInertia\\(true\\)', 'applyAnimations\\(true\\)', 'animSet\\(true\\)'])
+  assert.match(core, new RegExp('applyMacOSConfig[\\s\\S]*?root\\.' + fn),
+    'macOS config must call ' + fn);
+assert.match(core, /applyMacOSConfig[\s\S]*?root\.trackpadFeelConfigured = true\s*root\.saved\.trackpadFeelConfigured = true/,
+  'macOS config must mark the trackpad feel configured so writeLua persists it');
+assert.match(core, /applyMacOSConfig[\s\S]*?root\.selectScrollPreset\("adaptive"\)/,
+  'macOS config must apply the Adaptive scroll preset');
+assert.match(core, /applyMacOSConfig[\s\S]*?root\.updateScrollIgnoreMode\("browsers", true\)/,
+  'macOS config must keep browsers/terminals inertia excepted');
+assert.match(core, /if \(root\.scrollPatchSupported\) \{\s*root\.selectScrollPreset\("adaptive"\)/,
+  'scroll part of the macOS config must be gated on the patch probe');
+assert.match(core, /onClicked: root\.applyMacOSConfig\(\)/,
+  'macOS config button must call the bundle');
+
 const keys = [
   'scrollFeelTitle', 'scrollFeelSupported', 'scrollFeelUnsupported',
   'scrollFeelNative', 'scrollFeelLinear', 'scrollFeelAdaptive', 'scrollFeelGlide', 'scrollFeelCustom',
@@ -86,7 +107,8 @@ const keys = [
   'scrollFeelSpeedAggressive', 'scrollFeelMax', 'scrollFeelMaxMild', 'scrollFeelMaxModerate',
   'scrollFeelMaxStrong', 'scrollFeelMaxExtreme', 'scrollFeelCoast', 'scrollFeelCoastOff', 'scrollFeelApplied',
   'scrollIgnoreLabel', 'scrollIgnoreOff', 'scrollIgnoreBrowsers', 'scrollIgnoreNative',
-  'scrollIgnoreHint', 'scrollIgnoreApplied', 'scrollIgnoreUnsupported'
+  'scrollIgnoreHint', 'scrollIgnoreApplied', 'scrollIgnoreUnsupported',
+  'macConfig', 'macConfigHint', 'macConfigApplied'
 ];
 for (const lang of ['en', 'es'])
   for (const key of keys) assert.ok(i18n[lang][key], `${lang}.${key} missing`);

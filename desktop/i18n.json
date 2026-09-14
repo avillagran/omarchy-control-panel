@@ -346,7 +346,10 @@
     "scrollIgnoreNative": "Native (patch off)",
     "scrollIgnoreHint": "Except browsers and terminals: uses the browsers' and terminals' own inertia; the patch applies everywhere else. Native turns the patch off completely.",
     "scrollIgnoreApplied": "Scroll inertia scope applied",
-    "scrollIgnoreUnsupported": "This build has acceleration and coasting but not scroll_ignore_classes yet — update the patch build to scope where the patch applies."
+    "scrollIgnoreUnsupported": "This build has acceleration and coasting but not scroll_ignore_classes yet — update the patch build to scope where the patch applies.",
+    "macConfig": "Config like macOS",
+    "macConfigHint": "One click: tap to click, natural scrolling, two-finger right click, pause while typing, 3-finger swipe between workspaces, no middle-button screenshot, inertial scrolling except in browsers and terminals, system animations and workspace transitions.",
+    "macConfigApplied": "macOS-style config applied"
   },
   "es": {
     "controlPanelTitle": "Panel de control",
@@ -695,7 +698,10 @@
     "scrollIgnoreNative": "Nativa (parche off)",
     "scrollIgnoreHint": "Excepto navegadores y terminales: utiliza la inercia propia de navegadores y terminales; en el resto aplica el parche. Nativa desactiva el parche por completo.",
     "scrollIgnoreApplied": "Alcance de la inercia aplicado",
-    "scrollIgnoreUnsupported": "Este build tiene aceleración y coasting pero aún no scroll_ignore_classes — actualiza el build del parche para definir dónde aplica."
+    "scrollIgnoreUnsupported": "Este build tiene aceleración y coasting pero aún no scroll_ignore_classes — actualiza el build del parche para definir dónde aplica.",
+    "macConfig": "Config como macOS",
+    "macConfigHint": "En un clic: tocar para clic, scroll natural, clic con dos dedos como derecho, pausar al escribir, deslizar con 3 dedos entre espacios de trabajo, sin captura con el botón central, inercia excepto en navegadores y terminales, animaciones del sistema y transición entre espacios.",
+    "macConfigApplied": "Config estilo macOS aplicada"
   },
   "pt": {
     "naturalMac": "Rolagem natural (estilo Mac)",
