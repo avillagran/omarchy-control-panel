@@ -1,0 +1,124 @@
+From c5e2a167c1164d10d15b3f91fe03f1be852179f6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Andr=C3=A9s=20Villagr=C3=A1n?= <avillagran@omarchy.local>
+Date: Sun, 13 Sep 2026 21:05:39 -0300
+Subject: [PATCH 6/6] input: add scroll_ignore_classes to disable accel/coast
+ per window class
+
+Apps with their own touchpad inertia (browsers like Chrome/Firefox,
+some terminals) otherwise get a second inertia stacked on top of
+theirs. The new input:touchpad:scroll_ignore_classes option takes a
+comma-separated list of window class substrings (case-insensitive);
+matching windows receive raw, unaccelerated deltas and no coasting,
+so their native feel is preserved. The coast also cancels immediately
+if the pointer moves over an ignored window mid-coast.
+
+Empty (default) keeps the patch active everywhere at zero cost.
+---
+ src/config/values/ConfigValues.cpp  |  4 +++
+ src/managers/input/InputManager.cpp | 53 +++++++++++++++++++++++++++--
+ 2 files changed, 55 insertions(+), 2 deletions(-)
+
+diff --git a/src/config/values/ConfigValues.cpp b/src/config/values/ConfigValues.cpp
+index b631f112..57b03ecb 100644
+--- a/src/config/values/ConfigValues.cpp
++++ b/src/config/values/ConfigValues.cpp
+@@ -409,6 +409,10 @@ std::vector<SP<IValue>> Values::getConfigValues() {
+         MS<Float>("input:touchpad:scroll_accel_speed", "Speed threshold (px/ms) at which scroll acceleration reaches maximum.", 1.0, {.min = 0.1, .max = 5}),
+         MS<Float>("input:touchpad:scroll_accel_max", "Maximum scroll acceleration multiplier.", 3.0, {.min = 1, .max = 10}),
+         MS<Int>("input:touchpad:scroll_decel", "Inertial scroll coasting time (ms) after the finger lifts off the touchpad. [0=off]", 600, {.min = 0, .max = 3000}),
++        MS<String>("input:touchpad:scroll_ignore_classes",
++                   "Comma-separated window class substrings for which scroll acceleration and coasting stay disabled (e.g. browsers with their own "
++                   "touchpad inertia). Empty = apply everywhere.",
++                   STRVAL_EMPTY, {}),
+         MS<Bool>("input:touchpad:middle_button_emulation", "Sending LMB and RMB simultaneously will be interpreted as a middle click.", false,
+                  {.refresh = Supplementary::REFRESH_INPUT_DEVICES}),
+         MS<String>("input:touchpad:tap_button_map", "Sets the tap button mapping for touchpad button emulation. [lrm/lmr]", STRVAL_EMPTY,
+diff --git a/src/managers/input/InputManager.cpp b/src/managers/input/InputManager.cpp
+index 6fdd8ae7..367792e3 100644
+--- a/src/managers/input/InputManager.cpp
++++ b/src/managers/input/InputManager.cpp
+@@ -72,6 +72,41 @@ static constexpr int    SCROLL_COAST_TICK_MS     = 8;    // synthetic event inte
+ static constexpr double SCROLL_COAST_MIN_VEL     = 0.15; // EMA delta/ms below which no coast starts
+ static constexpr double SCROLL_COAST_MAX_VEL     = 8.0;  // delta/ms clamp for the coast seed
+ 
++// Classes for which the scroll accel/coast patch stays inactive, so apps with
++// their own touchpad inertia (browsers, some terminals) keep their native
++// behavior instead of stacking a second inertia on top of ours.
++static bool scrollWindowClassIgnored() {
++    static auto PIGNORE = CConfigValue<Config::STRING>("input:touchpad:scroll_ignore_classes");
++    const auto  PATTERN = *PIGNORE;
++
++    if (PATTERN.empty())
++        return false;
++
++    const auto MOUSECOORDS = g_pInputManager->getMouseCoordsInternal();
++    const auto PWINDOW     = Desktop::viewState()->hitTest().windowAt(MOUSECOORDS, Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS | Desktop::View::ALLOW_FLOATING);
++
++    if (!PWINDOW)
++        return false;
++
++    const auto& CLASS = PWINDOW->metadata().appID();
++
++    // comma-separated tokens, case-insensitive substring match
++    size_t start = 0;
++    while (start <= PATTERN.size()) {
++        const auto  end   = PATTERN.find(',', start);
++        std::string token = PATTERN.substr(start, end == std::string::npos ? std::string::npos : end - start);
++        std::ranges::transform(token, token.begin(), [](unsigned char c) { return std::tolower(c); });
++        if (!token.empty()
++            && std::ranges::search(CLASS, token, [](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); }).begin() != CLASS.end())
++            return true;
++        if (end == std::string::npos)
++            break;
++        start = end + 1;
++    }
++
++    return false;
++}
++
+ CInputManager::CInputManager() {
+     m_listeners.setCursorShape = PROTO::cursorShape->m_events.setShape.listen([this](const CCursorShapeProtocol::SSetShapeEvent& event) {
+         if (!g_pSeatManager->m_state.pointerFocusResource)
+@@ -994,8 +1029,12 @@ void CInputManager::onMouseWheel(IPointer::SAxisEvent e, SP<IPointer> pointer) {
+     const bool ISTOUCHPADSCROLL = *PTOUCHPADSCROLLFACTOR <= 0.f || e.source == WL_POINTER_AXIS_SOURCE_FINGER;
+     auto       factor           = ISTOUCHPADSCROLL ? *PTOUCHPADSCROLLFACTOR : *PINPUTSCROLLFACTOR;
+ 
++    // classes with their own touchpad inertia (browsers) keep their native feel:
++    // no acceleration and no coasting on top of their implementation
++    const bool CLASSIGNORED = ISTOUCHPADSCROLL && *PSCROLLACCELPROFILE > 0 && scrollWindowClassIgnored();
++
+     // apply scroll acceleration + inertial coasting for touchpads
+-    if (ISTOUCHPADSCROLL && *PSCROLLACCELPROFILE > 0) {
++    if (ISTOUCHPADSCROLL && *PSCROLLACCELPROFILE > 0 && !CLASSIGNORED) {
+         const size_t   AXISIDX = e.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? 1 : 0;
+         auto&          A       = m_touchScrollAxes[AXISIDX];
+         const uint32_t now     = e.timeMs;
+@@ -1138,7 +1177,7 @@ void CInputManager::onMouseWheel(IPointer::SAxisEvent e, SP<IPointer> pointer) {
+     g_pSeatManager->sendPointerAxis(e.timeMs, e.axis, delta, deltaDiscrete, value120, e.source, WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
+ 
+     // arm the coast watchdog: if no further events arrive, the tick starts the inertial coast
+-    if (ISTOUCHPADSCROLL && e.delta != 0 && *PSCROLLACCELPROFILE > 0 && *PSCROLLDECEL > 0) {
++    if (ISTOUCHPADSCROLL && e.delta != 0 && *PSCROLLACCELPROFILE > 0 && *PSCROLLDECEL > 0 && !CLASSIGNORED) {
+         if (!m_scrollCoastTimer) {
+             m_scrollCoastTimer = makeShared<CEventLoopTimer>(std::chrono::milliseconds(SCROLL_COAST_WATCHDOG_MS),
+                                                              [this](SP<CEventLoopTimer> self, void* data) { onScrollCoastTick(); }, nullptr);
+@@ -1173,6 +1212,16 @@ void CInputManager::onPointerFrame() {
+ void CInputManager::onScrollCoastTick() {
+     static auto PSCROLLDECEL = CConfigValue<Config::INTEGER>("input:touchpad:scroll_decel");
+ 
++    // the pointer may have moved over an ignored window (e.g. a browser)
++    // mid-coast: stop immediately so its own inertia stays in charge
++    if (scrollWindowClassIgnored()) {
++        for (auto& A : m_touchScrollAxes) {
++            A.coasting = false;
++            A.hasLast  = false;
++        }
++        return;
++    }
++
+     const auto NOW           = Time::steadyNow();
+     const int  DECALMS       = std::clamp((int)*PSCROLLDECEL, 0, 5000);
+     bool       anyActive     = false;
+-- 
+2.55.0
+

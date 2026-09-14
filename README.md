@@ -61,8 +61,10 @@ patched Hyprland that is still under review:
 - [hyprwm/aquamarine#405](https://github.com/hyprwm/aquamarine/pull/405) — Wayland
   axis source propagation (only needed for nested testing)
 
-You don't have to wait for the merge. This one-liner builds the PR branch from
-source and installs it as a reversible **shadow binary** (`~/.local/bin/Hyprland`,
+You don't have to wait for the merge — and you don't depend on this repo's
+fork either. The patch ships as a git series in [`patches/hyprland/`](patches/hyprland);
+the one-liner fetches **upstream** `hyprwm/Hyprland` at a pinned commit, applies
+the series, and builds it as a reversible **shadow binary** (`~/.local/bin/Hyprland`,
 which takes precedence over `/usr/bin` via PATH — no pacman conflicts):
 
 ```bash
@@ -75,14 +77,29 @@ The installer (Arch/Omarchy) does everything in one pass:
    the **right** side (`omarchy plugin enable … --section right`).
 2. Enables **Dev mode** in the plugin prefs, which exposes the *Scroll feel*
    card in the Trackpad tab.
-3. Installs build deps with pacman, builds Hyprland (~5–15 min) and installs
-   it as a reversible shadow binary.
+3. Installs build deps with pacman (skipped when already present, so reruns
+   need no sudo), fetches upstream Hyprland at the pinned commit, applies
+   `patches/hyprland/` and builds it (~5–15 min).
 4. Adds a PATH hook and appends a **gated** block to `~/.config/hypr/input.lua`
    that only applies the new options when the running compositor is the shadow
    binary — stock Hyprland never sees unknown config keys.
 
 Then log out and back in: the widget is in the top-right of the bar, Dev mode
 is already on, and the Scroll feel card is live.
+
+**Maintaining the patch series.** `HYPRLAND_PIN` in
+[`bin/install-hyprland-scroll-patch.sh`](bin/install-hyprland-scroll-patch.sh)
+is the upstream commit the series applies to (`v0.56.0-190-g1b85c7aa` at the
+time of writing). When upstream drifts, rebase the branch in your Hyprland
+fork, then regenerate the series and bump the pin together:
+
+```bash
+git format-patch --output-directory patches/hyprland <merge-base>..HEAD
+# update HYPRLAND_PIN and PATCH_TAG in bin/install-hyprland-scroll-patch.sh
+```
+
+The installer verifies with `git apply --check` and fails with a clear message
+if the pin and the series no longer match.
 
 To go back to stock Hyprland:
 

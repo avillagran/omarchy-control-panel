@@ -13,17 +13,22 @@
 #      --section right).
 #   2. Enables Dev mode in the plugin prefs, which exposes the "Scroll feel"
 #      card in Trackpad (presets + live sliders for the patch options).
-#   3. Installs build dependencies via pacman (Arch/Omarchy only).
-#   4. Clones the fork branch with the patch and builds Hyprland from source
-#      (~5-15 min).
-#   5. Installs it as a reversible "shadow" binary at ~/.local/bin/Hyprland,
+#      Without Dev mode the plugin is unchanged for regular users.
+#   3. Installs build dependencies via pacman (Arch/Omarchy only) — skipped
+#      when they are already present, so reruns need no sudo.
+#   4. Fetches UPSTREAM Hyprland (hyprwm/Hyprland) at a pinned commit and
+#      applies the touchpad scroll patch from patches/hyprland/ IN THIS REPO.
+#      No dependency on any fork or on the PRs being merged; bump HYPRLAND_PIN
+#      (and regenerate the series) when upstream drifts — see README.
+#   5. Builds Hyprland from the patched source (~5-15 min).
+#   6. Installs it as a reversible "shadow" binary at ~/.local/bin/Hyprland,
 #      which takes precedence over /usr/bin/Hyprland via PATH (pacman updates
 #      never touch it).
-#   6. Adds a PATH hook to the shell profile files (idempotent).
-#   7. Appends a gated block to ~/.config/hypr/input.lua that only applies the
+#   7. Adds a PATH hook to the shell profile files (idempotent).
+#   8. Appends a gated block to ~/.config/hypr/input.lua that only applies the
 #      new options when the RUNNING compositor is the shadow binary, so stock
 #      Hyprland never sees unknown config keys.
-#   8. Wires ~/.config/hypr/control-panel.lua (the file the panel rewrites when
+#   9. Wires ~/.config/hypr/control-panel.lua (the file the panel rewrites when
 #      you move the sliders) into hyprland.lua via require(), so your scroll
 #      values survive logout/login.
 #
@@ -38,9 +43,20 @@ set -euo pipefail
 
 PLUGIN_ID="io.github.avillagran.omarchy-control-panel"
 PANEL_REPO="https://github.com/avillagran/omarchy-control-panel.git"
-REPO_URL="https://github.com/avillagran/Hyprland.git"
-BRANCH="feat/touchpad-scroll-acceleration"
-SRC_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-control-panel/hyprland-scroll-patch"
+HYPRLAND_REPO="https://github.com/hyprwm/Hyprland.git"
+# Upstream commit the patch series was authored against (v0.56.0-190-g1b85c7aa).
+# The patches apply cleanly to exactly this tree; refresh both together.
+HYPRLAND_PIN="1b85c7aa1b5c41d906880f0f495bcd0749a23175"
+PATCH_BASE="https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/patches/hyprland"
+PATCH_NAMES="0001-input-touchpad-scroll-acceleration-profiles.patch
+0002-input-fix-std-clamp-type-mismatch-in-scroll-accel-fl.patch
+0003-config-drop-input-refresh-from-scroll-accel-options.patch
+0004-input-add-inertial-scroll-coasting-for-touchpads.patch
+0005-input-refine-scroll-coasting-seed-defaults-drop-diag.patch
+0006-input-add-scroll_ignore_classes-to-disable-accel-coa.patch"
+CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-control-panel"
+SRC_DIR="$CACHE_ROOT/hyprland-scroll-patch"
+PATCH_DIR="$CACHE_ROOT/patches"
 SHADOW_DIR="$HOME/.local/bin"
 SHADOW="$SHADOW_DIR/Hyprland"
 INPUT_LUA="$HOME/.config/hypr/input.lua"
@@ -50,6 +66,9 @@ REQUIRE_MARK='require("control-panel") -- Omarchy Control Panel scroll persisten
 PREFS="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/control-panel-prefs.json"
 STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-control-panel-scroll-patch.json"
 PATH_MARK="omarchy-scroll-patch:path"
+# Bumped whenever HYPRLAND_PIN or the patch series changes; a mismatch forces
+# a fresh fetch+apply on rerun.
+PATCH_TAG="pin:$HYPRLAND_PIN series:v1"
 
 # Omarchy 4.x CLI (omarchy plugin add/enable/remove) refuses to run without
 # OMARCHY_PATH; sessions launched outside the Omarchy env (SSH, TTY, cron)
@@ -185,24 +204,56 @@ if [ ! -f "$STATE_FILE" ]; then
 fi
 
 # ---- 2. build dependencies -------------------------------------------------
-if ! command -v pacman >/dev/null 2>&1; then
-  die "patch build currently supports Arch/Omarchy only (pacman not found). Build Hyprland from $REPO_URL (branch $BRANCH) manually."
+# Only touch pacman/sudo when something is actually missing: reruns on a
+# machine that already built the patch (or Hyprland itself) skip this step
+# entirely and never prompt for a password.
+if command -v cmake ninja gcc pkgconf hyprwayland-scanner git jq curl >/dev/null 2>&1; then
+  log "Build dependencies already present; skipping pacman."
+else
+  if ! command -v pacman >/dev/null 2>&1; then
+    die "patch build currently supports Arch/Omarchy only (pacman not found). Build Hyprland from $HYPRLAND_REPO at $HYPRLAND_PIN with patches/hyprland/ applied, manually."
+  fi
+  command -v sudo >/dev/null 2>&1 || die "sudo is required to install build dependencies."
+  log "Installing build dependencies (pacman) ..."
+  sudo pacman -S --needed --noconfirm git cmake ninja gcc pkgconf wayland wayland-protocols hyprwayland-scanner hyprland
 fi
-command -v sudo >/dev/null 2>&1 || die "sudo is required to install build dependencies."
-log "Installing build dependencies (pacman) ..."
-sudo pacman -S --needed --noconfirm git cmake ninja gcc pkgconf wayland wayland-protocols hyprwayland-scanner hyprland
 
-# ---- 3. fetch the patched source -------------------------------------------
-log "Fetching $BRANCH from $REPO_URL ..."
-mkdir -p "$(dirname "$SRC_DIR")"
-if [ -d "$SRC_DIR/.git" ]; then
-  git -C "$SRC_DIR" fetch --depth 1 origin "$BRANCH"
-  git -C "$SRC_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
-  git -C "$SRC_DIR" submodule update --init --depth 1
+# ---- 3. fetch upstream Hyprland at the pinned commit + apply the patch ------
+mkdir -p "$PATCH_DIR"
+if [ -f "$SRC_DIR/.omarchy-scroll-patch" ] && [ "$(cat "$SRC_DIR/.omarchy-scroll-patch")" = "$PATCH_TAG" ]; then
+  log "Patched source already present; skipping fetch/apply."
 else
   rm -rf "$SRC_DIR"
-  git clone --depth 1 --branch "$BRANCH" --recurse-submodules --shallow-submodules "$REPO_URL" "$SRC_DIR"
+  mkdir -p "$SRC_DIR"
+  git -C "$SRC_DIR" init -q
+  git -C "$SRC_DIR" remote add origin "$HYPRLAND_REPO"
+  log "Fetching upstream Hyprland at $HYPRLAND_PIN ..."
+  git -C "$SRC_DIR" fetch --depth 1 origin "$HYPRLAND_PIN"
+  git -C "$SRC_DIR" checkout -q --detach FETCH_HEAD
+
+  log "Downloading scroll patch series ..."
+  local_ok=true
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  for p in $PATCH_NAMES; do
+    # Prefer patch files shipped next to the script (repo checkout / plugin
+    # install); fall back to raw.githubusercontent for the curl | bash path.
+    if [ -f "$repo_root/patches/hyprland/$p" ]; then
+      cp -f "$repo_root/patches/hyprland/$p" "$PATCH_DIR/$p"
+    else
+      curl -fsSL "$PATCH_BASE/$p" -o "$PATCH_DIR/$p" || local_ok=false
+    fi
+  done
+  [ "$local_ok" = "true" ] || die "failed to download the patch series from $PATCH_BASE"
+
+  log "Applying scroll patch series ..."
+  if ! git -C "$SRC_DIR" apply --check "$PATCH_DIR"/*.patch; then
+    die "patch series does not apply to $HYPRLAND_PIN — upstream drifted; refresh HYPRLAND_PIN and patches/hyprland/ together (see README)."
+  fi
+  git -C "$SRC_DIR" apply "$PATCH_DIR"/*.patch
+  printf '%s\n' "$PATCH_TAG" > "$SRC_DIR/.omarchy-scroll-patch"
 fi
+log "Syncing submodules ..."
+git -C "$SRC_DIR" submodule update --init --depth 1
 
 # ---- 4. build (this takes a while) -----------------------------------------
 log "Building Hyprland (this can take ~5-15 min on a laptop) ..."
@@ -288,7 +339,8 @@ cat <<'EOF'
 [scroll-patch] All done. Next steps:
   1. Log out and back in (the compositor binary is chosen at session start).
   2. The panel widget is in the TOP-RIGHT of the bar (Dev mode is already on).
-  3. Open the panel -> Trackpad tab -> "Scroll feel": presets and live sliders.
+  3. Open the panel -> Trackpad tab -> "Scroll feel": presets, live sliders,
+     "Except browsers and terminals" inertia scope and "Config like macOS".
 
 Removal:
   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
