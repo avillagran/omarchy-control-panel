@@ -31,7 +31,14 @@ cat >"$fixture_dir/bin/hyprctl" <<'SH'
 set -euo pipefail
 
 if [[ ${1:-} == -j && ${2:-} == monitors ]]; then
-  cat "$TEST_MONITORS"
+  if [[ ${3:-} == all ]]; then
+    cat "$TEST_MONITORS"
+  else
+    # Active list: entries whose connector is in the active-names ledger,
+    # independent of the (possibly inverted) "disabled" JSON field.
+    jq -c --slurpfile names <(jq -Rn '[inputs | rtrimstr("\n")] | map(select(length > 0))' "$TEST_ACTIVE_NAMES") \
+      '[.[] | select(.name as $n | ($names[0] | index($n)) != null)]' "$TEST_MONITORS"
+  fi
   exit 0
 fi
 
@@ -68,6 +75,8 @@ if [[ ${1:-} == eval ]]; then
   if [[ $expression == *"disabled = true"* ]]; then
     jq --arg name "$name" 'map(if .name == $name then .disabled = true else . end)' \
       "$TEST_MONITORS" >"$tmp"
+    grep -vxF "$name" "$TEST_ACTIVE_NAMES" >"$TEST_ACTIVE_NAMES.tmp" || true
+    mv "$TEST_ACTIVE_NAMES.tmp" "$TEST_ACTIVE_NAMES"
   else
     [[ $expression =~ mode[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]] || exit 1
     mode=${BASH_REMATCH[1]}
@@ -95,6 +104,7 @@ if [[ ${1:-} == eval ]]; then
         | .x = $x | .y = $y | .scale = $scale | .transform = $transform
         | .mirrorOf = $mirror
       else . end)' "$TEST_MONITORS" >"$tmp"
+    grep -qxF "$name" "$TEST_ACTIVE_NAMES" || printf '%s\n' "$name" >>"$TEST_ACTIVE_NAMES"
   fi
   mv "$tmp" "$TEST_MONITORS"
   exit 0
@@ -127,6 +137,8 @@ for mocked_command in hyprctl systemd-run systemctl; do
 done
 export XDG_STATE_HOME="$fixture_dir/state"
 export TEST_MONITORS="$fixture_dir/monitors.json"
+export TEST_ACTIVE_NAMES="$fixture_dir/active-names"
+printf '%s\n' "eDP-1" "DP-1" >"$TEST_ACTIVE_NAMES"
 export TEST_CALLS="$fixture_dir/calls"
 export TEST_SYSTEMD_CALLS="$fixture_dir/systemd-calls"
 export TEST_SYSTEMCTL_CALLS="$fixture_dir/systemctl-calls"
@@ -149,6 +161,22 @@ mv "$TEST_MONITORS.empty" "$TEST_MONITORS"
 empty_state=$($helper state)
 jq -e '.[0].fingerprint == "eDP-1" and .[1].fingerprint == "DP-1"' <<<"$empty_state" >/dev/null
 mv "$TEST_MONITORS.saved" "$TEST_MONITORS"
+
+# Upstream regression guard: some Hyprland builds (main ~v0.56.x) report the
+# JSON "disabled" field inverted (tf(m_enabled)); state must derive the flag
+# from the active monitor list, never trusting the raw field.
+cp "$TEST_MONITORS" "$TEST_MONITORS.okfield"
+jq 'map(.disabled = true)' "$TEST_MONITORS.okfield" >"$TEST_MONITORS"
+jq -e 'all(.disabled == false)' <<<"$($helper state)" >/dev/null \
+  || { echo "inverted disabled field leaked into state" >&2; exit 1; }
+mv "$TEST_MONITORS.okfield" "$TEST_MONITORS"
+
+# A genuinely disabled output (absent from the active list) stays disabled.
+dis_cfg=$(jq -c '.[1].disabled = true' <<<"$state")
+$helper apply "$dis_cfg" >/dev/null
+$helper state | jq -e '.[1].disabled == true and .[0].disabled == false' >/dev/null \
+  || { echo "genuinely disabled output not reported as disabled" >&2; exit 1; }
+$helper apply "$state" >/dev/null
 
 [[ $($helper pending | jq -r '.pending') == "false" ]]
 

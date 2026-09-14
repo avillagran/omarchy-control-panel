@@ -1,0 +1,29 @@
+From 25d5d6350ee6e84354f7d5382489d07f200e6681 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Andr=C3=A9s=20Villagr=C3=A1n?= <avillagran@omarchy.local>
+Date: Mon, 14 Sep 2026 02:50:59 -0300
+Subject: [PATCH] ipc: fix inverted "disabled" field in monitors JSON output
+
+The JSON branch formatted tf(m_enabled) into the "disabled" slot, so active
+monitors reported disabled:true and actually-disabled outputs disabled:false
+(the plain-text branch correctly uses !m_enabled). This breaks consumers of
+hyprctl monitors -j / monitors all -j.
+---
+ src/ipc/s1/Commands.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ipc/s1/Commands.cpp b/src/ipc/s1/Commands.cpp
+index 5089a659..64182f8a 100644
+--- a/src/ipc/s1/Commands.cpp
++++ b/src/ipc/s1/Commands.cpp
+@@ -283,7 +283,7 @@ std::string CCommandFormatter::getMonitorData(PHLMONITOR m, eHyprCtlOutputFormat
+             escapeJSONStrings(m->m_activeSpecialWorkspace ? m->m_activeSpecialWorkspace->displayName() : ""), sc<int>(m->m_reservedArea.left()), sc<int>(m->m_reservedArea.top()),
+             sc<int>(m->m_reservedArea.right()), sc<int>(m->m_reservedArea.bottom()), m->m_scale, sc<int>(m->m_transform), tf(m == Desktop::focusState()->monitor()),
+             tf(m->m_dpmsStatus), tf(m->m_output->state->state().adaptiveSync), rc<uint64_t>(m->m_solitaryClient.get()), getSolitaryBlockedReason(m, format),
+-            tf(m->m_tearingState.activelyTearing), getTearingBlockedReason(m, format), rc<uint64_t>(m->m_lastScanout.get()), getDSBlockedReason(m, format), tf(m->m_enabled),
++            tf(m->m_tearingState.activelyTearing), getTearingBlockedReason(m, format), rc<uint64_t>(m->m_lastScanout.get()), getDSBlockedReason(m, format), tf(!m->m_enabled),
+             formatToString(m->m_output->state->state().drmFormat), m->m_mirrorOf ? std::format("{}", m->m_mirrorOf->m_id) : "none", availableModesForOutput(m, format),
+             (NCMType::toString(m->m_cmType)), (m->m_sdrBrightness), (m->m_sdrSaturation), (m->m_sdrMinLuminance), (m->m_sdrMaxLuminance), tf(!m->shouldUseSoftwareCursors()),
+             StringUtils::backendStr(m->m_output->getBackend()->type()), tf(m->m_output->parsedEDID.hdrMetadata.has_value()),
+-- 
+2.55.0
+
