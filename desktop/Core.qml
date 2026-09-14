@@ -336,7 +336,28 @@ Item {
     return names.join(",")
   }
   onDisplayScreenNamesChanged: {
-    if (root.opened) root.displayRefresh()
+    if (!root.opened) return
+    // Hyprland adopts a newly plugged output (and drops an unplugged one) a
+    // moment after the Wayland global appears/disappears. A single immediate
+    // read races that: the helper can return the OLD monitor list and the UI
+    // stays stale in both directions (connected monitor missing / disconnected
+    // monitor lingering). Re-read at +1.2s and +3.5s to catch up.
+    root.displayRefresh()
+    displayHotplugRetry1.restart()
+    displayHotplugRetry2.restart()
+  }
+
+  Timer {
+    id: displayHotplugRetry1
+    interval: 1200
+    repeat: false
+    onTriggered: root.displayRefresh()
+  }
+  Timer {
+    id: displayHotplugRetry2
+    interval: 3500
+    repeat: false
+    onTriggered: root.displayRefresh()
   }
 
   function displayUpdate(key, value) {
@@ -899,40 +920,81 @@ Item {
       || root.trackpadAccelProfile !== root.saved.trackpadAccelProfile
   }
 
-  function selectPointerPreset(id) {
-    var value = PointerFeelModel.preset(id)
-    if (value) root.stagePointerFeel(value.sensitivity, value.scrollFactor, value.accelProfile)
+  // Live-apply only (hyprctl eval); persistence is debounced separately.
+  function applyPointerFeelLive() {
+    if (!root.pointerFeelReady || !root.trackpadNames.length) return
+    for (var i = 0; i < root.trackpadNames.length; i++) {
+      var statement = PointerFeelModel.luaDeviceStatement(root.trackpadNames[i],
+        PointerFeelModel.clampSensitivity(root.trackpadSensitivity),
+        PointerFeelModel.clampScrollFactor(root.trackpadScrollFactor),
+        root.trackpadAccelProfile)
+      if (statement) Quickshell.execDetached(["hyprctl", "eval", statement])
+    }
+    Quickshell.execDetached(["hyprctl", "eval",
+      "hl.config({ input = { touchpad = { scroll_factor = "
+        + PointerFeelModel.clampScrollFactor(root.trackpadScrollFactor).toFixed(2) + " } } })"])
   }
 
+  // Persist the staged values (saved prefs + control-panel.lua).
+  function savePointerFeel() {
+    if (!root.pointerFeelReady) return
+    root.saved.trackpadSensitivity = PointerFeelModel.clampSensitivity(root.trackpadSensitivity)
+    root.saved.trackpadScrollFactor = PointerFeelModel.clampScrollFactor(root.trackpadScrollFactor)
+    root.saved.trackpadAccelProfile = root.trackpadAccelProfile === "flat" ? "flat" : "adaptive"
+    root.saved.trackpadFeelConfigured = true
+    root.trackpadFeelConfigured = true
+    root.pointerFeelDirty = false
+    root.writeLua()
+    root.savePrefs()
+  }
+
+  // Immediate live apply + persist (profile apply / restore path).
   function applyPointerFeel() {
     if (!root.pointerFeelReady) return
     if (!root.trackpadNames.length) {
       root.statusMessage = root.t(root.uiLang, "pointerFeelNoDevice")
       return
     }
-    root.pointerFeelPrevious = {
-      sensitivity: root.saved.trackpadSensitivity,
-      scrollFactor: root.saved.trackpadScrollFactor,
-      accelProfile: root.saved.trackpadAccelProfile,
-      configured: root.saved.trackpadFeelConfigured
-    }
-    root.saved.trackpadSensitivity = PointerFeelModel.clampSensitivity(root.trackpadSensitivity)
-    root.saved.trackpadScrollFactor = PointerFeelModel.clampScrollFactor(root.trackpadScrollFactor)
-    root.saved.trackpadAccelProfile = root.trackpadAccelProfile === "flat" ? "flat" : "adaptive"
-    root.saved.trackpadFeelConfigured = true
-    root.trackpadFeelConfigured = true
-    for (var i = 0; i < root.trackpadNames.length; i++) {
-      var statement = PointerFeelModel.luaDeviceStatement(root.trackpadNames[i],
-        root.saved.trackpadSensitivity, root.saved.trackpadScrollFactor, root.saved.trackpadAccelProfile)
-      if (statement) Quickshell.execDetached(["hyprctl", "eval", statement])
-    }
-    Quickshell.execDetached(["hyprctl", "eval",
-      "hl.config({ input = { touchpad = { scroll_factor = "
-        + PointerFeelModel.clampScrollFactor(root.saved.trackpadScrollFactor).toFixed(2) + " } } })"])
-    root.pointerFeelDirty = false
-    root.writeLua()
-    root.savePrefs()
+    root.applyPointerFeelLive()
+    root.savePointerFeel()
     root.statusMessage = root.t(root.uiLang, "pointerFeelApplied")
+  }
+
+  // User-driven change (sliders, presets): applies in real time and persists
+  // the latest value. The FIRST change of the session snapshots the current
+  // values so "Restore previous" can undo the whole run of adjustments.
+  function userChangePointerFeel(sensitivity, scrollFactor, accelProfile) {
+    if (!root.pointerFeelReady) return
+    if (root.pointerFeelPrevious === null) {
+      root.pointerFeelPrevious = {
+        sensitivity: root.trackpadSensitivity,
+        scrollFactor: root.trackpadScrollFactor,
+        accelProfile: root.trackpadAccelProfile,
+        configured: root.saved.trackpadFeelConfigured
+      }
+    }
+    root.stagePointerFeel(sensitivity, scrollFactor, accelProfile)
+    pointerFeelLiveTimer.restart()
+    pointerFeelSaveTimer.restart()
+  }
+
+  Timer {
+    id: pointerFeelLiveTimer
+    interval: 120
+    repeat: false
+    onTriggered: root.applyPointerFeelLive()
+  }
+
+  Timer {
+    id: pointerFeelSaveTimer
+    interval: 600
+    repeat: false
+    onTriggered: root.savePointerFeel()
+  }
+
+  function selectPointerPreset(id) {
+    var value = PointerFeelModel.preset(id)
+    if (value) root.userChangePointerFeel(value.sensitivity, value.scrollFactor, value.accelProfile)
   }
 
   function restorePointerFeel() {
@@ -2863,7 +2925,7 @@ Item {
               to: 1
               stepSize: 0.05
               value: root.trackpadSensitivity
-              onMoved: root.stagePointerFeel(value, root.trackpadScrollFactor, root.trackpadAccelProfile)
+              onMoved: root.userChangePointerFeel(value, root.trackpadScrollFactor, root.trackpadAccelProfile)
             }
 
             Text {
@@ -2881,7 +2943,7 @@ Item {
               to: 2
               stepSize: 0.05
               value: root.trackpadScrollFactor
-              onMoved: root.stagePointerFeel(root.trackpadSensitivity, value, root.trackpadAccelProfile)
+              onMoved: root.userChangePointerFeel(root.trackpadSensitivity, value, root.trackpadAccelProfile)
             }
 
             ToggleRow {
@@ -2898,15 +2960,6 @@ Item {
 
             Row {
               spacing: Style.space(8)
-              Button {
-                text: root.t(root.uiLang, "pointerFeelApply")
-                selected: root.pointerFeelDirty
-                bordered: true
-                enabled: root.pointerFeelDirty && root.trackpadNames.length > 0
-                foreground: root.fg
-                fontFamily: root.fontFamily
-                onClicked: root.applyPointerFeel()
-              }
               Button {
                 text: root.t(root.uiLang, "pointerFeelRestore")
                 bordered: true
@@ -4281,6 +4334,11 @@ Item {
     selectedName: root.opened && root.currentTab === 2 && root.displaySelected ? root.displaySelected.name : ""
     identifyAll: root.opened && root.currentTab === 2 && root.identifyAllDisplays
     dragActive: root.displayDragging
+    // Per-monitor color chosen in the Displays tab; accent when unset.
+    colorFor: function(name) {
+      var role = root.displayColorRole(name)
+      return role ? ThemePalette.resolve(role, root.workspaceThemeColors) : ""
+    }
   }
 
   // Keep/Revert confirmation is shown INSIDE the Displays tab. The snapshot
