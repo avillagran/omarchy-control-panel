@@ -10,6 +10,13 @@ import qs.Commons
 //     or dragging a tile).
 //   - identifyAll === true: show the index on every monitor (the "Identify"
 //     button), so multi-display setups are unambiguous.
+//
+// The border is drawn as FOUR thin edge windows instead of one full-screen
+// window with a transparent center: some GPU/driver combos (e.g. Intel Mesa)
+// hand Qt an opaque (XRGB) surface, which turns a "transparent" center into a
+// solid black rectangle covering the whole screen. Strip windows cover only
+// the border pixels, so no per-pixel alpha is required anywhere except the
+// rounded corners of the identify index popup.
 Item {
   id: root
   property var displays: []
@@ -20,39 +27,92 @@ Item {
   property bool dragActive: false
 
   readonly property bool active: selectedName !== "" || identifyAll
+  readonly property int borderW: Style.space(6)
 
+  function _showBorder(name) {
+    return root.active && !root.dragActive && root.indexOf(name) >= 0
+  }
+
+  component EdgeStrip: PanelWindow {
+    required property var screenData
+    screen: screenData
+    visible: root._showBorder(screenData.name)
+    color: Color.accent
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    mask: Region {}
+  }
+
+  // Top edge.
+  Variants {
+    model: Quickshell.screens
+    EdgeStrip {
+      required property var modelData
+      screenData: modelData
+      anchors { top: true; left: true; right: true }
+      implicitHeight: root.borderW
+    }
+  }
+
+  // Bottom edge.
+  Variants {
+    model: Quickshell.screens
+    EdgeStrip {
+      required property var modelData
+      screenData: modelData
+      anchors { bottom: true; left: true; right: true }
+      implicitHeight: root.borderW
+    }
+  }
+
+  // Left edge (inset vertically so corners are not drawn twice).
+  Variants {
+    model: Quickshell.screens
+    EdgeStrip {
+      required property var modelData
+      screenData: modelData
+      anchors { left: true; top: true; bottom: true }
+      implicitWidth: root.borderW
+      margins { top: root.borderW; bottom: root.borderW }
+    }
+  }
+
+  // Right edge.
+  Variants {
+    model: Quickshell.screens
+    EdgeStrip {
+      required property var modelData
+      screenData: modelData
+      anchors { right: true; top: true; bottom: true }
+      implicitWidth: root.borderW
+      margins { top: root.borderW; bottom: root.borderW }
+    }
+  }
+
+  // Big centered index, only in identify-all mode. Sized to its content and
+  // centered with margins so the window covers only the popup itself.
   Variants {
     model: Quickshell.screens
     PanelWindow {
-      id: win
+      id: indexWin
       required property var modelData
       screen: modelData
-      visible: root.active && !root.dragActive && root.indexOf(modelData.name) >= 0
+      visible: root.identifyAll && !root.dragActive && root.indexOf(modelData.name) >= 0
       color: "transparent"
       exclusionMode: ExclusionMode.Ignore
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-      // The overlay is purely visual (a border + index). An empty Region mask
-      // makes the window click-through so it never swallows mouse input.
       mask: Region {}
-      anchors { top: true; bottom: true; left: true; right: true }
-
-      readonly property int displayIndex: root.indexOf(modelData.name)
-      readonly property bool isSelected: modelData.name === root.selectedName
-
-      // Accent border around the whole physical monitor.
-      Rectangle {
-        anchors.fill: parent
-        color: "transparent"
-        border.color: Color.accent
-        border.width: win.isSelected || root.identifyAll ? Style.space(6) : 0
-        radius: Style.cornerRadius
+      implicitWidth: indexRect.width
+      implicitHeight: indexRect.height
+      margins {
+        left: Math.max(0, Math.round((modelData.width - indexRect.width) / 2))
+        top: Math.max(0, Math.round((modelData.height - indexRect.height) / 2))
       }
 
-      // Big centered index, only in identify-all mode.
       Rectangle {
-        visible: root.identifyAll
-        anchors.centerIn: parent
+        id: indexRect
         width: Style.space(180)
         height: Style.space(130)
         radius: Style.cornerRadius * 2
@@ -64,7 +124,7 @@ Item {
           spacing: Style.space(6)
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: win.displayIndex >= 0 ? String(win.displayIndex + 1) : "?"
+            text: root.indexOf(modelData.name) >= 0 ? String(root.indexOf(modelData.name) + 1) : "?"
             color: Color.foreground
             font.family: Style.font.family
             font.pixelSize: Style.space(58)
