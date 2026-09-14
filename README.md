@@ -113,8 +113,8 @@ manifest.json        # plugin declaration (id, kinds, entry points)
 BarWidget.qml        # bar widget that summons the panel
 Panel.qml            # the settings panel
 i18n.json            # UI strings in 19 languages
-locale-list.sh       # enumerates available system locales for the picker
-locale-helper        # root-owned helper for one-click locale install
+bin/locale-list.sh   # enumerates available system locales for the picker
+bin/locale-helper    # root-owned helper for one-click locale install
 write-lua-atomic.sh  # atomic, symlink-safe write of control-panel.lua
 write-prefs-atomic.sh # atomic, symlink-safe write of plugin prefs
 ```
