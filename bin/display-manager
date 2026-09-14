@@ -30,10 +30,18 @@ need hyprctl
 
 monitors() { hyprctl -j monitors all; }
 
-state_prog='def fp: (.name // "unknown") as $n | [(.make // ""), (.model // ""), (.serial // "")] | map(select(length > 0)) | if length > 0 then join("|") else $n end; [ .[] | { name, description, make, model, serial, fingerprint: fp, disabled: (.disabled == true), focused: (.focused == true), mode: ((.width|tostring) + "x" + (.height|tostring) + "@" + ((.refreshRate // 60)|tostring)), width, height, refresh: (.refreshRate // 60), x, y, scale: (.scale // 1), transform: (.transform // 0), mirror: (if (.mirrorOf // "none") == "none" then "" else .mirrorOf end), modes: (.availableModes // []) } ]'
+# Upstream Hyprland main (~v0.56.x) ships an inverted "disabled" field in the
+# JSON output of `hyprctl monitors [all] -j` (the JSON branch formats
+# tf(m_enabled) where the text branch correctly uses !m_enabled). Derive the
+# flag from the active monitor list instead, which is correct on every build.
+active_monitors() { hyprctl -j monitors 2>/dev/null | jq -c 'map(.name)'; }
+
+state_prog='def fp: (.name // "unknown") as $n | [(.make // ""), (.model // ""), (.serial // "")] | map(select(length > 0)) | if length > 0 then join("|") else $n end; [ .[] | { name, description, make, model, serial, fingerprint: fp, disabled: (.name as $mon | if ($active | length) > 0 then (($active | index($mon)) == null) else (.disabled == true) end), focused: (.focused == true), mode: ((.width|tostring) + "x" + (.height|tostring) + "@" + ((.refreshRate // 60)|tostring)), width, height, refresh: (.refreshRate // 60), x, y, scale: (.scale // 1), transform: (.transform // 0), mirror: (if (.mirrorOf // "none") == "none" then "" else .mirrorOf end), modes: (.availableModes // []) } ]'
 
 state() {
-  monitors | jq -c "$state_prog"
+  local active
+  active=$(active_monitors) || active="[]"
+  monitors | jq -c --argjson active "${active:-[]}" "$state_prog"
 }
 
 topology() {

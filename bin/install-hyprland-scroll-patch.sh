@@ -53,7 +53,8 @@ PATCH_NAMES="0001-input-touchpad-scroll-acceleration-profiles.patch
 0003-config-drop-input-refresh-from-scroll-accel-options.patch
 0004-input-add-inertial-scroll-coasting-for-touchpads.patch
 0005-input-refine-scroll-coasting-seed-defaults-drop-diag.patch
-0006-input-add-scroll_ignore_classes-to-disable-accel-coa.patch"
+0006-input-add-scroll_ignore_classes-to-disable-accel-coa.patch
+0007-ipc-fix-inverted-disabled-field-in-monitors-JSON-out.patch"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-control-panel"
 SRC_DIR="$CACHE_ROOT/hyprland-scroll-patch"
 PATCH_DIR="$CACHE_ROOT/patches"
@@ -68,7 +69,7 @@ STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-control-panel-scroll-p
 PATH_MARK="omarchy-scroll-patch:path"
 # Bumped whenever HYPRLAND_PIN or the patch series changes; a mismatch forces
 # a fresh fetch+apply on rerun.
-PATCH_TAG="pin:$HYPRLAND_PIN series:v1"
+PATCH_TAG="pin:$HYPRLAND_PIN series:v2"
 
 # Omarchy 4.x CLI (omarchy plugin add/enable/remove) refuses to run without
 # OMARCHY_PATH; sessions launched outside the Omarchy env (SSH, TTY, cron)
@@ -246,10 +247,14 @@ else
   [ "$local_ok" = "true" ] || die "failed to download the patch series from $PATCH_BASE"
 
   log "Applying scroll patch series ..."
-  if ! git -C "$SRC_DIR" apply --check "$PATCH_DIR"/*.patch; then
-    die "patch series does not apply to $HYPRLAND_PIN — upstream drifted; refresh HYPRLAND_PIN and patches/hyprland/ together (see README)."
-  fi
-  git -C "$SRC_DIR" apply "$PATCH_DIR"/*.patch
+  # Apply patch-by-patch (a patch series stacks; a single git apply call with
+  # several files does not behave like git am).
+  for p in $PATCH_NAMES; do
+    if ! git -C "$SRC_DIR" apply --check "$PATCH_DIR/$p"; then
+      die "patch $p does not apply to $HYPRLAND_PIN — upstream drifted; refresh HYPRLAND_PIN and patches/hyprland/ together (see README)."
+    fi
+    git -C "$SRC_DIR" apply "$PATCH_DIR/$p" || die "failed to apply $p"
+  done
   printf '%s\n' "$PATCH_TAG" > "$SRC_DIR/.omarchy-scroll-patch"
 fi
 log "Syncing submodules ..."
