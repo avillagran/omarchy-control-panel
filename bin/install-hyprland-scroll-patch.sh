@@ -336,11 +336,16 @@ log "Installed version:"
 
 cat <<'EOF'
 
-[scroll-patch] All done. Next steps:
-  1. Log out and back in (the compositor binary is chosen at session start).
-  2. The panel widget is in the TOP-RIGHT of the bar (Dev mode is already on).
-  3. Open the panel -> Trackpad tab -> "Scroll feel": presets, live sliders,
-     "Except browsers and terminals" inertia scope and "Config like macOS".
+[scroll-patch] All done.
+[scroll-patch] IMPORTANT: log out and log back in NOW.
+  The compositor binary is chosen at session start, so the patched Hyprland
+  only takes effect after a fresh login. Until then the running session is
+  still the stock compositor and the Scroll feel controls stay inactive.
+  Everything else is already in place:
+  1. The panel widget is in the TOP-RIGHT of the bar (Dev mode is already on).
+  2. After logging back in, open the panel -> Trackpad tab -> "Scroll feel":
+     presets, live sliders, "Except browsers and terminals" inertia scope
+     and "Config like macOS".
 
 Removal:
   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
