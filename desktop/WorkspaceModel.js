@@ -19,8 +19,32 @@ function activeMonitors(displays) {
   })
 }
 
-function assignments(displays, singleCount, perMonitorCount) {
-  var monitors = activeMonitors(displays)
+// Order monitors for workspace range assignment. Monitors that already own
+// workspaces keep their range order (pinned by identity), so moving a display
+// in the layout never swaps its workspaces with another display. New
+// monitors (no claims) append after the claimed ones, in position order.
+function pinOrder(monitors, previous) {
+  function lowestClaim(name) {
+    var best = Infinity
+    for (var k in previous) {
+      var v = previous[k]
+      if (v && v.monitor === name) {
+        var n = Number(k)
+        if (isFinite(n) && n < best) best = n
+      }
+    }
+    return best
+  }
+  return monitors.slice().sort(function(a, b) {
+    var ca = lowestClaim(a.name)
+    var cb = lowestClaim(b.name)
+    if (ca !== Infinity || cb !== Infinity) return ca - cb
+    return 0 // both unclaimed: keep position order (stable sort)
+  })
+}
+
+function assignments(displays, singleCount, perMonitorCount, previous) {
+  var monitors = pinOrder(activeMonitors(displays), previous || {})
   if (!monitors.length) return []
   var count = monitors.length === 1
     ? clampCount(singleCount, 10)
@@ -87,8 +111,8 @@ function colorRoleForMonitor(name, displays, colors) {
   return monitorPalette[0]
 }
 
-function workspaceVisualMap(displays, singleCount, perMonitorCount, colors) {
-  var plan = assignments(displays, singleCount, perMonitorCount)
+function workspaceVisualMap(displays, singleCount, perMonitorCount, colors, previous) {
+  var plan = assignments(displays, singleCount, perMonitorCount, previous)
   var result = {}
   for (var i = 0; i < plan.length; i++) {
     var rule = plan[i]

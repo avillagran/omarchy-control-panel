@@ -58,11 +58,62 @@ Item {
     return null
   }
 
+  // The monitor this bar instance sits on (each bar window is per-screen).
+  readonly property string screenName: {
+    var w = root.QsWindow && root.QsWindow.window
+    return w && w.screen ? String(w.screen.name || "") : ""
+  }
+
+  // Name of the monitor a live workspace currently sits on ("" if unknown).
+  function liveMonitorOf(ws) {
+    var mon = ws && ws.monitor
+    return mon ? String(mon.name || "") : ""
+  }
+
   function workspaceIds() {
-    var ids = [1, 2, 3, 4, 5]
+    var ids = []
     var values = Hyprland.workspaces.values
-    for (var i = 0; i < values.length; i++) {
-      var id = values[i].id
+    var i, id
+
+    var hasMapping = false
+    for (var k in workspaceVisuals) { hasMapping = true; break }
+
+    if (screenName !== "" && hasMapping) {
+      // Each bar shows only the workspaces assigned to ITS monitor — never a
+      // duplicate of the full set on every bar.
+      for (var key in workspaceVisuals) {
+        var v = workspaceVisuals[key]
+        var n = Number(key)
+        if (v && v.monitor === screenName && isFinite(n)) ids.push(n)
+      }
+      // Live workspaces sitting on this screen that the map does not know
+      // yet (e.g. hotplug before the panel recomputed the mapping).
+      for (i = 0; i < values.length; i++) {
+        id = values[i].id
+        if (id > 0 && id <= 10 && ids.indexOf(id) === -1 && liveMonitorOf(values[i]) === screenName)
+          ids.push(id)
+      }
+      if (ids.length > 0) {
+        ids.sort(function(a, b) { return a - b })
+        return ids
+      }
+      // Mapping exists but knows nothing about this screen (new monitor):
+      // fall through to live data only, so this bar is not a duplicate.
+      for (i = 0; i < values.length; i++) {
+        id = values[i].id
+        if (id > 0 && id <= 10 && ids.indexOf(id) === -1 && liveMonitorOf(values[i]) === screenName)
+          ids.push(id)
+      }
+      if (ids.length > 0) {
+        ids.sort(function(a, b) { return a - b })
+        return ids
+      }
+    }
+
+    // Legacy fallback: no mapping (first run) — default set plus live extras.
+    ids = [1, 2, 3, 4, 5]
+    for (i = 0; i < values.length; i++) {
+      id = values[i].id
       if (id > 0 && id <= 10 && ids.indexOf(id) === -1) ids.push(id)
     }
     ids.sort(function(a, b) { return a - b })
