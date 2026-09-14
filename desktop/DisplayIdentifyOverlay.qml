@@ -30,7 +30,9 @@ Item {
   readonly property int borderW: Style.space(6)
 
   function _showBorder(name) {
-    return root.active && !root.dragActive && root.indexOf(name) >= 0
+    if (root.dragActive || root.indexOf(name) < 0) return false
+    if (root.identifyAll) return true
+    return name === root.selectedName
   }
 
   component EdgeStrip: PanelWindow {
