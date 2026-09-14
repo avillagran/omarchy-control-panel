@@ -45,12 +45,39 @@ assert.equal(context.maxLabel(5.0), 'scrollFeelMaxStrong');
 assert.equal(context.maxLabel(8.0), 'scrollFeelMaxExtreme');
 
 assert.equal(context.luaConfigStatement(2, 1.0, 3.0, 600),
-  'hl.config({ input = { touchpad = { scroll_accel_profile = 2, scroll_accel_speed = 1.00, scroll_accel_max = 3.00, scroll_decel = 600 } } })');
+  'hl.config({ input = { touchpad = { scroll_accel_profile = 2, scroll_accel_speed = 1.00, scroll_accel_max = 3.00, scroll_decel = 600, scroll_ignore_classes = "" } } })');
 assert.equal(context.luaConfigStatement(0, 1.0, 3.0, 0),
-  'hl.config({ input = { touchpad = { scroll_accel_profile = 0, scroll_accel_speed = 1.00, scroll_accel_max = 3.00, scroll_decel = 0 } } })');
+  'hl.config({ input = { touchpad = { scroll_accel_profile = 0, scroll_accel_speed = 1.00, scroll_accel_max = 3.00, scroll_decel = 0, scroll_ignore_classes = "" } } })');
 // out-of-range profile must never produce a broken literal
 assert.equal(context.luaConfigStatement(7, 1.0, 3.0, 600), '');
 assert.match(context.luaConfigStatement(2, 1.234, 3.0, 600), /scroll_accel_speed = 1\.25/);
+// ignore-class list is emitted verbatim (composer-managed, no user input)
+assert.match(context.luaConfigStatement(2, 1.0, 3.0, 600, 'kitty,chromium'),
+  /scroll_ignore_classes = "kitty,chromium"/);
+
+// ignore modes: off = patch everywhere, browsers = keep native inertia in
+// apps that have their own (browsers + terminals like kitty), native = off.
+assert.deepEqual(plain(context.ignoreModes), ['off', 'browsers', 'native']);
+assert.equal(context.clampIgnoreMode('off'), 'off');
+assert.equal(context.clampIgnoreMode('native'), 'native');
+assert.equal(context.clampIgnoreMode('garbage'), 'browsers');
+assert.match(context.ignoreClassesBrowsers, /chromium/);
+assert.match(context.ignoreClassesBrowsers, /firefox/);
+assert.match(context.ignoreClassesBrowsers, /kitty/);
+assert.equal(context.ignoreModeLabelKey('off'), 'scrollIgnoreOff');
+assert.equal(context.ignoreModeLabelKey('browsers'), 'scrollIgnoreBrowsers');
+assert.equal(context.ignoreModeLabelKey('native'), 'scrollIgnoreNative');
+assert.equal(context.ignoreModeLabelKey('?'), 'scrollIgnoreBrowsers');
+assert.equal(context.ignoreListForMode('off'), '');
+assert.match(context.ignoreListForMode('browsers'), /kitty/);
+assert.equal(context.ignoreListForMode('native'), '');
+assert.equal(context.profileForMode('native', 2), 0);
+assert.equal(context.profileForMode('browsers', 2), 2);
+assert.equal(context.profileForMode('off', 1), 1);
+assert.equal(context.modeFromLive(0, ''), 'native');
+assert.equal(context.modeFromLive(2, ''), 'off');
+assert.equal(context.modeFromLive(2, 'google-chrome,chromium,kitty'), 'browsers');
+assert.equal(context.modeFromLive(2, 'something-custom'), 'browsers');
 
 // capability probe: only a JSON success for the patch key counts
 assert.equal(context.supportsPatchFromProbe('{"option":"input:touchpad:scroll_decel","set":true,"int":600}', 0), true);
@@ -63,12 +90,20 @@ const lines = [
   '{"option":"input:touchpad:scroll_accel_profile","set":true,"int":1}',
   '{"option":"input:touchpad:scroll_accel_speed","set":true,"float":1.4}',
   '{"option":"input:touchpad:scroll_accel_max","set":true,"float":4.5}',
-  '{"option":"input:touchpad:scroll_decel","set":true,"int":900}'
+  '{"option":"input:touchpad:scroll_decel","set":true,"int":900}',
+  '{"option":"input:touchpad:scroll_ignore_classes","set":true,"str":"google-chrome,kitty"}'
 ].join('\n');
 assert.deepEqual(plain(context.parseLiveValues(lines)),
-  { profile: 1, speed: 1.4, max: 4.5, decel: 900 });
+  { profile: 1, speed: 1.4, max: 4.5, decel: 900, ignoreClasses: 'google-chrome,kitty', ignoreSupported: true });
 // unknown keys / garbage lines fall back to the patch defaults
 assert.deepEqual(plain(context.parseLiveValues('Invalid option\n')),
-  { profile: 2, speed: 1.0, max: 3.0, decel: 600 });
+  { profile: 2, speed: 1.0, max: 3.0, decel: 600, ignoreClasses: '', ignoreSupported: false });
+// a 4-key build (no scroll_ignore_classes line) must parse as ignore-unsupported
+assert.deepEqual(plain(context.parseLiveValues(
+  '{"option":"input:touchpad:scroll_decel","set":true,"int":600}').ignoreSupported), false);
+// legacy statement (includeIgnore=false) omits scroll_ignore_classes entirely
+assert.equal(context.luaConfigStatement(2, 1.0, 3.0, 600, 'kitty', false),
+  'hl.config({ input = { touchpad = { scroll_accel_profile = 2, scroll_accel_speed = 1.00, scroll_accel_max = 3.00, scroll_decel = 600 } } })');
+assert.doesNotMatch(context.luaConfigStatement(2, 1.0, 3.0, 600, 'kitty', false), /scroll_ignore_classes/);
 
 console.log('ScrollFeelModel tests passed');

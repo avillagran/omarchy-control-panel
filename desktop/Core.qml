@@ -135,6 +135,8 @@ Item {
   property real scrollAccelMax: 3.0
   property int scrollDecel: 600
   property bool scrollFeelConfigured: false
+  property string scrollIgnoreMode: "browsers"
+  property bool scrollIgnoreSupported: false
   property bool scrollPatchProbed: false
   property bool scrollPatchSupported: false
   property bool disableWhileTyping: true
@@ -566,7 +568,7 @@ Item {
       // persist in the compositor for the whole session) and on an unpatched
       // build each eval would fail. Within-session state comes from the
       // probe/state reader on open instead.
-      "case \"$l\" in *scroll_accel*|*scroll_decel*) continue;; esac; " +
+      "case \"$l\" in *scroll_accel*|*scroll_decel*|*scroll_ignore*) continue;; esac; " +
       "hyprctl eval \"$l\" >/dev/null 2>&1 || true; done < \"$f\""]
     reapplyProc.running = true
   }
@@ -635,6 +637,7 @@ Item {
     scrollAccelMax: 3.0,
     scrollDecel: 600,
     scrollFeelConfigured: false,
+    scrollIgnoreMode: "browsers",
     disableWhileTyping: true,
     clickfingerBehavior: true,
     animations: true,
@@ -679,9 +682,14 @@ Item {
     // never sees these keys (they are unknown config keys and would raise
     // load-time config errors on it).
     if (root.scrollPatchSupported && saved.scrollFeelConfigured) {
+      // "native" mode turns the patch off globally; "browsers" keeps the
+      // patch away from apps with their own inertia (browsers, kitty, …).
+      var effProfile = ScrollFeelModel.profileForMode(saved.scrollIgnoreMode, saved.scrollAccelProfile)
+      var ignoreList = ScrollFeelModel.ignoreListForMode(saved.scrollIgnoreMode)
       var scrollStatement = ScrollFeelModel.luaConfigStatement(
-        saved.scrollAccelProfile, saved.scrollAccelSpeed,
-        saved.scrollAccelMax, saved.scrollDecel)
+        effProfile, saved.scrollAccelSpeed,
+        saved.scrollAccelMax, saved.scrollDecel, ignoreList,
+        root.scrollIgnoreSupported)
       if (scrollStatement) {
         L.push("-- Touchpad scroll acceleration + coast (patched compositor only)")
         L.push(scrollStatement)
@@ -993,7 +1001,9 @@ Item {
     root.saved.scrollDecel = root.scrollDecel
     var statement = ScrollFeelModel.luaConfigStatement(
       root.scrollAccelProfile, root.scrollAccelSpeed,
-      root.scrollAccelMax, root.scrollDecel)
+      root.scrollAccelMax, root.scrollDecel,
+      ScrollFeelModel.ignoreListForMode(root.saved.scrollIgnoreMode),
+      root.scrollIgnoreSupported)
     if (statement) Quickshell.execDetached(["hyprctl", "eval", statement])
     root.writeLua()
     root.savePrefs()
@@ -1004,7 +1014,35 @@ Item {
     if (!root.scrollPatchSupported) return
     var value = ScrollFeelModel.preset(id)
     if (!value) return
+    // Choosing an accel preset implies the user wants the patch active:
+    // leave "native" (patch off) mode so the choice actually takes effect.
+    if (root.saved.scrollIgnoreMode === "native") {
+      root.saved.scrollIgnoreMode = "off"
+      root.scrollIgnoreMode = "off"
+    }
     root.updateScrollFeel(value.profile, value.speed, value.max, value.decel)
+  }
+
+  // Where the patch inertia applies: "off" = everywhere (incl. browsers,
+  // which then feel doubly inert), "browsers" = browsers/terminals with
+  // their own inertia keep it, "native" = patch off globally.
+  function updateScrollIgnoreMode(mode, quiet) {
+    if (!root.scrollPatchSupported || !root.scrollIgnoreSupported) return
+    mode = ScrollFeelModel.clampIgnoreMode(mode)
+    root.scrollIgnoreMode = mode
+    root.saved.scrollIgnoreMode = mode
+    root.scrollFeelConfigured = true
+    root.saved.scrollFeelConfigured = true
+    var effProfile = ScrollFeelModel.profileForMode(mode, root.saved.scrollAccelProfile)
+    var statement = ScrollFeelModel.luaConfigStatement(
+      effProfile, root.saved.scrollAccelSpeed,
+      root.saved.scrollAccelMax, root.saved.scrollDecel,
+      ScrollFeelModel.ignoreListForMode(mode))
+    if (statement) Quickshell.execDetached(["hyprctl", "eval", statement])
+    root.scrollAccelProfile = effProfile
+    root.writeLua()
+    root.savePrefs()
+    if (!quiet) root.statusMessage = root.t(root.uiLang, "scrollIgnoreApplied")
   }
 
   Process {
@@ -1026,7 +1064,8 @@ Item {
       "hyprctl getoption input:touchpad:scroll_accel_profile -j; " +
       "hyprctl getoption input:touchpad:scroll_accel_speed -j; " +
       "hyprctl getoption input:touchpad:scroll_accel_max -j; " +
-      "hyprctl getoption input:touchpad:scroll_decel -j"]
+      "hyprctl getoption input:touchpad:scroll_decel -j; " +
+      "hyprctl getoption input:touchpad:scroll_ignore_classes -j"]
     stdout: StdioCollector { waitForEnd: true }
     onRunningChanged: {
       if (running) return
@@ -1035,6 +1074,15 @@ Item {
       root.scrollAccelSpeed = values.speed
       root.scrollAccelMax = values.max
       root.scrollDecel = values.decel
+      root.scrollIgnoreSupported = values.ignoreSupported
+      // Before the user configures anything here, mirror the compositor:
+      // profile 0 reads as "native", a class list as "browsers", etc.
+      // (Only when the compositor actually knows the ignore key.)
+      if (!root.saved.scrollFeelConfigured && values.ignoreSupported) {
+        root.scrollIgnoreMode = ScrollFeelModel.modeFromLive(
+          values.profile, values.ignoreClasses)
+        root.saved.scrollIgnoreMode = root.scrollIgnoreMode
+      }
     }
   }
 
@@ -1306,6 +1354,7 @@ Item {
       trackpadAccelProfile: saved.trackpadAccelProfile,
       trackpadFeelConfigured: saved.trackpadFeelConfigured,
       scrollFeelConfigured: saved.scrollFeelConfigured,
+      scrollIgnoreMode: saved.scrollIgnoreMode,
       scrollAccelProfile: saved.scrollAccelProfile,
       scrollAccelSpeed: saved.scrollAccelSpeed,
       scrollAccelMax: saved.scrollAccelMax,
@@ -1662,6 +1711,8 @@ Item {
       saved.trackpadFeelConfigured = trackpadFeelConfigured
       scrollFeelConfigured = d.scrollFeelConfigured === true
       saved.scrollFeelConfigured = scrollFeelConfigured
+      scrollIgnoreMode = ScrollFeelModel.clampIgnoreMode(d.scrollIgnoreMode)
+      saved.scrollIgnoreMode = scrollIgnoreMode
       if (scrollFeelConfigured) {
         scrollAccelProfile = ScrollFeelModel.clampProfile(d.scrollAccelProfile)
         scrollAccelSpeed = ScrollFeelModel.clampSpeed(d.scrollAccelSpeed)
@@ -1726,6 +1777,7 @@ Item {
       devMode: devMode,
       trackpadFeelConfigured: trackpadFeelConfigured,
       scrollFeelConfigured: scrollFeelConfigured,
+      scrollIgnoreMode: scrollIgnoreMode,
       scrollAccelProfile: scrollAccelProfile,
       scrollAccelSpeed: scrollAccelSpeed,
       scrollAccelMax: scrollAccelMax,
@@ -2955,6 +3007,49 @@ Item {
                   root.scrollAccelMax, root.scrollDecel)))
               color: root.fg
               opacity: 0.66
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              text: root.t(root.uiLang, "scrollIgnoreLabel")
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+
+            Grid {
+              width: parent.width
+              columns: 3
+              columnSpacing: Style.space(6)
+              rowSpacing: Style.space(6)
+
+              Repeater {
+                model: ScrollFeelModel.ignoreModes
+                Button {
+                  required property string modelData
+                  width: (scrollFeelContent.width - Style.space(12)) / 3
+                  text: root.t(root.uiLang, ScrollFeelModel.ignoreModeLabelKey(modelData))
+                  selected: root.scrollIgnoreMode === modelData
+                  enabled: root.scrollIgnoreSupported
+                  bordered: true
+                  foreground: root.fg
+                  fontFamily: root.fontFamily
+                  onClicked: root.updateScrollIgnoreMode(modelData)
+                }
+              }
+            }
+
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              text: root.scrollIgnoreSupported
+                ? root.t(root.uiLang, "scrollIgnoreHint")
+                : root.t(root.uiLang, "scrollIgnoreUnsupported")
+              color: root.scrollIgnoreSupported ? root.fg : Color.urgent
+              opacity: root.scrollIgnoreSupported ? 0.66 : 1
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
