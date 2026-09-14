@@ -173,9 +173,10 @@ mkdir -p "$(dirname "$SRC_DIR")"
 if [ -d "$SRC_DIR/.git" ]; then
   git -C "$SRC_DIR" fetch --depth 1 origin "$BRANCH"
   git -C "$SRC_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
+  git -C "$SRC_DIR" submodule update --init --depth 1
 else
   rm -rf "$SRC_DIR"
-  git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$SRC_DIR"
+  git clone --depth 1 --branch "$BRANCH" --recurse-submodules --shallow-submodules "$REPO_URL" "$SRC_DIR"
 fi
 
 # ---- 4. build (this takes a while) -----------------------------------------
