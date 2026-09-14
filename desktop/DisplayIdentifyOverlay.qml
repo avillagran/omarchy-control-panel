@@ -29,6 +29,18 @@ Item {
   readonly property bool active: selectedName !== "" || identifyAll
   readonly property int borderW: Style.space(6)
 
+  // Optional resolver (name => color) for the per-monitor color chosen in the
+  // Displays tab; falls back to the accent color when unset.
+  property var colorFor: null
+
+  function _stripColor(name) {
+    if (root.colorFor) {
+      var c = root.colorFor(name)
+      if (c) return c
+    }
+    return Color.accent
+  }
+
   function _showBorder(name) {
     if (root.dragActive || root.indexOf(name) < 0) return false
     if (root.identifyAll) return true
@@ -39,7 +51,7 @@ Item {
     required property var screenData
     screen: screenData
     visible: root._showBorder(screenData.name)
-    color: Color.accent
+    color: root._stripColor(screenData.name)
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -119,7 +131,7 @@ Item {
         height: Style.space(130)
         radius: Style.cornerRadius * 2
         color: Color.popups.background
-        border.color: Color.accent
+        border.color: root._stripColor(modelData.name)
         border.width: Style.normalBorderWidth
         Column {
           anchors.centerIn: parent

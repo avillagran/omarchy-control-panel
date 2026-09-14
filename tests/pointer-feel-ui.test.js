@@ -10,6 +10,14 @@ for (const property of ['trackpadSensitivity', 'trackpadScrollFactor', 'trackpad
   assert.match(core, new RegExp(`property (?:real|bool|string) ${property}:`), `${property} state missing`);
 assert.match(core, /function stagePointerFeel\(/);
 assert.match(core, /function applyPointerFeel\(/);
+assert.match(core, /function userChangePointerFeel\(/,
+  'user-driven live change path missing');
+assert.doesNotMatch(core, /text:\s*root\.t\(root\.uiLang,\s*"pointerFeelApply"\)/,
+  'the Apply-and-test button must be gone (changes apply live)');
+assert.match(core, /onMoved:\s*root\.userChangePointerFeel\(/,
+  'sliders must apply in real time');
+assert.match(core, /if \(root\.pointerFeelPrevious === null\)/,
+  'first change must snapshot the previous values for Restore');
 assert.match(core, /function restorePointerFeel\(/);
 assert.match(core, /function resetPointerFeel\(/);
 assert.match(core, /property bool pointerFeelReady:\s*root\.prefsLoaded\s*&&\s*root\.readProcDone\s*&&\s*root\.luaStateProcDone/,
