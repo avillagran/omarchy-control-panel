@@ -1,0 +1,26 @@
+From 66f9e8c269471cb42a9e3e001256fd2020c88484 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Andr=C3=A9s=20Villagr=C3=A1n?= <avillagran@omarchy.local>
+Date: Sun, 13 Sep 2026 18:37:44 -0300
+Subject: [PATCH 2/6] input: fix std::clamp type mismatch in scroll accel
+ (float vs double)
+
+---
+ src/managers/input/InputManager.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/managers/input/InputManager.cpp b/src/managers/input/InputManager.cpp
+index 5e7aaa6e..cca3363f 100644
+--- a/src/managers/input/InputManager.cpp
++++ b/src/managers/input/InputManager.cpp
+@@ -1014,7 +1014,7 @@ void CInputManager::onMouseWheel(IPointer::SAxisEvent e, SP<IPointer> pointer) {
+             accelFactor = 1.0 + (t * t * (3 - 2 * t)) * (*PSCROLLACCELMAX - 1.0);
+         }
+ 
+-        accelFactor = std::clamp(accelFactor, 1.0, *PSCROLLACCELMAX);
++        accelFactor = std::clamp(accelFactor, 1.0, (double)*PSCROLLACCELMAX);
+         m_touchpadScrollState.lastFactor = accelFactor;
+         factor *= accelFactor;
+     }
+-- 
+2.55.0
+

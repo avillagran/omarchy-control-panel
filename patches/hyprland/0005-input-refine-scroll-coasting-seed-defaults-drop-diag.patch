@@ -1,0 +1,92 @@
+From 0ff004f2ee736bfb753b7df400e16b69c7bfe3c9 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Andr=C3=A9s=20Villagr=C3=A1n?= <avillagran@omarchy.local>
+Date: Sun, 13 Sep 2026 20:03:04 -0300
+Subject: [PATCH 5/6] input: refine scroll coasting seed, defaults, drop
+ diagnostics
+
+- seed the coast from the gesture's smoothed EMA velocity instead of the
+  last instantaneous sample, which is tiny at the end of every gesture
+  and made the coast imperceptible or gated
+- min-velocity gate on the EMA as well
+- coast events at 120hz (8ms) for smoothness, seed clamp raised to 8 u/ms
+- scroll_decel: default 300 -> 600ms, max 1000 -> 3000ms
+- remove the temporary file-based diagnostics
+---
+ src/config/values/ConfigValues.cpp  |  2 +-
+ src/managers/input/InputManager.cpp | 16 +++++++++++-----
+ src/managers/input/InputManager.hpp |  1 +
+ 3 files changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/src/config/values/ConfigValues.cpp b/src/config/values/ConfigValues.cpp
+index a71260ac..b631f112 100644
+--- a/src/config/values/ConfigValues.cpp
++++ b/src/config/values/ConfigValues.cpp
+@@ -408,7 +408,7 @@ std::vector<SP<IValue>> Values::getConfigValues() {
+         MS<Int>("input:touchpad:scroll_accel_profile", "Scroll acceleration profile for touchpads. [0=off, 1=linear, 2=adaptive]", 1, {.min = 0, .max = 2}),
+         MS<Float>("input:touchpad:scroll_accel_speed", "Speed threshold (px/ms) at which scroll acceleration reaches maximum.", 1.0, {.min = 0.1, .max = 5}),
+         MS<Float>("input:touchpad:scroll_accel_max", "Maximum scroll acceleration multiplier.", 3.0, {.min = 1, .max = 10}),
+-        MS<Int>("input:touchpad:scroll_decel", "Inertial scroll coasting time (ms) after the finger lifts off the touchpad. [0=off]", 300, {.min = 0, .max = 1000}),
++        MS<Int>("input:touchpad:scroll_decel", "Inertial scroll coasting time (ms) after the finger lifts off the touchpad. [0=off]", 600, {.min = 0, .max = 3000}),
+         MS<Bool>("input:touchpad:middle_button_emulation", "Sending LMB and RMB simultaneously will be interpreted as a middle click.", false,
+                  {.refresh = Supplementary::REFRESH_INPUT_DEVICES}),
+         MS<String>("input:touchpad:tap_button_map", "Sets the tap button mapping for touchpad button emulation. [lrm/lmr]", STRVAL_EMPTY,
+diff --git a/src/managers/input/InputManager.cpp b/src/managers/input/InputManager.cpp
+index c75a90a9..6fdd8ae7 100644
+--- a/src/managers/input/InputManager.cpp
++++ b/src/managers/input/InputManager.cpp
+@@ -68,9 +68,9 @@ using namespace Hyprutils::OS;
+ 
+ // touchpad scroll coasting tuning
+ static constexpr int    SCROLL_COAST_WATCHDOG_MS = 24;   // silence before a lift is assumed
+-static constexpr int    SCROLL_COAST_TICK_MS     = 16;   // synthetic event interval while coasting
+-static constexpr double SCROLL_COAST_MIN_VEL     = 0.12; // delta/ms below which no coast starts
+-static constexpr double SCROLL_COAST_MAX_VEL     = 4.0;  // delta/ms clamp for the coast seed
++static constexpr int    SCROLL_COAST_TICK_MS     = 8;    // synthetic event interval while coasting
++static constexpr double SCROLL_COAST_MIN_VEL     = 0.15; // EMA delta/ms below which no coast starts
++static constexpr double SCROLL_COAST_MAX_VEL     = 8.0;  // delta/ms clamp for the coast seed
+ 
+ CInputManager::CInputManager() {
+     m_listeners.setCursorShape = PROTO::cursorShape->m_events.setShape.listen([this](const CCursorShapeProtocol::SSetShapeEvent& event) {
+@@ -1185,12 +1185,16 @@ void CInputManager::onScrollCoastTick() {
+             if (!A.hasLast || std::chrono::duration<double, std::milli>(NOW - A.lastSteady).count() < SCROLL_COAST_WATCHDOG_MS)
+                 continue;
+ 
+-            if (DECALMS <= 0 || std::abs(A.signedVel) < SCROLL_COAST_MIN_VEL)
++            if (DECALMS <= 0 || A.vel < SCROLL_COAST_MIN_VEL) {
++                A.hasLast = false;
+                 continue;
++            }
+ 
++            // seed from the gesture's smoothed velocity, not the (tiny) last instantaneous sample
+             A.coasting   = true;
+-            A.coastVel   = std::clamp(A.signedVel, -SCROLL_COAST_MAX_VEL, SCROLL_COAST_MAX_VEL) * 0.9;
++            A.coastVel   = std::copysign(std::min(A.vel, SCROLL_COAST_MAX_VEL), A.signedVel >= 0 ? 1.0 : -1.0);
+             A.coastStart = NOW;
++            A.coastAccum = 0;
+         }
+ 
+         const double ELAPSED = std::chrono::duration<double, std::milli>(NOW - A.coastStart).count();
+@@ -1214,6 +1218,8 @@ void CInputManager::onScrollCoastTick() {
+         if (std::abs(DELTA) < 0.01)
+             continue;
+ 
++        A.coastAccum += std::abs(DELTA);
++
+         g_pSeatManager->sendPointerAxis(A.lastTime + (uint32_t)ELAPSED, AXIS, DELTA, 0, 0, WL_POINTER_AXIS_SOURCE_FINGER,
+                                         WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
+         g_pSeatManager->sendPointerFrame();
+diff --git a/src/managers/input/InputManager.hpp b/src/managers/input/InputManager.hpp
+index 510c0f79..c4545e8f 100644
+--- a/src/managers/input/InputManager.hpp
++++ b/src/managers/input/InputManager.hpp
+@@ -317,6 +317,7 @@ class CInputManager {
+         bool            hasLast    = false;
+         bool            coasting   = false;
+         double          coastVel   = 0; // signed delta/ms at finger lift
++        double          coastAccum = 0; // total units coasted (diagnostics)
+         Time::steady_tp coastStart;
+     };
+     std::array<STouchpadScrollAxis, 2> m_touchScrollAxes; // [vertical, horizontal]
+-- 
+2.55.0
+

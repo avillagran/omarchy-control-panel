@@ -1,0 +1,114 @@
+From e4cd005730b6b7b1e7ab6701fe31abd411bbe005 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Andr=C3=A9s=20Villagr=C3=A1n?= <avillagran@omarchy.local>
+Date: Sun, 13 Sep 2026 18:10:26 -0300
+Subject: [PATCH 1/6] input: touchpad scroll acceleration profiles
+
+Adds configurable scroll acceleration for touchpad scroll events:
+- scroll_accel_profile: 0=off, 1=linear, 2=adaptive smoothstep
+- scroll_accel_speed: velocity threshold for max acceleration
+- scroll_accel_max: maximum acceleration multiplier
+- scroll_decel: deceleration time for inertia (reserved)
+
+Applies to WL_POINTER_AXIS_SOURCE_FINGER scroll events only.
+Wheel mouse scrolling is unaffected.
+---
+ src/config/values/ConfigValues.cpp  |  6 +++++
+ src/managers/input/InputManager.cpp | 37 +++++++++++++++++++++++++++++
+ src/managers/input/InputManager.hpp |  9 +++++++
+ 3 files changed, 52 insertions(+)
+
+diff --git a/src/config/values/ConfigValues.cpp b/src/config/values/ConfigValues.cpp
+index 87fc5334..40f2a83e 100644
+--- a/src/config/values/ConfigValues.cpp
++++ b/src/config/values/ConfigValues.cpp
+@@ -405,6 +405,12 @@ std::vector<SP<IValue>> Values::getConfigValues() {
+         MS<Bool>("input:touchpad:natural_scroll", "Inverts scrolling direction.", false, {.refresh = Supplementary::REFRESH_INPUT_DEVICES}),
+         MS<Float>("input:touchpad:scroll_factor", "Multiplier applied to the amount of scroll movement.", 1,
+                   {.min = 0, .max = 100, .refresh = Supplementary::REFRESH_INPUT_DEVICES}),
++        MS<Int>("input:touchpad:scroll_accel_profile", "Scroll acceleration profile for touchpads. [0=off, 1=linear, 2=adaptive]", 1,
++                {.min = 0, .max = 2, .refresh = Supplementary::REFRESH_INPUT_DEVICES}),
++        MS<Float>("input:touchpad:scroll_accel_speed", "Speed threshold (px/ms) at which scroll acceleration reaches maximum.", 1.0,
++                  {.min = 0.1, .max = 5, .refresh = Supplementary::REFRESH_INPUT_DEVICES}),
++        MS<Float>("input:touchpad:scroll_accel_max", "Maximum scroll acceleration multiplier.", 3.0, {.min = 1, .max = 10, .refresh = Supplementary::REFRESH_INPUT_DEVICES}),
++        MS<Float>("input:touchpad:scroll_decel", "Deceleration time (ms) for scroll inertia.", 150, {.min = 0, .max = 1000, .refresh = Supplementary::REFRESH_INPUT_DEVICES}),
+         MS<Bool>("input:touchpad:middle_button_emulation", "Sending LMB and RMB simultaneously will be interpreted as a middle click.", false,
+                  {.refresh = Supplementary::REFRESH_INPUT_DEVICES}),
+         MS<String>("input:touchpad:tap_button_map", "Sets the tap button mapping for touchpad button emulation. [lrm/lmr]", STRVAL_EMPTY,
+diff --git a/src/managers/input/InputManager.cpp b/src/managers/input/InputManager.cpp
+index 6b005602..5e7aaa6e 100644
+--- a/src/managers/input/InputManager.cpp
++++ b/src/managers/input/InputManager.cpp
+@@ -972,6 +972,9 @@ void CInputManager::onMouseWheel(IPointer::SAxisEvent e, SP<IPointer> pointer) {
+     static auto POFFWINDOWAXIS        = CConfigValue<Config::INTEGER>("input:off_window_axis_events");
+     static auto PINPUTSCROLLFACTOR    = CConfigValue<Config::FLOAT>("input:scroll_factor");
+     static auto PTOUCHPADSCROLLFACTOR = CConfigValue<Config::FLOAT>("input:touchpad:scroll_factor");
++    static auto PSCROLLACCELPROFILE   = CConfigValue<Config::INTEGER>("input:touchpad:scroll_accel_profile");
++    static auto PSCROLLACCELSPEED     = CConfigValue<Config::FLOAT>("input:touchpad:scroll_accel_speed");
++    static auto PSCROLLACCELMAX       = CConfigValue<Config::FLOAT>("input:touchpad:scroll_accel_max");
+     static auto PEMULATEDISCRETE      = CConfigValue<Config::INTEGER>("input:emulate_discrete_scroll");
+     static auto PFOLLOWMOUSE          = CConfigValue<Config::INTEGER>("input:follow_mouse");
+ 
+@@ -982,6 +985,40 @@ void CInputManager::onMouseWheel(IPointer::SAxisEvent e, SP<IPointer> pointer) {
+     const bool ISTOUCHPADSCROLL = *PTOUCHPADSCROLLFACTOR <= 0.f || e.source == WL_POINTER_AXIS_SOURCE_FINGER;
+     auto       factor           = ISTOUCHPADSCROLL ? *PTOUCHPADSCROLLFACTOR : *PINPUTSCROLLFACTOR;
+ 
++    // apply scroll acceleration for touchpads
++    if (ISTOUCHPADSCROLL && *PSCROLLACCELPROFILE > 0) {
++        const uint32_t now = e.timeMs;
++        if (!m_touchpadScrollState.initialized || now - m_touchpadScrollState.lastTime > 100) {
++            m_touchpadScrollState.velocity = 0;
++            m_touchpadScrollState.lastFactor = 1.0;
++        } else {
++            const double dt = (now - m_touchpadScrollState.lastTime) / 1000.0;
++            if (dt > 0) {
++                const double instVel = std::abs(e.delta) / dt;
++                m_touchpadScrollState.velocity = m_touchpadScrollState.velocity * 0.7 + instVel * 0.3;
++            }
++        }
++
++        m_touchpadScrollState.initialized = true;
++        m_touchpadScrollState.lastTime = now;
++        m_touchpadScrollState.lastDelta = e.delta;
++        m_touchpadScrollState.lastAxis = e.axis;
++
++        double accelFactor = 1.0;
++        if (*PSCROLLACCELPROFILE == 1) {
++            // linear: factor proportional to velocity
++            accelFactor = 1.0 + (m_touchpadScrollState.velocity / *PSCROLLACCELSPEED) * (*PSCROLLACCELMAX - 1.0);
++        } else if (*PSCROLLACCELPROFILE == 2) {
++            // adaptive: smoothstep curve
++            const double t = std::clamp(m_touchpadScrollState.velocity / *PSCROLLACCELSPEED, 0.0, 1.0);
++            accelFactor = 1.0 + (t * t * (3 - 2 * t)) * (*PSCROLLACCELMAX - 1.0);
++        }
++
++        accelFactor = std::clamp(accelFactor, 1.0, *PSCROLLACCELMAX);
++        m_touchpadScrollState.lastFactor = accelFactor;
++        factor *= accelFactor;
++    }
++
+     if (pointer && pointer->m_scrollFactor.has_value())
+         factor = *pointer->m_scrollFactor;
+ 
+diff --git a/src/managers/input/InputManager.hpp b/src/managers/input/InputManager.hpp
+index 4a3c410d..8f4046c4 100644
+--- a/src/managers/input/InputManager.hpp
++++ b/src/managers/input/InputManager.hpp
+@@ -305,6 +305,15 @@ class CInputManager {
+         uint32_t lastEventTime     = 0;
+         uint32_t accumulatedScroll = 0;
+     } m_scrollWheelState;
++    // touchpad scroll acceleration state
++    struct {
++        bool     initialized    = false;
++        uint32_t lastTime       = 0;
++        double   lastDelta      = 0;
++        double   velocity       = 0;
++        double   lastFactor     = 1.0;
++        wl_pointer_axis lastAxis = WL_POINTER_AXIS_VERTICAL_SCROLL;
++    } m_touchpadScrollState;
+     bool                  m_pointerAxisFramePending = false;
+ 
+     bool                  shareKeyFromAllKBs(uint32_t key, bool pressed);
+-- 
+2.55.0
+
