@@ -1798,6 +1798,7 @@ Item {
       singleMonitorWorkspaces = Math.max(1, Math.min(10, Number(d.singleMonitorWorkspaces) || 10))
       multiMonitorWorkspaces = Math.max(1, Math.min(10, Number(d.multiMonitorWorkspaces) || 5))
       monitorColors = d.monitorColors && typeof d.monitorColors === "object" ? d.monitorColors : ({})
+      savedWorkspaceVisuals = d.workspaceVisuals && typeof d.workspaceVisuals === "object" ? d.workspaceVisuals : ({})
       workspaceIndicatorMode = WorkspaceModel.normalizeIndicatorMode(d.workspaceIndicatorMode)
       workspaceIndicatorPadding = Math.max(0, Math.min(4,
         d.workspaceIndicatorPadding === undefined ? 4 : Math.round(Number(d.workspaceIndicatorPadding))))
@@ -1857,6 +1858,7 @@ Item {
   }
 
   function savePrefs() {
+    var visuals = WorkspaceModel.workspaceVisualMap(displays, singleMonitorWorkspaces, multiMonitorWorkspaces, monitorColors, savedWorkspaceVisuals)
     prefsFile.setText(JSON.stringify({
       swipe3: swipe3On,
       inertia: inertiaOn,
@@ -1883,9 +1885,14 @@ Item {
       trackpadAccelProfile: trackpadAccelProfile,
       disableWhileTyping: disableWhileTyping,
       clickfingerBehavior: clickfingerBehavior,
-      workspaceVisuals: WorkspaceModel.workspaceVisualMap(displays, singleMonitorWorkspaces, multiMonitorWorkspaces, monitorColors)
+      workspaceVisuals: visuals
     }) + "\n")
+    savedWorkspaceVisuals = visuals
   }
+
+  // The last workspace→monitor map we wrote; keeps each display pinned to its
+  // range across saves (position changes must not renumber workspaces).
+  property var savedWorkspaceVisuals: ({})
 
   property FileView prefsFile: FileView {
     path: root.prefsPath
