@@ -99,6 +99,16 @@ uninstall() {
   log "Removing the panel persistence require from $HYPR_LUA ..."
   [ -f "$HYPR_LUA" ] && sed -i '/require("control-panel") -- Omarchy Control Panel scroll persistence/d' "$HYPR_LUA"
 
+  # The panel persists the scroll-patch options into control-panel.lua. On
+  # stock Hyprland those are unknown config keys at load time (boot error
+  # banner), so strip them; the remaining content is valid stock config.
+  # The panel self-gates on the capability probe and will not re-emit them
+  # while the patch is absent.
+  log "Stripping scroll-patch keys from $PANEL_LUA ..."
+  if [ -f "$PANEL_LUA" ]; then
+    sed -i '/-- Touchpad scroll acceleration + coast (patched compositor only)/d; /scroll_accel/d; /scroll_decel/d; /scroll_ignore/d' "$PANEL_LUA"
+  fi
+
   # Undo only what WE changed (plugin install / devMode), per the state file.
   local prev_plugin="false" prev_devmode="__ABSENT__"
   if [ -f "$STATE_FILE" ]; then
