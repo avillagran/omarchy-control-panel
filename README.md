@@ -50,6 +50,38 @@ packages are not reinstalled, and staged configurations are not activated.
 Review restored data before applying it. See [the backup contract](docs/backup.md)
 for exclusions, format, recovery procedure, limitations and fixture-only tests.
 
+## Try the macOS-style scroll patch (one-liner)
+
+The Trackpad tab includes **Scroll feel** presets and live sliders for touchpad
+scroll acceleration + coast. They are **Dev mode** features because they need a
+patched Hyprland that is still under review:
+
+- [hyprwm/Hyprland#16254](https://github.com/hyprwm/Hyprland/pull/16254) — scroll
+  acceleration, coast and `scroll_ignore_classes`
+- [hyprwm/aquamarine#405](https://github.com/hyprwm/aquamarine/pull/405) — Wayland
+  axis source propagation (only needed for nested testing)
+
+You don't have to wait for the merge. This one-liner builds the PR branch from
+source and installs it as a reversible **shadow binary** (`~/.local/bin/Hyprland`,
+which takes precedence over `/usr/bin` via PATH — no pacman conflicts):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash
+```
+
+The installer (Arch/Omarchy): installs build deps with pacman, builds
+Hyprland (~5–15 min), installs the shadow binary, adds a PATH hook, and appends a
+**gated** block to `~/.config/hypr/input.lua` that only applies the new options
+when the running compositor is the shadow binary — stock Hyprland never sees
+unknown config keys. Then log out and back in, enable **Dev mode**, and the
+Scroll feel card goes live.
+
+To go back to stock Hyprland:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
+```
+
 ## Internationalization
 
 - **19 UI languages**: `en`, `es`, `pt`, `fr`, `de`, `it`, `nl`, `pl`, `ru`, `ja`, `ko`, `zh`, `ar`, `tr`, `sv`, `da`, `no`, `fi`, `cs`. The new backup wizard currently has English and Spanish strings; other languages use the English fallback.
