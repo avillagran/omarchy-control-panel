@@ -51,6 +51,12 @@ PREFS="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/control-panel-prefs.json"
 STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-control-panel-scroll-patch.json"
 PATH_MARK="omarchy-scroll-patch:path"
 
+# Omarchy 4.x CLI (omarchy plugin add/enable/remove) refuses to run without
+# OMARCHY_PATH; sessions launched outside the Omarchy env (SSH, TTY, cron)
+# don't have it. Default to the standard install location without overriding
+# an explicit value.
+export OMARCHY_PATH="${OMARCHY_PATH:-/usr/share/omarchy}"
+
 log() { printf '\033[1;36m[scroll-patch]\033[0m %s\n' "$*"; }
 die() { log "ERROR: $*"; exit 1; }
 
