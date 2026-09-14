@@ -23,6 +23,9 @@
 #   7. Appends a gated block to ~/.config/hypr/input.lua that only applies the
 #      new options when the RUNNING compositor is the shadow binary, so stock
 #      Hyprland never sees unknown config keys.
+#   8. Wires ~/.config/hypr/control-panel.lua (the file the panel rewrites when
+#      you move the sliders) into hyprland.lua via require(), so your scroll
+#      values survive logout/login.
 #
 # Removal:
 #
@@ -41,6 +44,9 @@ SRC_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-control-panel/hyprland-scroll-p
 SHADOW_DIR="$HOME/.local/bin"
 SHADOW="$SHADOW_DIR/Hyprland"
 INPUT_LUA="$HOME/.config/hypr/input.lua"
+HYPR_LUA="$HOME/.config/hypr/hyprland.lua"
+PANEL_LUA="$HOME/.config/hypr/control-panel.lua"
+REQUIRE_MARK='require("control-panel") -- Omarchy Control Panel scroll persistence (install-hyprland-scroll-patch.sh)'
 PREFS="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/control-panel-prefs.json"
 STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-control-panel-scroll-patch.json"
 PATH_MARK="omarchy-scroll-patch:path"
@@ -89,6 +95,9 @@ uninstall() {
 
   log "Removing config block from $INPUT_LUA ..."
   [ -f "$INPUT_LUA" ] && sed -i '/-- omarchy-scroll-patch:start/,/-- omarchy-scroll-patch:end/d' "$INPUT_LUA"
+
+  log "Removing the panel persistence require from $HYPR_LUA ..."
+  [ -f "$HYPR_LUA" ] && sed -i '/require("control-panel") -- Omarchy Control Panel scroll persistence/d' "$HYPR_LUA"
 
   # Undo only what WE changed (plugin install / devMode), per the state file.
   local prev_plugin="false" prev_devmode="__ABSENT__"
@@ -227,14 +236,34 @@ do
       scroll_accel_speed = 1.0,
       scroll_accel_max = 3.0,
       scroll_decel = 600,
-      scroll_ignore_classes = "google-chrome,chromium,firefox,brave-browser,microsoft-edge,vivaldi",
+      scroll_ignore_classes = "google-chrome,chromium,firefox,brave-browser,microsoft-edge,vivaldi,kitty",
     } } })
   end
 end
 -- omarchy-scroll-patch:end
 LUA
 
-# ---- 8. verify ----------------------------------------------------------------
+# ---- 8. panel persistence wiring ----------------------------------------------
+# The panel rewrites ~/.config/hypr/control-panel.lua when you move the Scroll
+# feel sliders. Hyprland only reads it if hyprland.lua requires it — wire that
+# up here (idempotent) and make sure the file exists so the require never
+# errors on a fresh install.
+log "Wiring panel scroll persistence into $HYPR_LUA ..."
+if [ -f "$HYPR_LUA" ]; then
+  if ! grep -qF 'require("control-panel")' "$HYPR_LUA"; then
+    printf '\n%s\n' "$REQUIRE_MARK" >> "$HYPR_LUA"
+  else
+    log "require(\"control-panel\") already present; skipping."
+  fi
+else
+  log "WARNING: $HYPR_LUA not found; panel scroll values will only apply live, not persist across logins."
+fi
+if [ ! -f "$PANEL_LUA" ]; then
+  mkdir -p "$(dirname "$PANEL_LUA")"
+  printf -- '-- Written by the Omarchy Control Panel (Scroll feel persistence).\n-- The panel rewrites the hl.config statement below; Hyprland applies it at\n-- startup through the require("control-panel") line in hyprland.lua.\n' > "$PANEL_LUA"
+fi
+
+# ---- 9. verify ----------------------------------------------------------------
 log "Installed version:"
 "$SHADOW" --version | head -1
 
