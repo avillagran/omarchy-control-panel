@@ -69,12 +69,20 @@ which takes precedence over `/usr/bin` via PATH — no pacman conflicts):
 curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash
 ```
 
-The installer (Arch/Omarchy): installs build deps with pacman, builds
-Hyprland (~5–15 min), installs the shadow binary, adds a PATH hook, and appends a
-**gated** block to `~/.config/hypr/input.lua` that only applies the new options
-when the running compositor is the shadow binary — stock Hyprland never sees
-unknown config keys. Then log out and back in, enable **Dev mode**, and the
-Scroll feel card goes live.
+The installer (Arch/Omarchy) does everything in one pass:
+
+1. Installs the **omarchy-control-panel** plugin and enables its bar widget on
+   the **right** side (`omarchy plugin enable … --section right`).
+2. Enables **Dev mode** in the plugin prefs, which exposes the *Scroll feel*
+   card in the Trackpad tab.
+3. Installs build deps with pacman, builds Hyprland (~5–15 min) and installs
+   it as a reversible shadow binary.
+4. Adds a PATH hook and appends a **gated** block to `~/.config/hypr/input.lua`
+   that only applies the new options when the running compositor is the shadow
+   binary — stock Hyprland never sees unknown config keys.
+
+Then log out and back in: the widget is in the top-right of the bar, Dev mode
+is already on, and the Scroll feel card is live.
 
 To go back to stock Hyprland:
 
