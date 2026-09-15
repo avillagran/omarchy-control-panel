@@ -30,8 +30,9 @@ assert.match(core, /property string workspaceIndicatorMode:\s*"none"/);
 assert.match(core, /property int workspaceIndicatorPadding:\s*4/);
 assert.match(core, /workspaceIndicatorPadding:\s*workspaceIndicatorPadding/);
 assert.match(core, /workspaceIndicatorMode:\s*workspaceIndicatorMode/);
-assert.match(core, /quickViewEnabled/);
-assert.match(catalog.es.quickViewHint, /SUPER\+SHIFT\+↑/);
+assert.match(core, /hymissionEnabled/);
+assert.match(core, /pointerFeelTrackpadPlus/);
+assert.match(catalog.es.hymissionHint, /SUPER\+SHIFT\+↑/);
 assert.match(widget, /workspaceIndicatorMode/);
 assert.match(widget, /indicatorMode === "square"/);
 assert.match(widget, /indicatorMode === "rounded"/);
@@ -44,8 +45,8 @@ for (const role of ['lighter_background', 'selection', 'darker_background', 'mut
   assert.ok(appTheme.includes(`"${role}"`), `AppTheme missing role: ${role}`);
 }
 for (const lang of ['en', 'es']) {
-  for (const key of ['workspaceIndicatorMode', 'workspaceIndicatorPadding', 'indicatorSquare', 'indicatorRounded', 'indicatorCircle', 'indicatorNone', 'quickView', 'quickViewHint']) {
+  for (const key of ['workspaceIndicatorMode', 'workspaceIndicatorPadding', 'indicatorSquare', 'indicatorRounded', 'indicatorCircle', 'indicatorNone', 'hymission', 'hymissionHint']) {
     assert.ok(catalog[lang][key], `${lang} translation missing: ${key}`);
   }
 }
-console.log('QuickView and workspace indicator tests passed');
+console.log('Hymission and workspace indicator tests passed');

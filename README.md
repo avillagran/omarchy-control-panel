@@ -17,12 +17,13 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **Windows**: inner/outer gaps, font size, animations and workspace distribution
 - **Displays**: layout, resolution/refresh/orientation/scale, a color per monitor, and square/rounded/circle/none workspace indicators in the bar
 - **Devices**: keyboard backlight, APFS (macOS disks)
+- **Hymission**: Mission Control-style live overview from [gfhdhytghd/hymission](https://github.com/gfhdhytghd/hymission), built directly from the project's tagged release; full credit to its author.
 - **Keyboard & Language**: physical layout, system language
 - **Night light**, and more
 
 ## Backup and recovery (development)
 
-Backup, Network Devices, QuickView and the SUPER+W browser override are development features hidden by default. Enable **Dev mode** from the Profiles title only when testing them.
+Backup, Network Devices, Hymission and the SUPER+W browser override are development features hidden by default. Enable **Dev mode** from the Profiles title only when testing them.
 
 The standalone desktop panel includes a Backup page, before Profiles, with
 independent configuration and file selections, preview/confirmation, snapshot
@@ -50,7 +51,9 @@ packages are not reinstalled, and staged configurations are not activated.
 Review restored data before applying it. See [the backup contract](docs/backup.md)
 for exclusions, format, recovery procedure, limitations and fixture-only tests.
 
-## Try the macOS-style scroll patch (one-liner)
+## Hymission y parche de scroll
+
+The Hymission integration downloads the pinned `v0.8.0-v0.56.2` release archive from [gfhdhytghd/hymission](https://github.com/gfhdhytghd/hymission), verifies its SHA-256 checksum, builds the project's CMake targets and runs its tests. The integration is a thin loader/configuration layer; Hymission remains the original project and retains full credit.
 
 The Trackpad tab includes **Scroll feel** presets and live sliders for touchpad
 scroll acceleration + coast. They are **Dev mode** features because they need a
