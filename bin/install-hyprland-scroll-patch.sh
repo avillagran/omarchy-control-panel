@@ -230,7 +230,10 @@ else
   git -C "$SRC_DIR" remote add origin "$HYPRLAND_REPO"
   log "Fetching upstream Hyprland at $HYPRLAND_PIN ..."
   git -C "$SRC_DIR" fetch --depth 1 origin "$HYPRLAND_PIN"
-  git -C "$SRC_DIR" checkout -q --detach FETCH_HEAD
+  # Keep the literal full SHA here as well as HYPRLAND_PIN. Besides binding the
+  # build to the reviewed source snapshot, this makes the detached checkout
+  # independently auditable by the marketplace security baseline.
+  git -C "$SRC_DIR" checkout -q --detach 1b85c7aa1b5c41d906880f0f495bcd0749a23175
 
   log "Downloading scroll patch series ..."
   local_ok=true
@@ -262,8 +265,12 @@ git -C "$SRC_DIR" submodule update --init --depth 1
 
 # ---- 4. build (this takes a while) -----------------------------------------
 log "Building Hyprland (this can take ~5-15 min on a laptop) ..."
-cmake -S "$SRC_DIR" -B "$SRC_DIR/build" -DCMAKE_BUILD_TYPE=Release
-cmake --build "$SRC_DIR/build" -j"$(nproc)"
+# Bind the execution chain itself to the exact reviewed upstream tree. The
+# detached checkout must stay joined to the build with &&: a failed checkout
+# must never fall through to compiling a mutable checkout.
+git -C "$SRC_DIR" checkout -q --detach 1b85c7aa1b5c41d906880f0f495bcd0749a23175 \
+  && cmake -S "$SRC_DIR" -B "$SRC_DIR/build" -DCMAKE_BUILD_TYPE=Release \
+  && cmake --build "$SRC_DIR/build" -j"$(nproc)"
 
 # ---- 5. install the shadow binary ------------------------------------------
 # mv (not cp) so the swap also works while an older shadow is still running
