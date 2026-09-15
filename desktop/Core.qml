@@ -1903,7 +1903,7 @@ Item {
     id: workspaceWidgetSyncTimer
     interval: 300
     onTriggered: Quickshell.execDetached([
-      root.binDir + "/install-workspace-colors-widget", "--sync-settings"
+      root.binDir + "/install-workspace-colors-widget"
     ])
   }
 

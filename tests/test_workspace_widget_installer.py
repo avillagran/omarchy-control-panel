@@ -110,6 +110,11 @@ class WorkspaceWidgetInstallerTests(unittest.TestCase):
             self.assertEqual(entry["workspaceIndicatorMode"], "rounded")
             self.assertEqual(entry["workspaceIndicatorPadding"], 2)
             self.assertEqual(entry["workspaceVisuals"]["1"]["colorRole"], "orange")
+            self.assertEqual(entry["settings"], {
+                "workspaceIndicatorMode": "rounded",
+                "workspaceIndicatorPadding": 2,
+                "workspaceVisuals": {"1": {"colorRole": "orange"}},
+            })
 
 
 if __name__ == "__main__":

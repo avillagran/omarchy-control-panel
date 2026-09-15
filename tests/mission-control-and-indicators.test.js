@@ -33,6 +33,14 @@ assert.match(core, /workspaceIndicatorMode:\s*workspaceIndicatorMode/);
 assert.match(core, /missionControlEnabled/);
 
 assert.match(catalog.es.missionControlHint, /SUPER\+SHIFT\+↑/);
+assert.match(widget, /bar\.targetWindow \? bar\.targetWindow\(root\)/,
+  'workspace widget must resolve the monitor from its owning bar window');
+assert.match(widget, /function onScreensChanged\(\) \{ root\.scheduleHotplugSync\(\) \}/,
+  'persistent bar widget must reapply the profile after hotplug');
+assert.match(widget, /display-hotplug-sync/,
+  'workspace widget must invoke the display hotplug synchronizer');
+assert.match(widget, /if \(root\.prefsLoaded\) return/,
+  'stale nested shell settings must not overwrite authoritative prefs');
 assert.match(widget, /workspaceIndicatorMode/);
 assert.match(widget, /indicatorMode === "square"/);
 assert.match(widget, /indicatorMode === "rounded"/);
