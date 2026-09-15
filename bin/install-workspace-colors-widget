@@ -118,6 +118,12 @@ def sync_settings(config):
                     if entry.get(key) != value:
                         entry[key] = value
                         changed = True
+                # Omarchy passes this nested object to the QML module's
+                # `settings` property. Keep it authoritative too; otherwise an
+                # old map can overwrite prefs during component construction.
+                if entry.get("settings") != settings:
+                    entry["settings"] = json.loads(json.dumps(settings))
+                    changed = True
     return changed
 
 

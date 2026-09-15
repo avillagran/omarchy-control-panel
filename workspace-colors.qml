@@ -16,13 +16,19 @@ Item {
   property var themeColors: ({})
   property string workspaceIndicatorMode: "none"
   property int workspaceIndicatorPadding: 4
+  property bool prefsLoaded: false
   property string prefsPath: Quickshell.env("HOME") + "/.local/state/omarchy/control-panel-prefs.json"
   property string themePath: Quickshell.env("HOME") + "/.local/state/omarchy/current/theme/colors.toml"
+  readonly property string hotplugHelper: Quickshell.env("HOME")
+    + "/.config/omarchy/plugins/io.github.avillagran.omarchy-control-panel/bin/display-hotplug-sync"
   readonly property bool vertical: bar ? bar.vertical : false
   readonly property int barSize: bar ? bar.barSize : 26
   readonly property color fallbackColor: bar ? bar.foreground : "white"
 
   function applySettings() {
+    // shell.json may retain an old nested `settings` snapshot. Once the
+    // authoritative prefs file loads, never let that stale copy overwrite it.
+    if (root.prefsLoaded) return
     if (!settings || typeof settings !== "object") return
     if (["square", "rounded", "circle", "none"].indexOf(settings.workspaceIndicatorMode) >= 0)
       workspaceIndicatorMode = settings.workspaceIndicatorMode
@@ -43,6 +49,7 @@ Item {
         ? data.workspaceIndicatorMode : "none"
       workspaceIndicatorPadding = Math.max(0, Math.min(4,
         data.workspaceIndicatorPadding === undefined ? 4 : Math.round(Number(data.workspaceIndicatorPadding))))
+      prefsLoaded = true
     } catch (e) {
       workspaceVisuals = ({})
       workspaceIndicatorMode = "none"
@@ -60,7 +67,7 @@ Item {
 
   // The monitor this bar instance sits on (each bar window is per-screen).
   readonly property string screenName: {
-    var w = root.QsWindow && root.QsWindow.window
+    var w = bar && bar.targetWindow ? bar.targetWindow(root) : null
     return w && w.screen ? String(w.screen.name || "") : ""
   }
 
@@ -138,6 +145,11 @@ Item {
     bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
   }
 
+  function scheduleHotplugSync() {
+    hotplugTimer.restart()
+    hotplugRetryTimer.restart()
+  }
+
   implicitWidth: grid.implicitWidth + (vertical ? 0 : Style.spaceReal(1.5))
   implicitHeight: grid.implicitHeight
 
@@ -169,9 +181,37 @@ Item {
     function onUrgentChanged() { themeFile.reload() }
   }
 
+  Connections {
+    target: Quickshell
+    function onScreensChanged() { root.scheduleHotplugSync() }
+  }
+
+  Process {
+    id: hotplugProc
+    command: [root.hotplugHelper]
+  }
+
+  Timer {
+    id: hotplugTimer
+    interval: 1500
+    repeat: false
+    onTriggered: if (!hotplugProc.running) hotplugProc.running = true
+  }
+
+  Timer {
+    id: hotplugRetryTimer
+    interval: 5000
+    repeat: false
+    onTriggered: {
+      if (hotplugProc.running) restart()
+      else hotplugProc.running = true
+    }
+  }
+
   Component.onCompleted: {
     prefsFile.reload()
     applySettings()
+    scheduleHotplugSync()
   }
 
   // Quickshell may deliver a shared path watcher event to only one bar-window
