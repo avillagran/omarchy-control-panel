@@ -31,12 +31,22 @@ assert.match(core, /property int workspaceIndicatorPadding:\s*4/);
 assert.match(core, /workspaceIndicatorPadding:\s*workspaceIndicatorPadding/);
 assert.match(core, /workspaceIndicatorMode:\s*workspaceIndicatorMode/);
 assert.match(core, /missionControlEnabled/);
+assert.match(core, /function loadSavedState\(\) \{[\s\S]*?luaStateProc\.running = true/,
+  'opening the standalone panel must load saved state without applying it');
+assert.match(core, /id: applyOnLoadTimer[\s\S]*?onTriggered: \{[\s\S]*?root\.loadSavedState\(\)[\s\S]*?root\.applySuperWBind\(\)/,
+  'the standalone window must read state on load rather than replay control-panel.lua');
+assert.doesNotMatch(core, /id: applyOnLoadTimer[\s\S]*?onTriggered: \{[\s\S]*?reapplySaved\(\)/,
+  'opening the standalone panel must not reissue Hyprland configuration');
 
 assert.match(catalog.es.missionControlHint, /SUPER\+SHIFT\+↑/);
 assert.match(widget, /bar\.targetWindow \? bar\.targetWindow\(root\)/,
   'workspace widget must resolve the monitor from its owning bar window');
-assert.match(widget, /function onScreensChanged\(\) \{ root\.scheduleHotplugSync\(\) \}/,
-  'persistent bar widget must reapply the profile after hotplug');
+assert.match(widget, /readonly property string screenTopology:[\s\S]*?Quickshell\.screens/,
+  'hotplug detection must compare the actual output topology');
+assert.match(widget, /property string knownScreenTopology:\s*""/,
+  'hotplug detection must retain a topology baseline');
+assert.match(widget, /function onScreensChanged\(\) \{[\s\S]*?if \(root\.screenTopology === root\.knownScreenTopology\) return[\s\S]*?root\.scheduleHotplugSync\(\)/,
+  'persistent bar widget must ignore non-topology screen notifications');
 assert.match(widget, /display-hotplug-sync/,
   'workspace widget must invoke the display hotplug synchronizer');
 assert.match(widget, /if \(root\.prefsLoaded\) return/,

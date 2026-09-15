@@ -21,6 +21,18 @@ Item {
   property string themePath: Quickshell.env("HOME") + "/.local/state/omarchy/current/theme/colors.toml"
   readonly property string hotplugHelper: Quickshell.env("HOME")
     + "/.config/omarchy/plugins/io.github.avillagran.omarchy-control-panel/bin/display-hotplug-sync"
+  // Quickshell emits screensChanged for window/layer-surface lifecycle events as
+  // well as actual output hotplug. Only an output-name topology change may
+  // reapply a display profile; a control-panel window must be read-only.
+  readonly property string screenTopology: {
+    var names = []
+    for (var i = 0; i < Quickshell.screens.length; i++)
+      names.push(String(Quickshell.screens[i].name || ""))
+    names.sort()
+    return names.join("|")
+  }
+  property string knownScreenTopology: ""
+  property bool hotplugBaselineReady: false
   readonly property bool vertical: bar ? bar.vertical : false
   readonly property int barSize: bar ? bar.barSize : 26
   readonly property color fallbackColor: bar ? bar.foreground : "white"
@@ -183,7 +195,16 @@ Item {
 
   Connections {
     target: Quickshell
-    function onScreensChanged() { root.scheduleHotplugSync() }
+    function onScreensChanged() {
+      if (!root.hotplugBaselineReady) {
+        root.knownScreenTopology = root.screenTopology
+        root.hotplugBaselineReady = true
+        return
+      }
+      if (root.screenTopology === root.knownScreenTopology) return
+      root.knownScreenTopology = root.screenTopology
+      root.scheduleHotplugSync()
+    }
   }
 
   Process {
@@ -211,7 +232,8 @@ Item {
   Component.onCompleted: {
     prefsFile.reload()
     applySettings()
-    scheduleHotplugSync()
+    knownScreenTopology = screenTopology
+    hotplugBaselineReady = true
   }
 
   // Quickshell may deliver a shared path watcher event to only one bar-window
