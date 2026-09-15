@@ -4,6 +4,12 @@ const path = require('node:path');
 
 const core = fs.readFileSync(path.join(__dirname, '../desktop/Core.qml'), 'utf8');
 const i18n = JSON.parse(fs.readFileSync(path.join(__dirname, '../desktop/i18n.json'), 'utf8'));
+const installer = fs.readFileSync(path.join(__dirname, '../bin/install-hyprland-scroll-patch.sh'), 'utf8');
+
+const pinnedCommit = installer.match(/^HYPRLAND_PIN="([0-9a-f]{40})"$/m)?.[1];
+assert.ok(pinnedCommit, 'scroll-patch installer must declare a full 40-character Hyprland commit');
+assert.match(installer, new RegExp(`git -C "\\$SRC_DIR" checkout -q --detach ${pinnedCommit}`),
+  'scroll-patch installer must detached-checkout the literal pinned commit before building');
 
 assert.match(core, /import "ScrollFeelModel\.js" as ScrollFeelModel/);
 for (const property of ['scrollAccelProfile', 'scrollAccelSpeed', 'scrollAccelMax',
