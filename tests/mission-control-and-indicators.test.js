@@ -31,7 +31,7 @@ assert.match(core, /property int workspaceIndicatorPadding:\s*4/);
 assert.match(core, /workspaceIndicatorPadding:\s*workspaceIndicatorPadding/);
 assert.match(core, /workspaceIndicatorMode:\s*workspaceIndicatorMode/);
 assert.match(core, /missionControlEnabled/);
-assert.match(core, /pointerFeelTrackpadPlus/);
+
 assert.match(catalog.es.missionControlHint, /SUPER\+SHIFT\+↑/);
 assert.match(widget, /workspaceIndicatorMode/);
 assert.match(widget, /indicatorMode === "square"/);

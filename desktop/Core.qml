@@ -203,7 +203,7 @@ Item {
   property bool displayLoading: false
   property var monitorColors: ({})
   property var workspaceThemeColors: ({})
-  readonly property string missionControlHelperPath: root.binDir + "/missionControl-manager"
+  // Mission Control is rendered natively by MissionControl.qml.
   // Names of outputs seen on the last state read, used to detect a hotplugged
   // (newly connected) monitor and auto-arrange it.
   property var displayKnownNames: []
@@ -2849,15 +2849,6 @@ Item {
                 }
                 Text {
                   width: parent.width
-                  wrapMode: Text.WordWrap
-                  text: root.t(root.uiLang, "pointerFeelTrackpadPlus")
-                  color: root.fg
-                  opacity: 0.66
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-                Text {
-                  width: parent.width
                   elide: Text.ElideRight
                   text: (root.trackpadNames.length ? "●  " + root.trackpadNames[0] : "○  " + root.t(root.uiLang, "pointerFeelNoDevice"))
                   color: root.fg
@@ -2929,9 +2920,9 @@ Item {
 
             Slider {
               width: parent.width
-              from: 0.01
-              to: 1.0
-              stepSize: 0.01
+              from: 0.1
+              to: 2
+              stepSize: 0.05
               value: root.trackpadScrollFactor
               onMoved: root.userChangePointerFeel(root.trackpadSensitivity, value, root.trackpadAccelProfile)
             }
