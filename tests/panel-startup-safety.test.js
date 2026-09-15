@@ -5,6 +5,11 @@ const path = require('node:path');
 const core = fs.readFileSync(path.join(__dirname, '../desktop/Core.qml'), 'utf8');
 const loadProfiles = core.match(/function loadProfilesFromText\(raw\) \{([\s\S]*?)\n  \}\n\n  function saveProfiles/);
 assert.ok(loadProfiles, 'profile loader must exist');
+assert.match(core, /var list = root\.displays && root\.displays\.length \? root\.displays : root\.saved\.displays/,
+  'profile capture must use the current display layout');
+assert.match(core, /saved\.mirror !== undefined/,
+  'profile display restore must include mirror state');
+
 assert.doesNotMatch(loadProfiles[1], /queueApplyActiveProfile|applyProfile\(/,
   'opening the panel must not apply the active profile or touch display modes');
 
