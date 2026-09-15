@@ -14,6 +14,11 @@ loader.exec_module(manager)
 
 
 class HymissionManagerTests(unittest.TestCase):
+    def test_selects_abi_matched_release(self):
+        self.assertEqual(manager.release_for_version("0.56.0")["tag"], "v0.5.0-v0.56.0")
+        self.assertEqual(manager.release_for_version("0.56.2")["tag"], "v0.8.0-v0.56.2")
+        self.assertIsNone(manager.release_for_version("0.55.0"))
+
     def test_enabled_config_has_live_overview_inputs(self):
         text = manager.render_config(True, True, Path("/tmp/libhymission.so"))
         self.assertIn('SUPER + SHIFT + UP', text)

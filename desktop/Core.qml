@@ -2955,9 +2955,9 @@ Item {
 
             Slider {
               width: parent.width
-              from: 0.1
-              to: 2
-              stepSize: 0.05
+              from: 0.01
+              to: 1.0
+              stepSize: 0.01
               value: root.trackpadScrollFactor
               onMoved: root.userChangePointerFeel(root.trackpadSensitivity, value, root.trackpadAccelProfile)
             }

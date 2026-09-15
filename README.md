@@ -53,7 +53,7 @@ for exclusions, format, recovery procedure, limitations and fixture-only tests.
 
 ## Hymission y parche de scroll
 
-The Hymission integration downloads the pinned `v0.8.0-v0.56.2` release archive from [gfhdhytghd/hymission](https://github.com/gfhdhytghd/hymission), verifies its SHA-256 checksum, builds the project's CMake targets and runs its tests. The integration is a thin loader/configuration layer; Hymission remains the original project and retains full credit.
+The Hymission integration selects the ABI-matched tagged release from [gfhdhytghd/hymission](https://github.com/gfhdhytghd/hymission): `v0.5.0-v0.56.0` for Hyprland 0.56.0 and `v0.8.0-v0.56.2` for Hyprland 0.56.2. It verifies each archive's SHA-256 checksum, builds the project's CMake targets and runs its tests. The integration is a thin loader/configuration layer; Hymission remains the original project and retains full credit.
 
 The Trackpad tab includes **Scroll feel** presets and live sliders for touchpad
 scroll acceleration + coast. They are **Dev mode** features because they need a
