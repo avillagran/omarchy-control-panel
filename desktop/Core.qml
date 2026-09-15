@@ -555,6 +555,18 @@ Item {
     reapplySaved()
   }
 
+  // A standalone panel is a new Quickshell process every time it is launched.
+  // Opening it must therefore only read persisted state: replaying the Lua here
+  // reissues workspace rules and other live configuration even though the user
+  // did not change anything. That causes the one-time visible display/workspace
+  // flash while Hyprland settles the new panel window.
+  property bool startupRefreshPending: false
+  function loadSavedState() {
+    if (!loopGuard.check("loadSavedState")) return
+    startupRefreshPending = true
+    if (!luaStateProc.running) luaStateProc.running = true
+  }
+
   // The panel only ever wrote values as volatile `hyprctl eval` calls plus a
   // generated Lua file (~/.config/hypr/control-panel.lua) that hyprland.lua
   // requires last. A plugin/shell restart does not re-run those evals, so the
@@ -2056,6 +2068,11 @@ Item {
         // race with the JSON side.
         root.luaStateProcDone = true
         root.tryWriteLua()
+        if (root.startupRefreshPending) {
+          root.startupRefreshPending = false
+          root.refresh()
+          syncTimer.restart()
+        }
       }
     }
   }
@@ -2479,10 +2496,9 @@ Item {
     // writes a timestamp + this tag to /tmp/cp-version.log so we can tell apart
     // a stale quickshell qmlcache from the real build without relying on qslog.
     Quickshell.execDetached(["bash", "-lc", "echo \"$(date +%H:%M:%S) CP-LOAD 2026-08-31c\" >> /tmp/cp-version.log"])
-    // Bring the live Hyprland config in line with what we persisted, so a
-    // shell/plugin restart doesn't leave the system on Omarchy's defaults.
-    // Defer slightly: execDetached + hyprctl eval needs Quickshell/Hyprland
-    // to be fully up, otherwise the call fired at construction time is lost.
+    // The desktop launcher creates a fresh Quickshell process. Defer its
+    // read-only state load until the process is fully connected to Hyprland;
+    // opening the panel must never reapply display/workspace configuration.
     applyOnLoadTimer.restart()
   }
   // Poll for the root-owned locale helper while a not-yet-installed locale is
@@ -2501,7 +2517,7 @@ Item {
     interval: 400
     repeat: false
     onTriggered: {
-      reapplySaved()
+      root.loadSavedState()
       // Apply the SUPER+W bind once at load (direct eval, not via the reloadable
       // Lua, to avoid the release-bind re-register loop that closed windows).
       root.applySuperWBind()
