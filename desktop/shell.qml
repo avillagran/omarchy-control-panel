@@ -7,6 +7,11 @@ import qs.Commons
 
 ShellRoot {
   AppTheme { id: theme }
+  MissionControl { id: missionControl }
+  Shortcut {
+    sequence: "SUPER+SHIFT+UP"
+    onActivated: missionControl.toggle()
+  }
 
   FloatingWindow {
     id: win

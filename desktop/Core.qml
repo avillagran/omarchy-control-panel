@@ -112,9 +112,9 @@ Item {
   property bool naturalScroll: false
   property bool animationsEnabled: true
   property bool wsAnimationOn: false
-  property bool hymissionEnabled: false
-  property bool hymissionBusy: false
-  property string hymissionError: ""
+  property bool missionControlEnabled: false
+  property bool missionControlBusy: false
+  property string missionControlError: ""
   property string workspaceIndicatorMode: "none"
   property int workspaceIndicatorPadding: 4
   property bool nightLightOn: false
@@ -203,7 +203,7 @@ Item {
   property bool displayLoading: false
   property var monitorColors: ({})
   property var workspaceThemeColors: ({})
-  readonly property string hymissionHelperPath: root.binDir + "/hymission-manager"
+  readonly property string missionControlHelperPath: root.binDir + "/missionControl-manager"
   // Names of outputs seen on the last state read, used to detect a hotplugged
   // (newly connected) monitor and auto-arrange it.
   property var displayKnownNames: []
@@ -282,24 +282,19 @@ Item {
     workspaceWidgetSyncTimer.restart()
   }
 
-  function setHymission(on) {
-    if (root.hymissionBusy) return
-    root.hymissionBusy = true
-    root.hymissionError = ""
-    hymissionProc.command = [root.hymissionHelperPath, on ? "enable" : "disable",
-      "--animated", root.wsAnimationOn ? "true" : "false"]
-    hymissionProc.running = true
+  function setMissionControl(on) {
+    root.missionControlEnabled = on
+    root.missionControlBusy = false
+    root.missionControlError = ""
+    root.savePrefs()
   }
 
-  function syncHymissionAnimation() {
-    if (!root.hymissionEnabled || root.hymissionBusy) return
-    root.hymissionBusy = true
-    hymissionProc.command = [root.hymissionHelperPath, "sync",
-      "--animated", root.wsAnimationOn ? "true" : "false"]
-    hymissionProc.running = true
+  function syncMissionControlAnimation() {
+    // The native overview is rendered by MissionControl.qml; no compositor
+    // plugin or external reload is required when animation settings change.
   }
 
-  function hymissionParseOutput(raw) {
+  function missionControlParseOutput(raw) {
     var lines = String(raw || "").trim().split("\n")
     for (var i = lines.length - 1; i >= 0; i--) {
       try { return JSON.parse(lines[i]) } catch (error) {}
@@ -1264,7 +1259,7 @@ Item {
     statusMessage = root.t(root.uiLang, "wsSlide") + " · " + (on ? "on" : "off")
     writeLua()
     syncTimer.restart()
-    root.syncHymissionAnimation()
+    root.syncMissionControlAnimation()
   }
 
   function applyKbLayout(layout) {
@@ -1803,7 +1798,7 @@ Item {
       workspaceIndicatorMode = WorkspaceModel.normalizeIndicatorMode(d.workspaceIndicatorMode)
       workspaceIndicatorPadding = Math.max(0, Math.min(4,
         d.workspaceIndicatorPadding === undefined ? 4 : Math.round(Number(d.workspaceIndicatorPadding))))
-      hymissionEnabled = d.hymissionEnabled === true
+      missionControlEnabled = d.missionControlEnabled === true
       devMode = d.devMode === true
       trackpadFeelConfigured = d.trackpadFeelConfigured === true
       saved.trackpadFeelConfigured = trackpadFeelConfigured
@@ -1872,7 +1867,7 @@ Item {
       monitorColors: monitorColors,
       workspaceIndicatorMode: workspaceIndicatorMode,
       workspaceIndicatorPadding: workspaceIndicatorPadding,
-      hymissionEnabled: hymissionEnabled,
+      missionControlEnabled: missionControlEnabled,
       devMode: devMode,
       trackpadFeelConfigured: trackpadFeelConfigured,
       scrollFeelConfigured: scrollFeelConfigured,
@@ -1926,28 +1921,6 @@ Item {
     function onAccentChanged() { workspaceThemeFile.reload() }
     function onForegroundChanged() { workspaceThemeFile.reload() }
     function onUrgentChanged() { workspaceThemeFile.reload() }
-  }
-
-  Process {
-    id: hymissionProc
-    stdout: StdioCollector { id: hymissionOutput; waitForEnd: true }
-    stderr: StdioCollector { id: hymissionErrorOutput; waitForEnd: true }
-    onExited: function(exitCode) {
-      root.hymissionBusy = false
-      try {
-        var response = root.hymissionParseOutput(exitCode === 0 ? hymissionOutput.text : hymissionErrorOutput.text)
-        if (exitCode === 0 && response && response.ok) {
-          root.hymissionEnabled = response.enabled === true
-          root.hymissionError = ""
-          root.savePrefs()
-          root.statusMessage = root.t(root.uiLang, "hymission") + " · " + (root.hymissionEnabled ? "on" : "off")
-          return
-        }
-        root.hymissionError = response && response.error ? response.error : root.t(root.uiLang, "hymissionFailed")
-      } catch (error) {
-        root.hymissionError = root.t(root.uiLang, "hymissionFailed")
-      }
-    }
   }
 
   function switchToKitty() {
@@ -3384,18 +3357,18 @@ Item {
         PanelSeparator { visible: root.devMode; foreground: Color.urgent }
 
         ToggleRow {
-          label: root.hymissionBusy ? root.t(root.uiLang, "hymissionInstalling") : root.t(root.uiLang, "hymission")
+          label: root.missionControlBusy ? root.t(root.uiLang, "missionControlInstalling") : root.t(root.uiLang, "missionControl")
           visible: root.devMode
           foreground: Color.urgent
-          checked: root.hymissionEnabled
-          enabled: !root.hymissionBusy
-          onClicked: root.setHymission(!root.hymissionEnabled)
+          checked: root.missionControlEnabled
+          enabled: !root.missionControlBusy
+          onClicked: root.setMissionControl(!root.missionControlEnabled)
         }
 
         Text {
           visible: root.devMode
           width: parent.width
-          text: root.t(root.uiLang, "hymissionHint")
+          text: root.t(root.uiLang, "missionControlHint")
           color: Qt.darker(root.fg, 1.35)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -3403,9 +3376,9 @@ Item {
         }
 
         Text {
-          visible: root.devMode && root.hymissionError !== ""
+          visible: root.devMode && root.missionControlError !== ""
           width: parent.width
-          text: root.hymissionError
+          text: root.missionControlError
           color: Color.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
