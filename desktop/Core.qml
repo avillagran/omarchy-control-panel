@@ -112,9 +112,9 @@ Item {
   property bool naturalScroll: false
   property bool animationsEnabled: true
   property bool wsAnimationOn: false
-  property bool quickViewEnabled: false
-  property bool quickViewBusy: false
-  property string quickViewError: ""
+  property bool hymissionEnabled: false
+  property bool hymissionBusy: false
+  property string hymissionError: ""
   property string workspaceIndicatorMode: "none"
   property int workspaceIndicatorPadding: 4
   property bool nightLightOn: false
@@ -203,7 +203,7 @@ Item {
   property bool displayLoading: false
   property var monitorColors: ({})
   property var workspaceThemeColors: ({})
-  readonly property string quickViewHelperPath: root.binDir + "/quickview-manager"
+  readonly property string hymissionHelperPath: root.binDir + "/hymission-manager"
   // Names of outputs seen on the last state read, used to detect a hotplugged
   // (newly connected) monitor and auto-arrange it.
   property var displayKnownNames: []
@@ -282,24 +282,24 @@ Item {
     workspaceWidgetSyncTimer.restart()
   }
 
-  function setQuickView(on) {
-    if (root.quickViewBusy) return
-    root.quickViewBusy = true
-    root.quickViewError = ""
-    quickViewProc.command = [root.quickViewHelperPath, on ? "enable" : "disable",
+  function setHymission(on) {
+    if (root.hymissionBusy) return
+    root.hymissionBusy = true
+    root.hymissionError = ""
+    hymissionProc.command = [root.hymissionHelperPath, on ? "enable" : "disable",
       "--animated", root.wsAnimationOn ? "true" : "false"]
-    quickViewProc.running = true
+    hymissionProc.running = true
   }
 
-  function syncQuickViewAnimation() {
-    if (!root.quickViewEnabled || root.quickViewBusy) return
-    root.quickViewBusy = true
-    quickViewProc.command = [root.quickViewHelperPath, "sync",
+  function syncHymissionAnimation() {
+    if (!root.hymissionEnabled || root.hymissionBusy) return
+    root.hymissionBusy = true
+    hymissionProc.command = [root.hymissionHelperPath, "sync",
       "--animated", root.wsAnimationOn ? "true" : "false"]
-    quickViewProc.running = true
+    hymissionProc.running = true
   }
 
-  function quickViewParseOutput(raw) {
+  function hymissionParseOutput(raw) {
     var lines = String(raw || "").trim().split("\n")
     for (var i = lines.length - 1; i >= 0; i--) {
       try { return JSON.parse(lines[i]) } catch (error) {}
@@ -1264,7 +1264,7 @@ Item {
     statusMessage = root.t(root.uiLang, "wsSlide") + " · " + (on ? "on" : "off")
     writeLua()
     syncTimer.restart()
-    root.syncQuickViewAnimation()
+    root.syncHymissionAnimation()
   }
 
   function applyKbLayout(layout) {
@@ -1802,7 +1802,7 @@ Item {
       workspaceIndicatorMode = WorkspaceModel.normalizeIndicatorMode(d.workspaceIndicatorMode)
       workspaceIndicatorPadding = Math.max(0, Math.min(4,
         d.workspaceIndicatorPadding === undefined ? 4 : Math.round(Number(d.workspaceIndicatorPadding))))
-      quickViewEnabled = d.quickViewEnabled === true
+      hymissionEnabled = d.hymissionEnabled === true
       devMode = d.devMode === true
       trackpadFeelConfigured = d.trackpadFeelConfigured === true
       saved.trackpadFeelConfigured = trackpadFeelConfigured
@@ -1871,7 +1871,7 @@ Item {
       monitorColors: monitorColors,
       workspaceIndicatorMode: workspaceIndicatorMode,
       workspaceIndicatorPadding: workspaceIndicatorPadding,
-      quickViewEnabled: quickViewEnabled,
+      hymissionEnabled: hymissionEnabled,
       devMode: devMode,
       trackpadFeelConfigured: trackpadFeelConfigured,
       scrollFeelConfigured: scrollFeelConfigured,
@@ -1928,23 +1928,23 @@ Item {
   }
 
   Process {
-    id: quickViewProc
-    stdout: StdioCollector { id: quickViewOutput; waitForEnd: true }
-    stderr: StdioCollector { id: quickViewErrorOutput; waitForEnd: true }
+    id: hymissionProc
+    stdout: StdioCollector { id: hymissionOutput; waitForEnd: true }
+    stderr: StdioCollector { id: hymissionErrorOutput; waitForEnd: true }
     onExited: function(exitCode) {
-      root.quickViewBusy = false
+      root.hymissionBusy = false
       try {
-        var response = root.quickViewParseOutput(exitCode === 0 ? quickViewOutput.text : quickViewErrorOutput.text)
+        var response = root.hymissionParseOutput(exitCode === 0 ? hymissionOutput.text : hymissionErrorOutput.text)
         if (exitCode === 0 && response && response.ok) {
-          root.quickViewEnabled = response.enabled === true
-          root.quickViewError = ""
+          root.hymissionEnabled = response.enabled === true
+          root.hymissionError = ""
           root.savePrefs()
-          root.statusMessage = root.t(root.uiLang, "quickView") + " · " + (root.quickViewEnabled ? "on" : "off")
+          root.statusMessage = root.t(root.uiLang, "hymission") + " · " + (root.hymissionEnabled ? "on" : "off")
           return
         }
-        root.quickViewError = response && response.error ? response.error : root.t(root.uiLang, "quickViewFailed")
+        root.hymissionError = response && response.error ? response.error : root.t(root.uiLang, "hymissionFailed")
       } catch (error) {
-        root.quickViewError = root.t(root.uiLang, "quickViewFailed")
+        root.hymissionError = root.t(root.uiLang, "hymissionFailed")
       }
     }
   }
@@ -2875,6 +2875,15 @@ Item {
                 }
                 Text {
                   width: parent.width
+                  wrapMode: Text.WordWrap
+                  text: root.t(root.uiLang, "pointerFeelTrackpadPlus")
+                  color: root.fg
+                  opacity: 0.66
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  width: parent.width
                   elide: Text.ElideRight
                   text: (root.trackpadNames.length ? "●  " + root.trackpadNames[0] : "○  " + root.t(root.uiLang, "pointerFeelNoDevice"))
                   color: root.fg
@@ -3374,18 +3383,18 @@ Item {
         PanelSeparator { visible: root.devMode; foreground: Color.urgent }
 
         ToggleRow {
-          label: root.quickViewBusy ? root.t(root.uiLang, "quickViewInstalling") : root.t(root.uiLang, "quickView")
+          label: root.hymissionBusy ? root.t(root.uiLang, "hymissionInstalling") : root.t(root.uiLang, "hymission")
           visible: root.devMode
           foreground: Color.urgent
-          checked: root.quickViewEnabled
-          enabled: !root.quickViewBusy
-          onClicked: root.setQuickView(!root.quickViewEnabled)
+          checked: root.hymissionEnabled
+          enabled: !root.hymissionBusy
+          onClicked: root.setHymission(!root.hymissionEnabled)
         }
 
         Text {
           visible: root.devMode
           width: parent.width
-          text: root.t(root.uiLang, "quickViewHint")
+          text: root.t(root.uiLang, "hymissionHint")
           color: Qt.darker(root.fg, 1.35)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -3393,9 +3402,9 @@ Item {
         }
 
         Text {
-          visible: root.devMode && root.quickViewError !== ""
+          visible: root.devMode && root.hymissionError !== ""
           width: parent.width
-          text: root.quickViewError
+          text: root.hymissionError
           color: Color.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
