@@ -13,8 +13,8 @@ assert.match(core, /label:\s*"Dev mode"[\s\S]*checked:\s*root\.devMode/,
   'Profiles title must expose the Dev mode toggle');
 assert.match(core, /label: root\.t\(root\.uiLang, "browserCloseTab"\)[\s\S]*visible:\s*root\.devMode/,
   'SUPER+W must stay hidden outside Dev mode');
-assert.match(core, /label: root\.hymissionBusy[^\n]*\n\s*visible:\s*root\.devMode/,
-  'unfinished Hymission must stay hidden outside Dev mode');
+assert.match(core, /label: root\.missionControlBusy[^\n]*\n\s*visible:\s*root\.devMode/,
+  'unfinished Mission Control must stay hidden outside Dev mode');
 assert.match(core, /label:\s*"Dev mode"[\s\S]*foreground:\s*Color\.urgent/,
   'Dev mode control must be highlighted in red');
 assert.match(shell, /navButton\.modelData\.devOnly \? theme\.urgent/,
