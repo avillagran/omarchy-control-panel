@@ -1,13 +1,14 @@
 .pragma library
 
 var presets = {
-  system: { sensitivity: 0, scrollFactor: 1, accelProfile: "adaptive" },
-  flat: { sensitivity: 0, scrollFactor: 1, accelProfile: "flat" },
-  mac: { sensitivity: 0.3, scrollFactor: 0.2, accelProfile: "adaptive" }
+  fine: { sensitivity: -0.2, scrollFactor: 0.65, accelProfile: "adaptive" },
+  balanced: { sensitivity: 0.15, scrollFactor: 0.9, accelProfile: "adaptive" },
+  swift: { sensitivity: 0.5, scrollFactor: 1.2, accelProfile: "adaptive" },
+  linear: { sensitivity: 0.1, scrollFactor: 0.85, accelProfile: "flat" }
 }
 
 function presetIds() {
-  return ["system", "flat", "mac", "custom"]
+  return ["fine", "balanced", "swift", "linear"]
 }
 
 function clampSensitivity(value) {
@@ -19,12 +20,11 @@ function clampSensitivity(value) {
 function clampScrollFactor(value) {
   var number = Number(value)
   if (!isFinite(number)) number = 1
-  return Math.round(Math.max(0.01, Math.min(1, number)) * 100) / 100
+  return Math.round(Math.max(0.1, Math.min(2, number)) * 20) / 20
 }
 
 function preset(id) {
   var value = presets[id]
-  if (id === "custom") return null
   return value ? {
     sensitivity: value.sensitivity,
     scrollFactor: value.scrollFactor,
@@ -34,18 +34,20 @@ function preset(id) {
 
 function presetLabelKey(id) {
   return {
-    system: "pointerFeelSystem",
-    flat: "pointerFeelFlat",
-    mac: "pointerFeelMac",
+    fine: "pointerFeelFine",
+    balanced: "pointerFeelBalanced",
+    swift: "pointerFeelSwift",
+    linear: "pointerFeelLinear",
     custom: "pointerFeelCustom"
   }[id] || "pointerFeelCustom"
 }
 
 function presetDescriptionKey(id) {
   return {
-    system: "pointerFeelDescriptionSystem",
-    flat: "pointerFeelDescriptionFlat",
-    mac: "pointerFeelDescriptionMac",
+    fine: "pointerFeelDescriptionFine",
+    balanced: "pointerFeelDescriptionBalanced",
+    swift: "pointerFeelDescriptionSwift",
+    linear: "pointerFeelDescriptionLinear",
     custom: "pointerFeelDescriptionCustom"
   }[id] || "pointerFeelDescriptionCustom"
 }
@@ -57,7 +59,6 @@ function detectPreset(sensitivity, scrollFactor, accelProfile) {
   var ids = presetIds()
   for (var i = 0; i < ids.length; i++) {
     var value = presets[ids[i]]
-    if (!value) continue
     if (Math.abs(value.sensitivity - s) < 0.001
         && Math.abs(value.scrollFactor - scroll) < 0.001
         && value.accelProfile === profile)
