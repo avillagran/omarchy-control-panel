@@ -46,6 +46,12 @@ assert.match(core, /scroll_ignore_classes -j"\]/, 'state probe must read scroll_
 assert.match(core, /modeFromLive\(\s*values\.profile, values\.ignoreClasses\)/,
   'probe must derive the ignore mode from live values');
 
+// Outside developer mode, leave a translated pointer in the same Trackpad tab.
+assert.match(core, /visible: !root\.devMode[\s\S]*?scrollFeelDevHint/,
+  'non-DEV users must see the Scroll feel DEV-version hint');
+assert.match(core, /scrollFeelDevRepo[\s\S]*?Qt\.openUrlExternally\("https:\/\/github\.com\/avillagran\/Hyprland\/tree\/feat\/touchpad-scroll-acceleration"\)/,
+  'non-DEV users must be able to open the DEV implementation repository');
+
 // The UI card is developer-only and styled with the urgent token.
 assert.match(core, /id: scrollFeelCard[\s\S]*?visible: root\.devMode/,
   'scroll card must be hidden unless dev mode is on');
@@ -99,7 +105,7 @@ assert.match(core, /onClicked: root\.applyMacOSConfig\(\)/,
   'macOS config button must call the bundle');
 
 const keys = [
-  'scrollFeelTitle', 'scrollFeelSupported', 'scrollFeelUnsupported',
+  'scrollFeelDevHint', 'scrollFeelTitle', 'scrollFeelSupported', 'scrollFeelUnsupported',
   'scrollFeelNative', 'scrollFeelLinear', 'scrollFeelAdaptive', 'scrollFeelGlide', 'scrollFeelCustom',
   'scrollFeelDescriptionNative', 'scrollFeelDescriptionLinear', 'scrollFeelDescriptionAdaptive',
   'scrollFeelDescriptionGlide', 'scrollFeelDescriptionCustom',
@@ -112,5 +118,9 @@ const keys = [
 ];
 for (const lang of ['en', 'es'])
   for (const key of keys) assert.ok(i18n[lang][key], `${lang}.${key} missing`);
+for (const lang of Object.keys(i18n))
+  assert.ok(i18n[lang].scrollFeelDevHint, `${lang}.scrollFeelDevHint missing`);
+for (const lang of Object.keys(i18n))
+  assert.ok(i18n[lang].scrollFeelDevRepo, `${lang}.scrollFeelDevRepo missing`);
 
 console.log('Scroll feel UI contract tests passed');
