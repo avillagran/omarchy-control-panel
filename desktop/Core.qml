@@ -1423,7 +1423,7 @@ Item {
   // inside a profile so it can be re-applied automatically on hotplug.
   function currentDisplayMap() {
     var map = {}
-    var list = root.saved.displays && root.saved.displays.length ? root.saved.displays : root.displays
+    var list = root.displays && root.displays.length ? root.displays : root.saved.displays
     for (var i = 0; i < list.length; i++) {
       var d = list[i]
       if (!d || !d.name) continue
@@ -1559,6 +1559,7 @@ Item {
       if (saved.x !== undefined && Number(saved.x) !== Number(d.x)) { d.x = Number(saved.x); changed = true }
       if (saved.y !== undefined && Number(saved.y) !== Number(d.y)) { d.y = Number(saved.y); changed = true }
       if (saved.transform !== undefined && Number(saved.transform) !== Number(d.transform)) { d.transform = Number(saved.transform); changed = true }
+      if (saved.mirror !== undefined && String(saved.mirror || "") !== String(d.mirror || "")) { d.mirror = saved.mirror || ""; changed = true }
     }
     if (!changed) return
     root.displays = copy
