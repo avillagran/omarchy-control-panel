@@ -61,8 +61,10 @@ assert.match(core, /workspaceIndicatorMode:\s*workspaceIndicatorMode/);
 assert.match(core, /missionControlEnabled/);
 assert.match(core, /function loadSavedState\(\) \{[\s\S]*?luaStateProc\.running = true/,
   'opening the standalone panel must load saved state without applying it');
-assert.match(core, /id: applyOnLoadTimer[\s\S]*?onTriggered: \{[\s\S]*?root\.loadSavedState\(\)[\s\S]*?root\.applySuperWBind\(\)/,
+assert.match(core, /id: applyOnLoadTimer[\s\S]*?onTriggered: \{[\s\S]*?root\.loadSavedState\(\)/,
   'the standalone window must read state on load rather than replay control-panel.lua');
+assert.doesNotMatch(core, /id: applyOnLoadTimer[\s\S]*?onTriggered: \{[\s\S]*?root\.applySuperWBind\(\)/,
+  'SUPER+W must wait for persisted preferences instead of binding an object default');
 assert.doesNotMatch(core, /id: applyOnLoadTimer[\s\S]*?onTriggered: \{[\s\S]*?reapplySaved\(\)/,
   'opening the standalone panel must not reissue Hyprland configuration');
 assert.match(core, /id:\s*displayInstantProc[\s\S]*?root\.applyWorkspaceLayout\(true\)/,

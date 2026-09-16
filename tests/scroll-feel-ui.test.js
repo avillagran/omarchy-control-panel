@@ -12,8 +12,12 @@ assert.match(installer, new RegExp(`git -C "\\$SRC_DIR" checkout -q --detach ${p
   'scroll-patch installer must detached-checkout the literal pinned commit before building');
 assert.match(installer, /PLUGIN_DIR="\$HOME\/\.config\/omarchy\/plugins\/\$PLUGIN_ID"/,
   'installer must locate an already-installed plugin for safe reruns');
-assert.match(installer, /git -C "\$PLUGIN_DIR" fetch --depth 1 origin main[\s\S]*?git -C "\$PLUGIN_DIR" merge --ff-only FETCH_HEAD/,
-  'a one-liner rerun must fast-forward a clean existing plugin to expose newly shipped controls');
+assert.match(installer, /^RELEASE_TAG="0\.4"$/m,
+  'the one-liner must identify the current immutable plugin release');
+assert.match(installer, /git -C "\$PLUGIN_DIR" fetch --depth 1 origin "refs\/tags\/\$RELEASE_TAG"[\s\S]*?git -C "\$PLUGIN_DIR" merge --ff-only FETCH_HEAD/,
+  'a one-liner rerun must fast-forward a clean existing plugin to the current release tag');
+assert.match(installer, /raw\.githubusercontent\.com\/avillagran\/omarchy-control-panel\/\$RELEASE_TAG\/patches\/hyprland/,
+  'remote fallback patches must come from the same immutable release tag');
 assert.match(installer, /has local changes; commit or stash them before rerunning/,
   'a one-liner rerun must refuse to overwrite user plugin edits');
 

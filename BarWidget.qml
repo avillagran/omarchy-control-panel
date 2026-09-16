@@ -14,6 +14,7 @@ BarWidget {
   moduleName: "omarchy-control-panel"
 
   readonly property string binPath: Qt.resolvedUrl("bin/toggle-desktop.sh").toString().replace("file://", "")
+  readonly property string superWBindPath: Qt.resolvedUrl("bin/apply-superw-bind").toString().replace("file://", "")
 
   // Shape contract for shell.summon/hide/toggle routing (Bar.findPanelWidget
   // requires open/close/opened on the bar-widget root).
@@ -26,6 +27,20 @@ BarWidget {
   function close() { Quickshell.execDetached(["bash", root.binPath]) }
   function toggle() { Quickshell.execDetached(["bash", root.binPath]) }
   function closeForPopoutSwitch() {}
+
+  // This widget exists with the main shell, unlike the standalone settings
+  // window. Install the persisted bind at login and repair it if a Hyprland
+  // reload restores Omarchy's default window-closing SUPER+W.
+  function ensureSuperWBind() {
+    Quickshell.execDetached(["bash", root.superWBindPath])
+  }
+  Component.onCompleted: root.ensureSuperWBind()
+  Timer {
+    interval: 5000
+    repeat: true
+    running: true
+    onTriggered: root.ensureSuperWBind()
+  }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight

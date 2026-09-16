@@ -1,3 +1,5 @@
+[One-line installer](#one-line-installer)
+
 # Omarchy Control Panel
 
 A system settings panel for **Omarchy / Hyprland**, built as an Omarchy shell plugin (Quickshell/QML). Familiar for users coming from macOS, useful for everyone.
@@ -38,7 +40,9 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   browsers reliably. Browser windows receive native `Ctrl+W` and close only the
   active tab; other applications close normally. The binding consumes the
   original key press and key-repeat, so terminals receive no escape-sequence
-  text while the shortcut is held.
+  text while the shortcut is held. It is installed by the always-running bar
+  widget at login and repaired automatically after a Hyprland reload, without
+  requiring the Control Panel window to be opened.
 - **QuickView preview (Dev mode)**: a native workspace/window overview powered by the pinned
   [qs-hyprview](https://github.com/dom0/qs-hyprview) project, with
   Omarchy-specific launcher and integration patches kept separately.
@@ -105,6 +109,8 @@ enable it only if the wheel feel works well with your mouse and applications.
 The switch uses dedicated `input:mouse:scroll_*` options, so it does not change
 the touchpad setting and is never written for stock Hyprland.
 
+### One-line installer
+
 You don't have to wait for the merge — and you don't depend on this repo's
 fork either. The patch ships as a git series in [`patches/hyprland/`](patches/hyprland);
 the one-liner fetches **upstream** `hyprwm/Hyprland` at a pinned commit, applies
@@ -112,7 +118,7 @@ the series, and builds it as a reversible **shadow binary** (`~/.local/bin/Hyprl
 which takes precedence over `/usr/bin` via PATH — no pacman conflicts):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash
 ```
 
 The installer (Arch/Omarchy) does everything in one pass:
@@ -148,7 +154,7 @@ if the pin and the series no longer match.
 To go back to stock Hyprland:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
 ```
 
 ## Internationalization

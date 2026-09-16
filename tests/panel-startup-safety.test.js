@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const core = fs.readFileSync(path.join(__dirname, '../desktop/Core.qml'), 'utf8');
+const barWidget = fs.readFileSync(path.join(__dirname, '../BarWidget.qml'), 'utf8');
+const superWStartup = fs.readFileSync(path.join(__dirname, '../bin/apply-superw-bind'), 'utf8');
 const loadProfiles = core.match(/function loadProfilesFromText\(raw\) \{([\s\S]*?)\n  \}\n\n  function saveProfiles/);
 assert.ok(loadProfiles, 'profile loader must exist');
 assert.match(core, /var list = root\.displays && root\.displays\.length \? root\.displays : root\.saved\.displays/,
@@ -33,14 +35,20 @@ assert.match(core, /saved\.mirror !== undefined/,
   'profile display restore must include mirror state');
 assert.match(core, /L\.push\(["']-- Display layout["']\)[\s\S]*?hl\.monitor/,
   'rewriting control-panel.lua must retain the applied monitor layout');
-assert.match(core, /win\.tags[\s\S]*?chromium-based-browser[\s\S]*?firefox-based-browser/,
+assert.match(superWStartup, /win\.tags[\s\S]*?chromium-based-browser[\s\S]*?firefox-based-browser/,
   'SUPER+W must use Omarchy browser tags instead of depending only on a class field');
-assert.match(core, /hl\.dsp\.send_key_state\(\{ mods = "CTRL", key = "W", state = "down" \}\)[\s\S]*?state = "up"/,
+assert.match(superWStartup, /hl\.dsp\.send_key_state\(\{ mods = \\"CTRL\\", key = \\"W\\", state = \\"down\\" \}\)[\s\S]*?state = \\"up\\"/,
   'browser SUPER+W must deliver native Ctrl+W key states instead of closing the window');
-assert.match(core, /hl\.dsp\.window\.close\(\)\) end end, \{ release = true \}/,
+assert.match(superWStartup, /hl\.dsp\.window\.close\(\)\) end end, \{ release = true \}/,
   'SUPER+W Lua must close both the branch and callback before bind options');
-assert.match(core, /hl\.unbind\("SUPER \+ W"\); hl\.bind\("SUPER \+ W", function\(\) end\); hl\.bind\("SUPER \+ W"/,
+assert.match(superWStartup, /hl\.unbind\(\\"SUPER \+ W\\"\); hl\.bind\(\\"SUPER \+ W\\", function\(\) end\); hl\.bind\(\\"SUPER \+ W\\"/,
   'SUPER+W must consume press/repeat events before handling the release');
+assert.match(barWidget, /apply-superw-bind[\s\S]*Component\.onCompleted:\s*root\.ensureSuperWBind\(\)/,
+  'the always-running bar widget must install SUPER+W without opening the panel');
+assert.match(superWStartup, /control-panel-prefs\.json[\s\S]*browserCloseTab/,
+  'the startup installer must read the persisted browser-tab preference');
+assert.doesNotMatch(core, /id:\s*applyOnLoadTimer[\s\S]*?onTriggered:\s*\{[\s\S]*?applySuperWBind\(\)/,
+  'the panel must not bind before asynchronous preferences have loaded');
 
 assert.doesNotMatch(loadProfiles[1], /queueApplyActiveProfile|applyProfile\(/,
   'opening the panel must not apply the active profile or touch display modes');
@@ -53,6 +61,8 @@ assert.match(core, /id:\s*reapplyProc[\s\S]*onExited:[\s\S]*root\.refresh\(\)/,
   'live state may refresh only after persisted settings finish replaying');
 const loadPrefs = core.match(/function loadPrefs\(raw\) \{([\s\S]*?)\n  \}\n\n  function savePrefs/);
 assert.ok(loadPrefs, 'preferences loader must exist');
+assert.match(loadPrefs[1], /applySuperWBind\(\)/,
+  'loading persisted preferences must synchronize the live SUPER+W bind');
 assert.doesNotMatch(loadPrefs[1], /root\.refresh\(\)/,
   'loading preferences must not race the persisted-settings replay');
 assert.match(core, /if \(root\.workspaceTopology !== ""\)\s*workspaceTopologyTimer\.restart\(\)/,
