@@ -6,45 +6,37 @@ function clampCount(value, fallback) {
 }
 
 function activeMonitors(displays) {
-  return (displays || []).filter(function(d) {
+  var monitors = (displays || []).filter(function(d) {
     return d && d.name && !d.disabled && !d.mirror
-  }).sort(function(a, b) {
-    var ax = Number(a.x) || 0
-    var bx = Number(b.x) || 0
-    if (ax !== bx) return ax - bx
-    var ay = Number(a.y) || 0
-    var by = Number(b.y) || 0
-    if (ay !== by) return ay - by
+  })
+  if (monitors.length < 2) return monitors
+
+  // Use geometry, not connector names or a fixed display count. Choose the
+  // dominant layout axis so a vertically stacked pair remains top→bottom even
+  // when its x offsets differ, while side-by-side displays remain left→right.
+  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (var i = 0; i < monitors.length; i++) {
+    var x = Number(monitors[i].x) || 0
+    var y = Number(monitors[i].y) || 0
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+  }
+  var horizontal = (maxX - minX) >= (maxY - minY)
+  return monitors.sort(function(a, b) {
+    var primaryA = horizontal ? Number(a.x) || 0 : Number(a.y) || 0
+    var primaryB = horizontal ? Number(b.x) || 0 : Number(b.y) || 0
+    if (primaryA !== primaryB) return primaryA - primaryB
+    var secondaryA = horizontal ? Number(a.y) || 0 : Number(a.x) || 0
+    var secondaryB = horizontal ? Number(b.y) || 0 : Number(b.x) || 0
+    if (secondaryA !== secondaryB) return secondaryA - secondaryB
     return String(a.name).localeCompare(String(b.name))
   })
 }
 
-// Order monitors for workspace range assignment. Monitors that already own
-// workspaces keep their range order (pinned by identity), so moving a display
-// in the layout never swaps its workspaces with another display. New
-// monitors (no claims) append after the claimed ones, in position order.
-function pinOrder(monitors, previous) {
-  function lowestClaim(name) {
-    var best = Infinity
-    for (var k in previous) {
-      var v = previous[k]
-      if (v && v.monitor === name) {
-        var n = Number(k)
-        if (isFinite(n) && n < best) best = n
-      }
-    }
-    return best
-  }
-  return monitors.slice().sort(function(a, b) {
-    var ca = lowestClaim(a.name)
-    var cb = lowestClaim(b.name)
-    if (ca !== Infinity || cb !== Infinity) return ca - cb
-    return 0 // both unclaimed: keep position order (stable sort)
-  })
-}
-
 function assignments(displays, singleCount, perMonitorCount, previous) {
-  var monitors = pinOrder(activeMonitors(displays), previous || {})
+  // Workspace ranges deliberately follow physical monitor order: first
+  // workspaces on the left/top display, final ones on the right/bottom.
+  var monitors = activeMonitors(displays)
   if (!monitors.length) return []
   var count = monitors.length === 1
     ? clampCount(singleCount, 10)
@@ -89,6 +81,48 @@ var legacyColorRoles = {
 
 function normalizeIndicatorMode(value) {
   return ["square", "rounded", "circle", "none"].indexOf(value) >= 0 ? value : "none"
+}
+
+var numeralStyles = ["arabic", "kanji", "runes", "greek"]
+
+function normalizeNumeralStyle(value) {
+  return numeralStyles.indexOf(value) >= 0 ? value : "arabic"
+}
+
+// Hyprland 0.56 represents workspace identity with `name`/`address`; older
+// Quickshell objects exposed a numeric `id`. Accept both without accidentally
+// treating special workspaces such as `special:sidepanelX` as numbered ones.
+function workspaceNumber(workspace) {
+  if (!workspace) return 0
+  var id = Number(workspace.id)
+  if (isFinite(id) && id > 0 && Math.floor(id) === id) return id
+  var name = Number(workspace.name)
+  return isFinite(name) && name > 0 && Math.floor(name) === name ? name : 0
+}
+
+function formatWorkspaceNumber(value, style) {
+  var number = Math.floor(Number(value))
+  if (!isFinite(number) || number < 1) return ""
+  var selected = normalizeNumeralStyle(style)
+  if (selected === "kanji") {
+    var kanji = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+    return number <= 10 ? kanji[number] : String(number)
+  }
+  if (selected === "runes") {
+    var runes = ["", "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ"]
+    return number <= 10 ? runes[number] : String(number)
+  }
+  if (selected === "greek") {
+    var greek = ["", "α", "β", "γ", "δ", "ε", "ζ", "η", "θ", "ι", "κ"]
+    return number <= 10 ? greek[number] : String(number)
+  }
+  return String(number)
+}
+
+function numeralPreview(style) {
+  return formatWorkspaceNumber(1, style) + " "
+    + formatWorkspaceNumber(2, style) + " "
+    + formatWorkspaceNumber(3, style)
 }
 
 function normalizeColorRole(value) {

@@ -1,5 +1,6 @@
 {
   "en": {
+    "saveDisplayLayout": "Save layout",
     "controlPanelTitle": "Control Panel",
     "close": "Close",
     "networkDevices": "Network Devices",
@@ -195,6 +196,7 @@
     "workspaceColorSaved": "Workspace color saved",
     "workspaceIndicatorMode": "INDICATOR MODE",
     "workspaceIndicatorPadding": "NUMBER PADDING",
+    "workspaceNumerals": "WORKSPACE NUMERALS",
     "indicatorSquare": "Squares",
     "indicatorRounded": "Rounded squares",
     "indicatorCircle": "Circles",
@@ -320,6 +322,7 @@
     "scrollFeelDevHint": "You can try the DEV version, which has a native implementation of Mac touchpad inertia.",
     "scrollFeelDevRepo": "Open DEV repository",
     "scrollFeelTitle": "Scroll feel",
+    "scrollFeelMouseWheel": "Apply to mouse wheel",
     "scrollFeelSupported": "Patch detected — values are live. Applies to the touchpad in every app.",
     "scrollFeelUnsupported": "Requires a Hyprland build with touchpad scroll acceleration (PR #16254). Controls are inactive and nothing is written to the config.",
     "scrollFeelNative": "Native",
@@ -357,6 +360,7 @@
     "macConfigApplied": "macOS-style config applied"
   },
   "es": {
+    "saveDisplayLayout": "Guardar diseño",
     "controlPanelTitle": "Panel de control",
     "close": "Cerrar",
     "networkDevices": "Dispositivos de red",
@@ -552,6 +556,7 @@
     "workspaceColorSaved": "Color de escritorios guardado",
     "workspaceIndicatorMode": "MODO DE INDICADORES",
     "workspaceIndicatorPadding": "MARGEN DEL NÚMERO",
+    "workspaceNumerals": "NUMERACIÓN DE ESCRITORIOS",
     "indicatorSquare": "Cuadrados",
     "indicatorRounded": "Cuadrados redondeados",
     "indicatorCircle": "Círculos",
@@ -677,6 +682,7 @@
     "scrollFeelDevHint": "Puedes probar la versión DEV que tiene una implementación nativa de la inercia de touchpad Mac.",
     "scrollFeelDevRepo": "Abrir repositorio DEV",
     "scrollFeelTitle": "Sensación de scroll",
+    "scrollFeelMouseWheel": "Aplicar a la rueda del mouse",
     "scrollFeelSupported": "Parche detectado — los valores son en vivo. Aplica al trackpad en todas las apps.",
     "scrollFeelUnsupported": "Requiere un Hyprland con aceleración de scroll en trackpad (PR #16254). Los controles están inactivos y no se escribe nada en la config.",
     "scrollFeelNative": "Nativo",
@@ -714,6 +720,7 @@
     "macConfigApplied": "Config estilo macOS aplicada"
   },
   "pt": {
+    "saveDisplayLayout": "Salvar disposição",
     "naturalMac": "Rolagem natural (estilo Mac)",
     "sysAnims": "Animações do sistema",
     "wsSlide": "Transição de áreas de trabalho",
@@ -749,14 +756,17 @@
     "inertia": "Rolagem com inércia",
     "scrollFeelDevHint": "Você pode experimentar a versão DEV, que tem uma implementação nativa da inércia do trackpad Mac.",
     "scrollFeelDevRepo": "Abrir repositório DEV",
+    "scrollFeelMouseWheel": "Aplicar à roda do mouse",
     "tapClick": "Clique com toque (sem pressionar)",
     "useKitty": "Mudar para Kitty",
     "calcCopied": "Copiado para a área de transferência",
     "notMath": "Expressão inválida",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Numeração de áreas de trabalho"
   },
   "fr": {
+    "saveDisplayLayout": "Enregistrer la disposition",
     "naturalMac": "Défilement naturel (style Mac)",
     "sysAnims": "Animations du système",
     "wsSlide": "Transition entre bureaux",
@@ -792,14 +802,17 @@
     "inertia": "Défilement avec inertie",
     "scrollFeelDevHint": "Vous pouvez essayer la version DEV, qui propose une implémentation native de l’inertie du trackpad Mac.",
     "scrollFeelDevRepo": "Ouvrir le dépôt DEV",
+    "scrollFeelMouseWheel": "Appliquer à la molette",
     "tapClick": "Cliquer en tapotant (sans appuyer)",
     "useKitty": "Passer à Kitty",
     "calcCopied": "Copié dans le presse-papiers",
     "notMath": "Expression invalide",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Numérotation des espaces de travail"
   },
   "de": {
+    "saveDisplayLayout": "Anordnung speichern",
     "naturalMac": "Natürliches Scrollen (Mac-Stil)",
     "sysAnims": "Systemanimationen",
     "wsSlide": "Arbeitsplatzwechsel-Übergang",
@@ -835,14 +848,17 @@
     "inertia": "Trägheitsscrollen",
     "scrollFeelDevHint": "Du kannst die DEV-Version ausprobieren, die eine native Implementierung der Mac-Trackpad-Trägheit enthält.",
     "scrollFeelDevRepo": "DEV-Repository öffnen",
+    "scrollFeelMouseWheel": "Auf Mausrad anwenden",
     "tapClick": "Tippen zum Klicken (ohne Druck)",
     "useKitty": "Zu Kitty wechseln",
     "calcCopied": "In die Zwischenablage kopiert",
     "notMath": "Kein gültiger Ausdruck",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Arbeitsbereichsnummerierung"
   },
   "it": {
+    "saveDisplayLayout": "Salva disposizione",
     "naturalMac": "Scorrimento naturale (stile Mac)",
     "sysAnims": "Animazioni di sistema",
     "wsSlide": "Transizione cambio area di lavoro",
@@ -878,14 +894,17 @@
     "inertia": "Scorrimento inerziale",
     "scrollFeelDevHint": "Puoi provare la versione DEV, che include un’implementazione nativa dell’inerzia del trackpad Mac.",
     "scrollFeelDevRepo": "Apri repository DEV",
+    "scrollFeelMouseWheel": "Applica alla rotella del mouse",
     "tapClick": "Tocca per cliccare (senza pressione)",
     "useKitty": "Passa a Kitty",
     "calcCopied": "Copiato negli appunti",
     "notMath": "Espressione non valida",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Numerazione degli spazi di lavoro"
   },
   "nl": {
+    "saveDisplayLayout": "Indeling opslaan",
     "naturalMac": "Natuurlijk scrollen (Mac-stijl)",
     "sysAnims": "Systeemanimaties",
     "wsSlide": "Werkbladwissel-overgang",
@@ -921,14 +940,17 @@
     "inertia": "Traagheidsscrollen",
     "scrollFeelDevHint": "Je kunt de DEV-versie proberen, die een native implementatie van de traagheid van het Mac-trackpad heeft.",
     "scrollFeelDevRepo": "DEV-opslagplaats openen",
+    "scrollFeelMouseWheel": "Toepassen op muiswiel",
     "tapClick": "Tik om te klikken (zonder druk)",
     "useKitty": "Schakel naar Kitty",
     "calcCopied": "Gekopieerd naar klembord",
     "notMath": "Geen geldige expressie",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Werkbladnummering"
   },
   "pl": {
+    "saveDisplayLayout": "Zapisz układ",
     "naturalMac": "Naturalne przewijanie (styl Mac)",
     "sysAnims": "Animacje systemowe",
     "wsSlide": "Przejście między pulpitami",
@@ -964,14 +986,17 @@
     "inertia": "Przewijanie bezwładnościowe",
     "scrollFeelDevHint": "Możesz wypróbować wersję DEV, która ma natywną implementację bezwładności gładzika Maca.",
     "scrollFeelDevRepo": "Otwórz repozytorium DEV",
+    "scrollFeelMouseWheel": "Zastosuj do kółka myszy",
     "tapClick": "Stuknięcie zamiast kliknięcia (bez nacisku)",
     "useKitty": "Przełącz na Kitty",
     "calcCopied": "Skopiowano do schowka",
     "notMath": "Nieprawidłowe wyrażenie",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Numeracja obszarów roboczych"
   },
   "ru": {
+    "saveDisplayLayout": "Сохранить расположение",
     "naturalMac": "Естественная прокрутка (в стиле Mac)",
     "sysAnims": "Системные анимации",
     "wsSlide": "Переход при смене рабочего стола",
@@ -1007,14 +1032,17 @@
     "inertia": "Инерционная прокрутка",
     "scrollFeelDevHint": "Вы можете попробовать версию DEV с нативной реализацией инерции трекпада Mac.",
     "scrollFeelDevRepo": "Открыть репозиторий DEV",
+    "scrollFeelMouseWheel": "Применить к колесу мыши",
     "tapClick": "Касание вместо нажатия",
     "useKitty": "Переключить на Kitty",
     "calcCopied": "Скопировано в буфер обмена",
     "notMath": "Неверное выражение",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Нумерация рабочих пространств"
   },
   "ja": {
+    "saveDisplayLayout": "レイアウトを保存",
     "naturalMac": "自然なスクロール (Macスタイル)",
     "sysAnims": "システムアニメーション",
     "wsSlide": "ワークスペース切り替えの遷移",
@@ -1050,14 +1078,17 @@
     "inertia": "慣性スクロール",
     "scrollFeelDevHint": "Macトラックパッドの慣性をネイティブ実装したDEV版を試せます。",
     "scrollFeelDevRepo": "DEVリポジトリを開く",
+    "scrollFeelMouseWheel": "マウスホイールに適用",
     "tapClick": "タップでクリック (押下不要)",
     "useKitty": "Kittyに切り替え",
     "calcCopied": "クリップボードにコピーしました",
     "notMath": "無効な式",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "ワークスペースの番号"
   },
   "ko": {
+    "saveDisplayLayout": "레이아웃 저장",
     "naturalMac": "자연스러운 스크롤 (Mac 스타일)",
     "sysAnims": "시스템 애니메이션",
     "wsSlide": "작업 공간 전환 효과",
@@ -1093,14 +1124,17 @@
     "inertia": "관성 스크롤",
     "scrollFeelDevHint": "Mac 트랙패드 관성을 네이티브로 구현한 DEV 버전을 사용해 볼 수 있습니다.",
     "scrollFeelDevRepo": "DEV 저장소 열기",
+    "scrollFeelMouseWheel": "마우스 휠에 적용",
     "tapClick": "탭하여 클릭 (누르지 않음)",
     "useKitty": "Kitty로 전환",
     "calcCopied": "클립보드에 복사됨",
     "notMath": "잘못된 수식",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "작업 공간 번호"
   },
   "zh": {
+    "saveDisplayLayout": "保存布局",
     "naturalMac": "自然滚动 (Mac 风格)",
     "sysAnims": "系统动画",
     "wsSlide": "工作区切换过渡",
@@ -1136,14 +1170,17 @@
     "inertia": "惯性滚动",
     "scrollFeelDevHint": "你可以试用 DEV 版本，它原生实现了 Mac 触控板惯性。",
     "scrollFeelDevRepo": "打开 DEV 仓库",
+    "scrollFeelMouseWheel": "应用于鼠标滚轮",
     "tapClick": "轻点按 (无需按压)",
     "useKitty": "切换到 Kitty",
     "calcCopied": "已复制到剪贴板",
     "notMath": "无效的表达式",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "工作区编号"
   },
   "ar": {
+    "saveDisplayLayout": "حفظ التخطيط",
     "naturalMac": "التمرير الطبيعي (أسلوب Mac)",
     "sysAnims": "رسوم متحركة للنظام",
     "wsSlide": "انتقال تبديل مساحة العمل",
@@ -1179,14 +1216,17 @@
     "inertia": "تمرير بالقصور الذاتي",
     "scrollFeelDevHint": "يمكنك تجربة إصدار DEV الذي يتضمن تطبيقًا أصليًا لقصور لوحة لمس Mac.",
     "scrollFeelDevRepo": "فتح مستودع DEV",
+    "scrollFeelMouseWheel": "تطبيق على عجلة الماوس",
     "tapClick": "انقر للنقر (دون ضغط)",
     "useKitty": "التبديل إلى Kitty",
     "calcCopied": "تم النسخ إلى الحافظة",
     "notMath": "تعبير غير صالح",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "ترقيم مساحات العمل"
   },
   "tr": {
+    "saveDisplayLayout": "Düzeni kaydet",
     "naturalMac": "Doğal kaydırma (Mac tarzı)",
     "sysAnims": "Sistem animasyonları",
     "wsSlide": "Çalışma alanı geçiş efekti",
@@ -1222,14 +1262,17 @@
     "inertia": "Ataletli kaydırma",
     "scrollFeelDevHint": "Mac dokunmatik yüzey ataleti için yerel bir uygulama içeren DEV sürümünü deneyebilirsiniz.",
     "scrollFeelDevRepo": "DEV deposunu aç",
+    "scrollFeelMouseWheel": "Fare tekerleğine uygula",
     "tapClick": "Dokunup tıklama (baskısız)",
     "useKitty": "Kitty'ye geç",
     "calcCopied": "Panoya kopyalandı",
     "notMath": "Geçersiz ifade",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Çalışma alanı numaralandırması"
   },
   "sv": {
+    "saveDisplayLayout": "Spara layout",
     "naturalMac": "Naturligt rullande (Mac-stil)",
     "sysAnims": "Systemanimationer",
     "wsSlide": "Övergång vid byte av arbetsyta",
@@ -1265,14 +1308,17 @@
     "inertia": "Tröghetsrullning",
     "scrollFeelDevHint": "Du kan prova DEV-versionen, som har en inbyggd implementering av tröghet för Mac-styrplattan.",
     "scrollFeelDevRepo": "Öppna DEV-källkodsförrådet",
+    "scrollFeelMouseWheel": "Använd på mushjulet",
     "tapClick": "Tryck för att klicka (utan tryck)",
     "useKitty": "Byt till Kitty",
     "calcCopied": "Kopierat till urklipp",
     "notMath": "Ogiltigt uttryck",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Numrering av arbetsytor"
   },
   "da": {
+    "saveDisplayLayout": "Gem layout",
     "naturalMac": "Naturligt rulning (Mac-stil)",
     "sysAnims": "Systemanimationer",
     "wsSlide": "Overgang ved skift af arbejdsområde",
@@ -1308,14 +1354,17 @@
     "inertia": "Træghedsrulning",
     "scrollFeelDevHint": "Du kan prøve DEV-versionen, som har en indbygget implementering af inertien på Mac-pegefeltet.",
     "scrollFeelDevRepo": "Åbn DEV-lageret",
+    "scrollFeelMouseWheel": "Anvend på musehjulet",
     "tapClick": "Tryk for at klikke (uden tryk)",
     "useKitty": "Skift til Kitty",
     "calcCopied": "Kopieret til udklipsholder",
     "notMath": "Ugyldigt udtryk",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Nummerering af arbejdsområder"
   },
   "no": {
+    "saveDisplayLayout": "Lagre oppsett",
     "naturalMac": "Naturlig rulling (Mac-stil)",
     "sysAnims": "Systemanimasjoner",
     "wsSlide": "Overgang ved bytte av arbeidsområde",
@@ -1351,14 +1400,17 @@
     "inertia": "Treghetsrulling",
     "scrollFeelDevHint": "Du kan prøve DEV-versjonen, som har en innebygd implementering av treghet for Mac-styreflaten.",
     "scrollFeelDevRepo": "Åpne DEV-depotet",
+    "scrollFeelMouseWheel": "Bruk på musehjulet",
     "tapClick": "Trykk for å klikke (uten trykk)",
     "useKitty": "Bytt til Kitty",
     "calcCopied": "Kopiert til utklippstavle",
     "notMath": "Ugyldig uttrykk",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Nummerering av arbeidsområder"
   },
   "fi": {
+    "saveDisplayLayout": "Tallenna asettelu",
     "naturalMac": "Luonnollinen vieritys (Mac-tyyli)",
     "sysAnims": "Järjestelmän animaatiot",
     "wsSlide": "Työpöydän vaihdon siirtymä",
@@ -1394,14 +1446,17 @@
     "inertia": "Hitausvieritys",
     "scrollFeelDevHint": "Voit kokeilla DEV-versiota, jossa on Mac-ohjauslevyn inertian natiivi toteutus.",
     "scrollFeelDevRepo": "Avaa DEV-tietovarasto",
+    "scrollFeelMouseWheel": "Käytä hiiren rullassa",
     "tapClick": "Napauta napsauttamaan (ilman painallusta)",
     "useKitty": "Vaihda Kittyyn",
     "calcCopied": "Kopioitu leikepöydälle",
     "notMath": "Virheellinen lauseke",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Työtilojen numerointi"
   },
   "cs": {
+    "saveDisplayLayout": "Uložit rozvržení",
     "naturalMac": "Přirozené posouvání (ve stylu Mac)",
     "sysAnims": "Systémové animace",
     "wsSlide": "Přechod při přepnutí plochy",
@@ -1437,11 +1492,13 @@
     "inertia": "Setrvačné posouvání",
     "scrollFeelDevHint": "Můžete vyzkoušet verzi DEV, která má nativní implementaci setrvačnosti trackpadu Mac.",
     "scrollFeelDevRepo": "Otevřít úložiště DEV",
+    "scrollFeelMouseWheel": "Použít na kolečko myši",
     "tapClick": "Klepnutí pro kliknutí (bez tlaku)",
     "useKitty": "Přepnout na Kitty",
     "calcCopied": "Zkopírováno do schránky",
     "notMath": "Neplatný výraz",
     "displayApplyPrompt": "Apply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "workspaceNumerals": "Číslování pracovních ploch"
   }
 }

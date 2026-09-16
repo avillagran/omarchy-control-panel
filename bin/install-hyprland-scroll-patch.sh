@@ -54,7 +54,8 @@ PATCH_NAMES="0001-input-touchpad-scroll-acceleration-profiles.patch
 0004-input-add-inertial-scroll-coasting-for-touchpads.patch
 0005-input-refine-scroll-coasting-seed-defaults-drop-diag.patch
 0006-input-add-scroll_ignore_classes-to-disable-accel-coa.patch
-0007-ipc-fix-inverted-disabled-field-in-monitors-JSON-out.patch"
+0007-ipc-fix-inverted-disabled-field-in-monitors-JSON-out.patch
+0008-input-add-opt-in-mouse-wheel-scroll-feel.patch"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-control-panel"
 SRC_DIR="$CACHE_ROOT/hyprland-scroll-patch"
 PATCH_DIR="$CACHE_ROOT/patches"
@@ -69,7 +70,7 @@ STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-control-panel-scroll-p
 PATH_MARK="omarchy-scroll-patch:path"
 # Bumped whenever HYPRLAND_PIN or the patch series changes; a mismatch forces
 # a fresh fetch+apply on rerun.
-PATCH_TAG="pin:$HYPRLAND_PIN series:v2"
+PATCH_TAG="pin:$HYPRLAND_PIN series:v3"
 
 # Omarchy 4.x CLI (omarchy plugin add/enable/remove) refuses to run without
 # OMARCHY_PATH; sessions launched outside the Omarchy env (SSH, TTY, cron)

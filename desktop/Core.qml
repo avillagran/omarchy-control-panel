@@ -117,6 +117,7 @@ Item {
   property string missionControlError: ""
   property string workspaceIndicatorMode: "none"
   property int workspaceIndicatorPadding: 4
+  property string workspaceNumeralStyle: "arabic"
   property bool nightLightOn: false
   property real cursorSensitivity: 0
   property real trackpadSensitivity: 0
@@ -134,11 +135,13 @@ Item {
   property real scrollAccelSpeed: 1.0
   property real scrollAccelMax: 3.0
   property int scrollDecel: 600
+  property bool mouseScrollFeelEnabled: false
   property bool scrollFeelConfigured: false
   property string scrollIgnoreMode: "browsers"
   property bool scrollIgnoreSupported: false
   property bool scrollPatchProbed: false
   property bool scrollPatchSupported: false
+  property bool mouseScrollPatchSupported: false
   property bool disableWhileTyping: true
   property bool clickfingerBehavior: true
   property int practiceHits: 0
@@ -274,6 +277,12 @@ Item {
 
   function setWorkspaceIndicatorPadding(value) {
     root.workspaceIndicatorPadding = Math.max(0, Math.min(4, Math.round(value)))
+    root.savePrefs()
+    root.scheduleWorkspaceWidgetSync()
+  }
+
+  function setWorkspaceNumeralStyle(style) {
+    root.workspaceNumeralStyle = WorkspaceModel.normalizeNumeralStyle(style)
     root.savePrefs()
     root.scheduleWorkspaceWidgetSync()
   }
@@ -415,6 +424,13 @@ Item {
       root.displayApplyInstant()
   }
 
+  // Safe alignment and scale updates are applied directly. Mode and orientation
+  // changes still require the existing preview/Keep confirmation before saving.
+  function displaySave() {
+    if (!displayValidLayout || displayApplying || displayAwaitingConfirmation) return
+    displayApplyChanges()
+  }
+
   // Clears displayApplyPending a few seconds after an instant apply so the
   // periodic refresh resumes tracking the live layout (needed for hotplug).
   Timer {
@@ -471,6 +487,7 @@ Item {
     displayConfirm()
     saved.displays = DisplayModel.clone(displays)
     displayConfirmedState = DisplayModel.clone(displays)
+    saveActiveProfileDisplayMap()
     savePrefs()
     if (root.hyprReloadPending) {
       root.hyprReloadPending = false
@@ -722,6 +739,15 @@ Item {
         L.push("-- Touchpad scroll acceleration + coast (patched compositor only)")
         L.push(scrollStatement)
       }
+      if (root.mouseScrollPatchSupported) {
+        var mouseScrollStatement = ScrollFeelModel.mouseLuaConfigStatement(
+          saved.mouseScrollFeelEnabled === true, saved.scrollAccelProfile,
+          saved.scrollAccelSpeed, saved.scrollAccelMax, saved.scrollDecel)
+        if (mouseScrollStatement) {
+          L.push("-- Opt-in physical mouse-wheel scroll feel (patched compositor only)")
+          L.push(mouseScrollStatement)
+        }
+      }
     }
     L.push("hl.config({ input = { sensitivity = " + Number(saved.sensitivity).toFixed(2) + " } })")
     L.push('hl.config({ input = { accel_profile = "' + (saved.flatAccel ? "flat" : "adaptive") + '" } })')
@@ -747,6 +773,10 @@ Item {
           + '", default = ' + (wr.default ? "true" : "false") + ', persistent = true })')
       }
     }
+    // QuickView is a standalone overlay, so the shortcut works even while the
+    // settings window is closed. The helper starts its renderer on demand.
+    L.push('hl.unbind("SUPER + SHIFT + up")')
+    L.push('hl.bind("SUPER + SHIFT + up", hl.dsp.exec_cmd("bash ' + root.binDir + '/quickview-toggle.sh"))')
     // 3-finger swipe switches workspaces. We OWN this gesture (the toggle is in
     // this panel) and invert it when natural scrolling is on, so the swipe feels
     // consistent with the rest of the trackpad. Hyprland cannot unbind gestures,
@@ -835,7 +865,8 @@ Item {
     var rightTarget = saved.naturalScroll ? "-1" : "+1"
     Quickshell.execDetached(["bash", "-lc",
       "python3 '" + root.binDir + "/sync-gestures-file.py' " +
-      "--enabled " + enabled + " --left '" + leftTarget + "' --right '" + rightTarget + "' --no-reload"])
+      "--enabled " + enabled + " --left '" + leftTarget + "' --right '" + rightTarget
+        + "' --quickview '" + root.binDir + "/quickview-toggle.sh' --no-reload"])
       }
 
   function syncTrackpadGestures() {
@@ -1074,6 +1105,18 @@ Item {
       ScrollFeelModel.ignoreListForMode(root.saved.scrollIgnoreMode),
       root.scrollIgnoreSupported)
     if (statement) Quickshell.execDetached(["hyprctl", "eval", statement])
+    root.applyMouseScrollFeel(true)
+    root.writeLua()
+    root.savePrefs()
+    if (!quiet) root.statusMessage = root.t(root.uiLang, "scrollFeelApplied")
+  }
+
+  function applyMouseScrollFeel(quiet) {
+    if (!root.mouseScrollPatchSupported) return
+    root.saved.mouseScrollFeelEnabled = root.mouseScrollFeelEnabled
+    var statement = ScrollFeelModel.mouseLuaConfigStatement(root.mouseScrollFeelEnabled,
+      root.scrollAccelProfile, root.scrollAccelSpeed, root.scrollAccelMax, root.scrollDecel)
+    if (statement) Quickshell.execDetached(["hyprctl", "eval", statement])
     root.writeLua()
     root.savePrefs()
     if (!quiet) root.statusMessage = root.t(root.uiLang, "scrollFeelApplied")
@@ -1156,8 +1199,20 @@ Item {
       root.scrollPatchProbed = true
       root.scrollPatchSupported = ScrollFeelModel.supportsPatchFromProbe(
         scrollProbeProc.stdout.text, exitCode)
-      if (root.scrollPatchSupported && !scrollStateProc.running)
-        scrollStateProc.running = true
+      if (root.scrollPatchSupported) {
+        if (!scrollStateProc.running) scrollStateProc.running = true
+        if (!mouseScrollProbeProc.running) mouseScrollProbeProc.running = true
+      }
+    }
+  }
+
+  Process {
+    id: mouseScrollProbeProc
+    command: ["hyprctl", "getoption", "input:mouse:scroll_decel", "-j"]
+    stdout: StdioCollector { waitForEnd: true }
+    onExited: function(exitCode) {
+      root.mouseScrollPatchSupported = ScrollFeelModel.supportsPatchFromProbe(
+        mouseScrollProbeProc.stdout.text, exitCode)
     }
   }
 
@@ -1445,6 +1500,20 @@ Item {
       }
     }
     return map
+  }
+
+  // The persistent bar hotplug helper restores the active profile's map, not
+  // the transient panel state. Save a user-confirmed layout here so reconnecting
+  // HDMI restores the latest manual left/right order rather than the map from
+  // when the profile was first created.
+  function saveActiveProfileDisplayMap() {
+    if (!root.profilesLoaded || !root.activeProfileId) return
+    var map = root.currentDisplayMap()
+    if (!Object.keys(map).length) return
+    var result = ProfileModel.saveDisplayMap(root.profiles, root.activeProfileId, map)
+    if (!result.found) return
+    root.profiles = result.profiles
+    root.saveProfiles()
   }
 
   function currentSettings() {
@@ -1810,12 +1879,15 @@ Item {
       workspaceIndicatorMode = WorkspaceModel.normalizeIndicatorMode(d.workspaceIndicatorMode)
       workspaceIndicatorPadding = Math.max(0, Math.min(4,
         d.workspaceIndicatorPadding === undefined ? 4 : Math.round(Number(d.workspaceIndicatorPadding))))
+      workspaceNumeralStyle = WorkspaceModel.normalizeNumeralStyle(d.workspaceNumeralStyle)
       missionControlEnabled = d.missionControlEnabled === true
       devMode = d.devMode === true
       trackpadFeelConfigured = d.trackpadFeelConfigured === true
       saved.trackpadFeelConfigured = trackpadFeelConfigured
       scrollFeelConfigured = d.scrollFeelConfigured === true
       saved.scrollFeelConfigured = scrollFeelConfigured
+      mouseScrollFeelEnabled = d.mouseScrollFeelEnabled === true
+      saved.mouseScrollFeelEnabled = mouseScrollFeelEnabled
       scrollIgnoreMode = ScrollFeelModel.clampIgnoreMode(d.scrollIgnoreMode)
       saved.scrollIgnoreMode = scrollIgnoreMode
       if (scrollFeelConfigured) {
@@ -1866,7 +1938,7 @@ Item {
   }
 
   function savePrefs() {
-    var visuals = WorkspaceModel.workspaceVisualMap(displays, singleMonitorWorkspaces, multiMonitorWorkspaces, monitorColors, savedWorkspaceVisuals)
+    var visuals = WorkspaceModel.workspaceVisualMap(displays, singleMonitorWorkspaces, multiMonitorWorkspaces, monitorColors)
     prefsFile.setText(JSON.stringify({
       swipe3: swipe3On,
       inertia: inertiaOn,
@@ -1879,6 +1951,7 @@ Item {
       monitorColors: monitorColors,
       workspaceIndicatorMode: workspaceIndicatorMode,
       workspaceIndicatorPadding: workspaceIndicatorPadding,
+      workspaceNumeralStyle: workspaceNumeralStyle,
       missionControlEnabled: missionControlEnabled,
       devMode: devMode,
       trackpadFeelConfigured: trackpadFeelConfigured,
@@ -1888,6 +1961,7 @@ Item {
       scrollAccelSpeed: scrollAccelSpeed,
       scrollAccelMax: scrollAccelMax,
       scrollDecel: scrollDecel,
+      mouseScrollFeelEnabled: mouseScrollFeelEnabled,
       trackpadSensitivity: trackpadSensitivity,
       trackpadScrollFactor: trackpadScrollFactor,
       trackpadAccelProfile: trackpadAccelProfile,
@@ -1898,8 +1972,8 @@ Item {
     savedWorkspaceVisuals = visuals
   }
 
-  // The last workspace→monitor map we wrote; keeps each display pinned to its
-  // range across saves (position changes must not renumber workspaces).
+  // The last map persisted to preferences; ranges are recomputed from physical
+  // monitor order whenever settings are saved.
   property var savedWorkspaceVisuals: ({})
 
   property FileView prefsFile: FileView {
@@ -2417,6 +2491,7 @@ Item {
         // applyDisplayMap before the apply), so just persist it.
         root.saved.displays = DisplayModel.clone(root.displays)
         root.displayConfirmedState = DisplayModel.clone(root.displays)
+        root.saveActiveProfileDisplayMap()
         root.savePrefs()
       } else {
         root.displayRefresh(root.displayProcessError(displayInstantError.text, "Could not apply display settings"))
@@ -3079,6 +3154,16 @@ Item {
               opacity: root.scrollPatchSupported ? 0.66 : 1
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
+            }
+
+            ToggleRow {
+              label: root.t(root.uiLang, "scrollFeelMouseWheel")
+              checked: root.mouseScrollFeelEnabled
+              enabled: root.mouseScrollPatchSupported
+              onClicked: {
+                root.mouseScrollFeelEnabled = !root.mouseScrollFeelEnabled
+                root.applyMouseScrollFeel(false)
+              }
             }
 
             Button {
@@ -3820,6 +3905,15 @@ Item {
               if (root.identifyAllDisplays) identifyAllTimer.restart()
             }
           }
+          Button {
+            Layout.alignment: Qt.AlignVCenter
+            text: root.t(root.uiLang, "saveDisplayLayout")
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            bordered: true
+            enabled: root.displayValidLayout && !root.displayApplying && !root.displayAwaitingConfirmation
+            onClicked: root.displaySave()
+          }
         }
 
         PanelSeparator { foreground: root.fg }
@@ -4056,6 +4150,30 @@ Item {
                 snapMode: Slider.SnapAlways
                 value: root.workspaceIndicatorPadding
                 onMoved: root.setWorkspaceIndicatorPadding(value)
+              }
+            }
+          }
+
+          Text {
+            text: root.t(root.uiLang, "workspaceNumerals")
+            color: Qt.darker(root.fg, 1.4)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            font.bold: true
+          }
+
+          Flow {
+            width: parent.width
+            spacing: Style.space(8)
+            Repeater {
+              model: WorkspaceModel.numeralStyles
+              Button {
+                required property string modelData
+                text: WorkspaceModel.numeralPreview(modelData)
+                foreground: root.fg
+                bordered: true
+                selected: root.workspaceNumeralStyle === modelData
+                onClicked: root.setWorkspaceNumeralStyle(modelData)
               }
             }
           }

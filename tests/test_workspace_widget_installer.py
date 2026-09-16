@@ -24,7 +24,11 @@ class WorkspaceWidgetInstallerTests(unittest.TestCase):
                 }},
             }
             config_path.write_text(json.dumps(original), encoding="utf-8")
-            env = dict(os.environ, OMARCHY_SHELL_CONFIG=str(config_path))
+            prefs_path = Path(temporary) / "prefs.json"
+            prefs_path.write_text("{}", encoding="utf-8")
+            env = dict(os.environ,
+                       OMARCHY_SHELL_CONFIG=str(config_path),
+                       OMARCHY_CONTROL_PANEL_PREFS=str(prefs_path))
             env["OMARCHY_MODULE_DIR"] = str(Path(temporary) / "modules")
 
             first = subprocess.run([str(HELPER)], env=env, check=True, text=True, capture_output=True)
@@ -56,6 +60,7 @@ class WorkspaceWidgetInstallerTests(unittest.TestCase):
             source = root / "workspace-colors.qml"
             source.write_text("import QtQuick\nItem { property string version: 'one' }\n", encoding="utf-8")
             (root / "ThemePalette.js").write_text(".pragma library\n", encoding="utf-8")
+            (root / "WorkspaceNumerals.js").write_text(".pragma library\n", encoding="utf-8")
             config_path = Path(temporary) / "shell.json"
             config_path.write_text(json.dumps({"version": 1, "bar": {"layout": {
                 "left": [{"id": "omarchy.workspaces"}], "center": [], "right": []
@@ -75,6 +80,7 @@ class WorkspaceWidgetInstallerTests(unittest.TestCase):
             self.assertFalse((Path(env["OMARCHY_MODULE_DIR"]) / first_id).exists())
             self.assertTrue((Path(env["OMARCHY_MODULE_DIR"]) / second_id / "workspacescolored.qml").is_file())
             self.assertTrue((Path(env["OMARCHY_MODULE_DIR"]) / second_id / "ThemePalette.js").is_file())
+            self.assertTrue((Path(env["OMARCHY_MODULE_DIR"]) / second_id / "WorkspaceNumerals.js").is_file())
 
     def test_sync_settings_updates_the_live_module_entry(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -86,6 +92,7 @@ class WorkspaceWidgetInstallerTests(unittest.TestCase):
             prefs_path.write_text(json.dumps({
                 "workspaceIndicatorMode": "rounded",
                 "workspaceIndicatorPadding": 2,
+                "workspaceNumeralStyle": "roman",
                 "workspaceVisuals": {"1": {"colorRole": "orange"}},
             }), encoding="utf-8")
             env = dict(os.environ,
@@ -95,12 +102,14 @@ class WorkspaceWidgetInstallerTests(unittest.TestCase):
             prefs_path.write_text(json.dumps({
                 "workspaceIndicatorMode": "square",
                 "workspaceIndicatorPadding": 4,
+                "workspaceNumeralStyle": "arabic",
                 "workspaceVisuals": {},
             }), encoding="utf-8")
             subprocess.run([str(HELPER)], env=env, check=True, capture_output=True)
             prefs_path.write_text(json.dumps({
                 "workspaceIndicatorMode": "rounded",
                 "workspaceIndicatorPadding": 2,
+                "workspaceNumeralStyle": "roman",
                 "workspaceVisuals": {"1": {"colorRole": "orange"}},
             }), encoding="utf-8")
             result = subprocess.run([str(HELPER), "--sync-settings"], env=env,
@@ -109,10 +118,12 @@ class WorkspaceWidgetInstallerTests(unittest.TestCase):
             self.assertTrue(json.loads(result.stdout)["changed"])
             self.assertEqual(entry["workspaceIndicatorMode"], "rounded")
             self.assertEqual(entry["workspaceIndicatorPadding"], 2)
+            self.assertEqual(entry["workspaceNumeralStyle"], "roman")
             self.assertEqual(entry["workspaceVisuals"]["1"]["colorRole"], "orange")
             self.assertEqual(entry["settings"], {
                 "workspaceIndicatorMode": "rounded",
                 "workspaceIndicatorPadding": 2,
+                "workspaceNumeralStyle": "roman",
                 "workspaceVisuals": {"1": {"colorRole": "orange"}},
             })
 

@@ -122,6 +122,19 @@ function luaConfigStatement(profile, speed, max, decel, ignoreClasses, includeIg
   return stmt + " } } })"
 }
 
+// Physical wheel scrolling remains native until the user opts in. The selected
+// feel is shared with the touchpad so both devices remain predictable.
+function mouseLuaConfigStatement(enabled, profile, speed, max, decel) {
+  var p = enabled ? clampProfile(profile) : 0
+  if (enabled && p !== Math.round(Number(profile))) return ""
+  return "hl.config({ input = { mouse = {"
+    + " scroll_accel_profile = " + p
+    + ", scroll_accel_speed = " + clampSpeed(speed).toFixed(2)
+    + ", scroll_accel_max = " + clampMax(max).toFixed(2)
+    + ", scroll_decel = " + (enabled ? clampDecel(decel) : 0)
+    + " } } })"
+}
+
 // Window classes that ship their own touchpad scroll inertia and therefore
 // feel "doubly inert" when the patch also accelerates/coasts them.
 var ignoreClassesBrowsers = "google-chrome,chromium,firefox,brave-browser,microsoft-edge,vivaldi,kitty"

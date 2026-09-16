@@ -5,6 +5,7 @@ import Quickshell.Hyprland
 import Quickshell.Io
 import qs.Commons
 import "ThemePalette.js" as ThemePalette
+import "WorkspaceNumerals.js" as WorkspaceModel
 
 Item {
   id: root
@@ -16,6 +17,7 @@ Item {
   property var themeColors: ({})
   property string workspaceIndicatorMode: "none"
   property int workspaceIndicatorPadding: 4
+  property string workspaceNumeralStyle: "arabic"
   property bool prefsLoaded: false
   property string prefsPath: Quickshell.env("HOME") + "/.local/state/omarchy/control-panel-prefs.json"
   property string themePath: Quickshell.env("HOME") + "/.local/state/omarchy/current/theme/colors.toml"
@@ -46,6 +48,7 @@ Item {
       workspaceIndicatorMode = settings.workspaceIndicatorMode
     if (settings.workspaceIndicatorPadding !== undefined)
       workspaceIndicatorPadding = Math.max(0, Math.min(4, Math.round(Number(settings.workspaceIndicatorPadding))))
+    workspaceNumeralStyle = WorkspaceModel.normalizeNumeralStyle(settings.workspaceNumeralStyle)
     if (settings.workspaceVisuals && typeof settings.workspaceVisuals === "object")
       workspaceVisuals = settings.workspaceVisuals
   }
@@ -61,18 +64,20 @@ Item {
         ? data.workspaceIndicatorMode : "none"
       workspaceIndicatorPadding = Math.max(0, Math.min(4,
         data.workspaceIndicatorPadding === undefined ? 4 : Math.round(Number(data.workspaceIndicatorPadding))))
+      workspaceNumeralStyle = WorkspaceModel.normalizeNumeralStyle(data.workspaceNumeralStyle)
       prefsLoaded = true
     } catch (e) {
       workspaceVisuals = ({})
       workspaceIndicatorMode = "none"
       workspaceIndicatorPadding = 4
+      workspaceNumeralStyle = "arabic"
     }
   }
 
   function workspaceById(id) {
     var values = Hyprland.workspaces.values
     for (var i = 0; i < values.length; i++) {
-      if (values[i].id === id) return values[i]
+      if (WorkspaceModel.workspaceNumber(values[i]) === id) return values[i]
     }
     return null
   }
@@ -86,55 +91,45 @@ Item {
   // Name of the monitor a live workspace currently sits on ("" if unknown).
   function liveMonitorOf(ws) {
     var mon = ws && ws.monitor
-    return mon ? String(mon.name || "") : ""
+    return mon ? String(mon.name || mon || "") : ""
+  }
+
+  function focusedWorkspaceNumber() {
+    return WorkspaceModel.workspaceNumber(Hyprland.focusedWorkspace)
+  }
+
+  // All shaped indicators use the same extent for the active numeral style.
+  // Roman labels such as III/VII/VIII must never resize individual boxes.
+  function uniformIndicatorExtent() {
+    var widest = numberMetrics.height
+    var ids = workspaceIds()
+    for (var i = 0; i < ids.length; i++) {
+      var width = numberMetrics.advanceWidth(
+        WorkspaceModel.formatWorkspaceNumber(ids[i], workspaceNumeralStyle))
+      widest = Math.max(widest, width)
+    }
+    return Math.min(barSize, Math.ceil(widest + 2 * workspaceIndicatorPadding))
   }
 
   function workspaceIds() {
     var ids = []
     var values = Hyprland.workspaces.values
-    var i, id
+    var i, id, key
 
-    var hasMapping = false
-    for (var k in workspaceVisuals) { hasMapping = true; break }
-
-    if (screenName !== "" && hasMapping) {
-      // Each bar shows only the workspaces assigned to ITS monitor — never a
-      // duplicate of the full set on every bar.
-      for (var key in workspaceVisuals) {
-        var v = workspaceVisuals[key]
-        var n = Number(key)
-        if (v && v.monitor === screenName && isFinite(n)) ids.push(n)
-      }
-      // Live workspaces sitting on this screen that the map does not know
-      // yet (e.g. hotplug before the panel recomputed the mapping).
-      for (i = 0; i < values.length; i++) {
-        id = values[i].id
-        if (id > 0 && id <= 10 && ids.indexOf(id) === -1 && liveMonitorOf(values[i]) === screenName)
-          ids.push(id)
-      }
-      if (ids.length > 0) {
-        ids.sort(function(a, b) { return a - b })
-        return ids
-      }
-      // Mapping exists but knows nothing about this screen (new monitor):
-      // fall through to live data only, so this bar is not a duplicate.
-      for (i = 0; i < values.length; i++) {
-        id = values[i].id
-        if (id > 0 && id <= 10 && ids.indexOf(id) === -1 && liveMonitorOf(values[i]) === screenName)
-          ids.push(id)
-      }
-      if (ids.length > 0) {
-        ids.sort(function(a, b) { return a - b })
-        return ids
-      }
+    // Every bar shows the complete workspace strip. Colors retain the monitor
+    // association, while the persisted map keeps 1…N in physical monitor order.
+    for (key in workspaceVisuals) {
+      id = Number(key)
+      if (isFinite(id) && id > 0 && Math.floor(id) === id && ids.indexOf(id) === -1)
+        ids.push(id)
     }
-
-    // Legacy fallback: no mapping (first run) — default set plus live extras.
-    ids = [1, 2, 3, 4, 5]
+    // Include dynamically-created numbered workspaces before the panel has a
+    // chance to persist their mapping.
     for (i = 0; i < values.length; i++) {
-      id = values[i].id
-      if (id > 0 && id <= 10 && ids.indexOf(id) === -1) ids.push(id)
+      id = WorkspaceModel.workspaceNumber(values[i])
+      if (id > 0 && ids.indexOf(id) === -1) ids.push(id)
     }
+    if (ids.length === 0) ids = [1, 2, 3, 4, 5]
     ids.sort(function(a, b) { return a - b })
     return ids
   }
@@ -245,6 +240,13 @@ Item {
     onTriggered: prefsFile.reload()
   }
 
+  FontMetrics {
+    id: numberMetrics
+    font.family: root.bar ? root.bar.fontFamily : "monospace"
+    font.pixelSize: Style.font.body
+    font.bold: true
+  }
+
   GridLayout {
     id: grid
     anchors.fill: parent
@@ -261,15 +263,15 @@ Item {
         required property int modelData
         readonly property var workspace: root.workspaceById(modelData)
         readonly property bool occupied: workspace !== null && workspace.toplevels.values.length > 0
-        readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
+        readonly property bool focused: root.focusedWorkspaceNumber() === modelData
         readonly property var workspaceVisual: root.visual(modelData)
         readonly property color workspaceColor: root.themeColor(workspaceVisual.colorRole || workspaceVisual.color) || root.fallbackColor
         readonly property string indicatorMode: root.workspaceIndicatorMode
-        readonly property int indicatorExtent: Math.min(root.barSize,
-          Math.ceil(Math.max(numberLabel.implicitWidth, numberLabel.implicitHeight) + 2 * root.workspaceIndicatorPadding))
+        readonly property int indicatorExtent: root.uniformIndicatorExtent()
 
         implicitWidth: root.vertical ? root.barSize
-          : indicatorMode !== "none" ? indicatorExtent : Style.space(20)
+          : indicatorMode !== "none" ? indicatorExtent
+          : Math.ceil(numberLabel.implicitWidth + 2 * root.workspaceIndicatorPadding)
         implicitHeight: root.barSize
         opacity: occupied || focused ? 1 : 0.48
 
@@ -281,15 +283,15 @@ Item {
           radius: delegate.indicatorMode === "square" ? 0
             : delegate.indicatorMode === "circle" ? Math.min(width, height) / 2
             : delegate.indicatorMode === "rounded" ? Math.max(4, Math.min(width, height) / 4) : 0
-          color: delegate.indicatorMode !== "none" && delegate.focused ? delegate.workspaceColor : "transparent"
+          color: delegate.focused ? delegate.workspaceColor : "transparent"
           border.color: delegate.workspaceColor
           border.width: delegate.indicatorMode !== "none" && !delegate.focused ? 1 : 0
 
           Text {
             id: numberLabel
             anchors.centerIn: parent
-            text: delegate.focused ? "\uDB85\uDCFB" : (delegate.modelData === 10 ? "0" : String(delegate.modelData))
-            color: delegate.indicatorMode !== "none" && delegate.focused ? "#101014" : delegate.workspaceColor
+            text: WorkspaceModel.formatWorkspaceNumber(delegate.modelData, root.workspaceNumeralStyle)
+            color: delegate.focused ? "#101014" : delegate.workspaceColor
             font.family: root.bar ? root.bar.fontFamily : "monospace"
             font.pixelSize: Style.font.body
             font.bold: true

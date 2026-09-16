@@ -13,7 +13,7 @@ assert.match(installer, new RegExp(`git -C "\\$SRC_DIR" checkout -q --detach ${p
 
 assert.match(core, /import "ScrollFeelModel\.js" as ScrollFeelModel/);
 for (const property of ['scrollAccelProfile', 'scrollAccelSpeed', 'scrollAccelMax',
-  'scrollDecel', 'scrollFeelConfigured', 'scrollPatchSupported'])
+  'scrollDecel', 'mouseScrollFeelEnabled', 'scrollFeelConfigured', 'scrollPatchSupported'])
   assert.match(core, new RegExp(`property (?:int|real|bool) ${property}:`), `${property} state missing`);
 
 // Setters must refuse to run on an unpatched compositor.
@@ -36,6 +36,10 @@ assert.match(core, /ScrollFeelModel\.profileForMode\(saved\.scrollIgnoreMode, sa
   'writeLua must resolve the effective profile from the ignore mode');
 assert.match(core, /ScrollFeelModel\.ignoreListForMode\(saved\.scrollIgnoreMode\)/,
   'writeLua must emit the mode ignore list');
+assert.match(core, /mouseLuaConfigStatement\(\s*saved\.mouseScrollFeelEnabled === true/,
+  'writeLua must persist the opt-in physical mouse-wheel setting');
+assert.match(core, /if \(root\.mouseScrollPatchSupported\) \{[\s\S]*?mouseLuaConfigStatement/,
+  'writeLua must never emit mouse keys on an older touchpad-only patch build');
 assert.ok(core.includes('case \\"$l\\" in *scroll_accel*|*scroll_decel*|*scroll_ignore*) continue;; esac;'),
   'reapplySaved must skip scroll-patch lines during replay');
 
@@ -67,9 +71,15 @@ assert.match(core, /model: ScrollFeelModel\.presetIds\(\)/, 'preset selector mis
 assert.match(core, /model: ScrollFeelModel\.ignoreModes/, 'ignore-mode selector missing');
 assert.match(core, /onClicked: root\.updateScrollIgnoreMode\(modelData\)/,
   'ignore-mode buttons must apply live');
+assert.match(core, /scrollFeelMouseWheel[\s\S]*?root\.applyMouseScrollFeel\(false\)/,
+  'mouse-wheel toggle must apply live');
+assert.match(core, /enabled: root\.mouseScrollPatchSupported/,
+  'mouse-wheel toggle must remain disabled until the mouse patch capability probes true');
 assert.match(core, /onMoved: root\.updateScrollFeel\(root\.scrollAccelProfile, value,\s*root\.scrollAccelMax, root\.scrollDecel, true\)/,
   'coast slider must apply live');
 assert.match(core, /scrollProbeProc/, 'capability probe process missing');
+assert.match(core, /id: mouseScrollProbeProc[\s\S]*?input:mouse:scroll_decel/,
+  'mouse patch capability probe missing');
 assert.match(core, /onExited: function\(exitCode\) \{\s*root\.scrollPatchProbed = true/,
   'probe must record support from the getoption exit code');
 
@@ -77,6 +87,8 @@ assert.match(core, /onExited: function\(exitCode\) \{\s*root\.scrollPatchProbed 
 // carry the scroll fields so nothing silently drops them.
 assert.match(core, /scrollFeelConfigured = d\.scrollFeelConfigured === true/,
   'prefs load must restore the configured flag');
+assert.match(core, /mouseScrollFeelEnabled = d\.mouseScrollFeelEnabled === true/,
+  'prefs load must restore the mouse-wheel opt-in');
 assert.match(core, /scrollIgnoreMode = ScrollFeelModel\.clampIgnoreMode\(d\.scrollIgnoreMode\)/,
   'prefs load must restore the ignore mode');
 assert.match(core, /root\.scrollIgnoreSupported\s*=\s*values\.ignoreSupported/,
@@ -87,6 +99,8 @@ assert.match(core, /enabled: root\.scrollIgnoreSupported/,
   'mode buttons must disable when the compositor lacks the ignore key');
 assert.match(core, /scrollFeelConfigured: scrollFeelConfigured,\s*scrollIgnoreMode: scrollIgnoreMode,\s*scrollAccelProfile: scrollAccelProfile/,
   'savePrefs must persist the scroll fields');
+assert.match(core, /mouseScrollFeelEnabled: mouseScrollFeelEnabled/,
+  'savePrefs must persist the mouse-wheel opt-in');
 assert.match(core, /scrollDecel: saved\.scrollDecel,/, 'currentSettings must include scroll values for profiles');
 
 // "Config like macOS" bundle: one click must flip every macOS-style toggle
@@ -112,6 +126,7 @@ assert.match(core, /onClicked: root\.applyMacOSConfig\(\)/,
 
 const keys = [
   'scrollFeelDevHint', 'scrollFeelTitle', 'scrollFeelSupported', 'scrollFeelUnsupported',
+  'scrollFeelMouseWheel',
   'scrollFeelNative', 'scrollFeelLinear', 'scrollFeelAdaptive', 'scrollFeelGlide', 'scrollFeelCustom',
   'scrollFeelDescriptionNative', 'scrollFeelDescriptionLinear', 'scrollFeelDescriptionAdaptive',
   'scrollFeelDescriptionGlide', 'scrollFeelDescriptionCustom',
