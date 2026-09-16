@@ -206,7 +206,7 @@ Item {
   property bool displayLoading: false
   property var monitorColors: ({})
   property var workspaceThemeColors: ({})
-  // Mission Control is rendered natively by MissionControl.qml.
+  // QuickView is rendered natively by the existing overview component.
   // Names of outputs seen on the last state read, used to detect a hotplugged
   // (newly connected) monitor and auto-arrange it.
   property var displayKnownNames: []
@@ -761,6 +761,32 @@ Item {
     var gi = saved.gapsIn >= 0 ? saved.gapsIn : 5
     var go = saved.gapsOut >= 0 ? saved.gapsOut : 10
     L.push("hl.config({ general = { gaps_in = " + gi + ", gaps_out = " + go + " } })")
+
+    // display-manager persists the applied arrangement in this generated file.
+    // Every other setting also rewrites the file, so retain the same exact
+    // output rules here; otherwise the rewrite deletes them and Hyprland's
+    // automatic reload falls back to monitors.lua a few seconds later.
+    var persistedDisplays = saved.displays && saved.displays.length
+      ? saved.displays : root.displays
+    if (persistedDisplays && persistedDisplays.length) {
+      L.push("-- Display layout")
+      for (var di = 0; di < persistedDisplays.length; di++) {
+        var d = persistedDisplays[di]
+        if (!d || !d.name) continue
+        var output = JSON.stringify(d.name)
+        if (d.disabled) {
+          L.push("hl.monitor({ output = " + output + ", disabled = true })")
+          continue
+        }
+        var mode = JSON.stringify(String(d.mode || "preferred").replace(/Hz$/, ""))
+        var position = JSON.stringify(Math.round(Number(d.x) || 0) + "x" + Math.round(Number(d.y) || 0))
+        var mirror = d.mirror ? ", mirror = " + JSON.stringify(d.mirror) : ""
+        L.push("hl.monitor({ output = " + output + ", mode = " + mode
+          + ", position = " + position + ", scale = " + (Number(d.scale) || 1)
+          + ", transform = " + (Number(d.transform) || 0) + mirror + " })")
+      }
+    }
+
     var workspacePlan = WorkspaceModel.assignments(
       saved.displays && saved.displays.length ? saved.displays : root.displays,
       saved.singleMonitorWorkspaces,
@@ -804,16 +830,9 @@ Item {
       }
     }
 
-    // Display layout is intentionally NOT written to control-panel.lua.
-    // Re-issuing hl.monitor on every `hyprctl reload` (triggered by sensei,
-    // Omarchy, or other plugins) forces Hyprland to recompute the workspace grid
-    // ("cells") and repositions windows — the "287 by 86 cells" jump bug. The
-    // monitor arrangement lives in saved.displays and is applied explicitly only
-    // by the display helper (user edits, profile apply, real hotplug), never by
-    // an implicit reload.
 
-    // When enabled, SUPER+W closes the active TAB in browsers (simulated Ctrl+W
-    // via wtype/ydotool) instead of killing the whole window. Outside browsers it
+    // When enabled, SUPER+W closes the active TAB in browsers (native Ctrl+W
+    // key states) instead of killing the whole window. Outside browsers it
     // falls back to closing the window normally. We unbind the default SUPER+W
     // first so the two don't collide/error.
     //
@@ -1386,15 +1405,22 @@ Item {
   // which closed the focused window in a loop. Applying it once here (and only
   // when the toggle changes) avoids that.
   function applySuperWBind() {
-    var scriptPath = root.binDir + "/close-tab-or-window.sh"
-    var lua = 'hl.unbind("SUPER + W"); hl.bind("SUPER + W", function() ' +
+    // A release-only bind leaves the original W press/repeat visible to clients.
+    // Kitty renders that leaked enhanced-keyboard event as "9;9u". Consume the
+    // press (and key-repeat) with a no-op bind; perform the action once on release.
+    var lua = 'hl.unbind("SUPER + W"); hl.bind("SUPER + W", function() end); hl.bind("SUPER + W", function() ' +
       'local ok, win = pcall(function() return hl.get_active_window() end) ' +
-      'local cls = "" ' +
-      'if ok and win and win.class then cls = string.lower(tostring(win.class)) end ' +
-      'local isBrowser = cls:match("chrome") or cls:match("chromium") or cls:match("firefox") or cls:match("edge") or cls:match("brave") or cls:match("opera") or cls:match("vivaldi") or cls:match("epiphany") or cls:match("gnome%-web") ' +
+      'local isBrowser = false ' +
+      'if ok and win then ' +
+      'for _, tag in ipairs(win.tags or {}) do ' +
+      'local clean = tostring(tag):gsub("%*$", "") ' +
+      'if clean == "chromium-based-browser" or clean == "firefox-based-browser" then isBrowser = true break end end ' +
+      'local cls = string.lower(tostring(win.class or win.initial_class or "")) ' +
+      'if cls:match("chrome") or cls:match("chromium") or cls:match("firefox") or cls:match("edge") or cls:match("brave") or cls:match("opera") or cls:match("vivaldi") or cls:match("epiphany") or cls:match("gnome%-web") then isBrowser = true end end ' +
       'if isBrowser and ' + (saved.browserCloseTab ? "true" : "false") + ' then ' +
-      'hl.dispatch(hl.dsp.exec_cmd(string.format("bash ' + scriptPath + ' %s &", cls))) ' +
-      'else hl.dispatch(hl.dsp.window.close()) end, { release = true })'
+      'hl.dispatch(hl.dsp.send_key_state({ mods = "CTRL", key = "W", state = "down" })) ' +
+      'hl.timer(function() hl.dispatch(hl.dsp.send_key_state({ mods = "CTRL", key = "W", state = "up" })) end, { timeout = 50, type = "oneshot" }) ' +
+      'else hl.dispatch(hl.dsp.window.close()) end end, { release = true })'
     Quickshell.execDetached(["hyprctl", "eval", lua])
   }
 
@@ -1480,16 +1506,19 @@ Item {
     ]
   }
 
-  // Build a { monitorName: {scale,mode,x,y,transform,disabled,mirror} } map of
-  // the current live layout. Used to persist the per-monitor display config
-  // inside a profile so it can be re-applied automatically on hotplug.
+  // Build a monitor-identity map. The connector name is retained as metadata,
+  // but profile layouts are keyed by the detected EDID fingerprint so a new
+  // monitor on an old HDMI/DP connector cannot inherit the wrong arrangement.
   function currentDisplayMap() {
     var map = {}
     var list = root.displays && root.displays.length ? root.displays : root.saved.displays
     for (var i = 0; i < list.length; i++) {
       var d = list[i]
       if (!d || !d.name) continue
-      map[d.name] = {
+      var identity = String(d.fingerprint || d.name)
+      map[identity] = {
+        name: d.name,
+        fingerprint: identity,
         scale: Number(d.scale) || 1,
         mode: d.mode || "preferred",
         x: Number(d.x) || 0,
@@ -1502,6 +1531,14 @@ Item {
     return map
   }
 
+  function currentDisplayTopology() {
+    var list = root.displays && root.displays.length ? root.displays : root.saved.displays
+    return list.filter(function(d) { return d && !d.disabled })
+      .map(function(d) { return String(d.fingerprint || d.name || "") })
+      .filter(function(identity) { return identity !== "" })
+      .sort().join("::")
+  }
+
   // The persistent bar hotplug helper restores the active profile's map, not
   // the transient panel state. Save a user-confirmed layout here so reconnecting
   // HDMI restores the latest manual left/right order rather than the map from
@@ -1510,7 +1547,8 @@ Item {
     if (!root.profilesLoaded || !root.activeProfileId) return
     var map = root.currentDisplayMap()
     if (!Object.keys(map).length) return
-    var result = ProfileModel.saveDisplayMap(root.profiles, root.activeProfileId, map)
+    var result = ProfileModel.saveDisplayLayout(root.profiles, root.activeProfileId,
+      root.currentDisplayTopology(), map)
     if (!result.found) return
     root.profiles = result.profiles
     root.saveProfiles()
@@ -1628,7 +1666,7 @@ Item {
     var changed = false
     for (var i = 0; i < copy.length; i++) {
       var d = copy[i]
-      var saved = map[d.name]
+      var saved = map[d.fingerprint] || map[d.name]
       if (!saved) continue
       if (saved.scale !== undefined && Number(saved.scale) !== Number(d.scale)) { d.scale = Number(saved.scale); changed = true }
       if (saved.mode !== undefined && saved.mode && saved.mode !== d.mode) { d.mode = saved.mode; changed = true }
@@ -1739,7 +1777,9 @@ Item {
     var s = p.settings
     root.activeProfileId = id
     saveProfiles()
-    if (s.displays) root.applyDisplayMap(s.displays)
+    var layout = s.displayLayouts && s.displayLayouts[root.currentDisplayTopology()]
+    if (layout) root.applyDisplayMap(layout)
+    else if (s.displays) root.applyDisplayMap(s.displays)
     else if (s.displayScale !== undefined) root.applyDisplayScaleInstant(s.displayScale)
     root.applyProfileSettings(id)
   }
@@ -1796,6 +1836,17 @@ Item {
     root.activeProfileId = id
     saveProfiles()
     root.statusMessage = root.t(root.uiLang, "profileSave") + " · " + result.name
+  }
+
+  function saveCurrentToActiveProfile() {
+    if (!root.activeProfileId) return
+    for (var i = 0; i < root.profiles.length; i++) {
+      if (root.profiles[i].id === root.activeProfileId && root.profiles[i].builtin) {
+        root.statusMessage = root.t(root.uiLang, "profileDuplicate")
+        return
+      }
+    }
+    root.saveCurrentToProfile(root.activeProfileId)
   }
 
   function deleteProfile(id) {
@@ -2360,8 +2411,8 @@ Item {
           var topologyChanged = root.displayKnownNames.length > 0
               && JSON.stringify(root.displayKnownNames.slice().sort()) !== JSON.stringify(currentNames.slice().sort())
           if (topologyChanged) {
-            // Re-apply the ACTIVE profile's per-monitor display config to any
-            // monitor that matches by name. This is what keeps a profile "sticky"
+            // Re-apply the ACTIVE profile's exact physical-monitor layout. This
+            // is what keeps a profile "sticky"
             // across hotplug: the saved scale/position/mode come back instead of
             // Hyprland's default. Runs before the snap-below so a profile's
             // explicit position wins over the auto-flush heuristic.
@@ -2369,17 +2420,29 @@ Item {
             for (var ai = 0; ai < root.profiles.length; ai++) {
               if (root.profiles[ai].id === root.activeProfileId) { activeP = root.profiles[ai]; break }
             }
-            if (activeP && activeP.settings && activeP.settings.displays) {
+            if (activeP && activeP.settings) {
               var byName = {}
-              for (var bi = 0; bi < parsed.length; bi++) byName[parsed[bi].name] = parsed[bi]
-              var dm = activeP.settings.displays
+              var byIdentity = {}
+              for (var bi = 0; bi < parsed.length; bi++) {
+                byName[parsed[bi].name] = parsed[bi]
+                byIdentity[String(parsed[bi].fingerprint || parsed[bi].name)] = parsed[bi]
+              }
+              var physicalTopology = parsed.filter(function(d) { return d && !d.disabled })
+                .map(function(d) { return String(d.fingerprint || d.name || "") })
+                .filter(function(identity) { return identity !== "" })
+                .sort().join("::")
+              var dm = activeP.settings.displayLayouts
+                && activeP.settings.displayLayouts[physicalTopology]
+              if (!dm) dm = activeP.settings.displays
+              if (!dm) dm = {}
               var replanned = parsed
               var replannedChanged = false
               for (var ki in dm) {
                 if (!dm.hasOwnProperty(ki)) continue
-                var live = byName[ki]
-                if (!live) continue
                 var sv = dm[ki]
+                var live = byIdentity[ki] || byName[ki]
+                  || (sv && sv.name ? byName[sv.name] : null)
+                if (!live) continue
                 if (sv.scale !== undefined && Number(sv.scale) !== Number(live.scale)) { live.scale = Number(sv.scale); replannedChanged = true }
                 if (sv.mode !== undefined && sv.mode && sv.mode !== live.mode) { live.mode = sv.mode; replannedChanged = true }
                 if (sv.x !== undefined && Number(sv.x) !== Number(live.x)) { live.x = Number(sv.x); replannedChanged = true }
@@ -2492,6 +2555,10 @@ Item {
         root.saved.displays = DisplayModel.clone(root.displays)
         root.displayConfirmedState = DisplayModel.clone(root.displays)
         root.saveActiveProfileDisplayMap()
+        // Workspace IDs are positional: after a display reordering, recompute
+        // ranges immediately so 1..N follow the new left/top-to-right/bottom
+        // arrangement instead of retaining the previous monitor assignment.
+        root.applyWorkspaceLayout(true)
         root.savePrefs()
       } else {
         root.displayRefresh(root.displayProcessError(displayInstantError.text, "Could not apply display settings"))
@@ -2734,6 +2801,13 @@ Item {
         visible: root.currentTab === 3
         spacing: Style.space(8)
 
+        RowLayout {
+          width: parent.width
+          Text { text: "󰌌"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title }
+          Text { Layout.fillWidth: true; text: root.t(root.uiLang, "kblang"); color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true }
+          Button { text: root.t(root.uiLang, "profileSave"); foreground: root.fg; bordered: true; enabled: root.activeProfileId !== "default" && root.activeProfileId !== "retina"; onClicked: root.saveCurrentToActiveProfile() }
+        }
+
         Text {
           width: parent.width
           text: root.t(root.uiLang, "sysLanguage") + " — " + (root.currentLocale || "?")
@@ -2888,6 +2962,33 @@ Item {
         Layout.fillWidth: true
         visible: root.currentTab === 0
         spacing: Style.space(10)
+
+        RowLayout {
+          width: parent.width - Style.space(12)
+          spacing: Style.space(12)
+          Text {
+            text: "󰍽"
+            color: root.fg
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.display
+          }
+          Text {
+            Layout.fillWidth: true
+            text: root.t(root.uiLang, "trackpad")
+            color: root.fg
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+            font.bold: true
+          }
+          Button {
+            text: root.t(root.uiLang, "profileSave")
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            bordered: true
+            enabled: root.activeProfileId !== "default" && root.activeProfileId !== "retina"
+            onClicked: root.saveCurrentToActiveProfile()
+          }
+        }
 
         Text {
           text: root.t(root.uiLang, "globalPointerSensitivity") + ": " + Number(root.cursorSensitivity).toFixed(2)
@@ -3419,6 +3520,13 @@ Item {
         visible: root.currentTab === 1
         spacing: Style.space(10)
 
+        RowLayout {
+          width: parent.width
+          Text { text: "󰖯"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title }
+          Text { Layout.fillWidth: true; text: root.t(root.uiLang, "windows"); color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true }
+          Button { text: root.t(root.uiLang, "profileSave"); foreground: root.fg; bordered: true; enabled: root.activeProfileId !== "default" && root.activeProfileId !== "retina"; onClicked: root.saveCurrentToActiveProfile() }
+        }
+
         Text {
           text: root.t(root.uiLang, "gapIn") + ": " + root.gapsIn + "px   ·   " + root.t(root.uiLang, "gapOut") + ": " + root.gapsOut + "px"
           color: root.fg
@@ -3565,6 +3673,13 @@ Item {
         visible: root.currentTab === 4
         spacing: Style.space(10)
 
+        RowLayout {
+          width: parent.width
+          Text { text: "󰍹"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title }
+          Text { Layout.fillWidth: true; text: root.t(root.uiLang, "devices"); color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true }
+          Button { text: root.t(root.uiLang, "profileSave"); foreground: root.fg; bordered: true; enabled: root.activeProfileId !== "default" && root.activeProfileId !== "retina"; onClicked: root.saveCurrentToActiveProfile() }
+        }
+
         Button {
           width: parent.width
           leftAlign: true
@@ -3686,6 +3801,12 @@ Item {
         RowLayout {
           Layout.fillWidth: true
           spacing: Style.space(12)
+          Text {
+            text: "󰆸"
+            color: root.fg
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+          }
           Text {
             Layout.fillWidth: true
             text: root.t(root.uiLang, "profiles")

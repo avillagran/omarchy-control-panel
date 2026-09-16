@@ -42,7 +42,7 @@ ShellRoot {
     function doResize() {
       if (!core) return
       var targetW = theme.windowWidth(win.screen ? win.screen.width : 1640)
-      var chromeH = header.implicitHeight + sectionTitle.implicitHeight + win.pad * 4 + theme.gap * 3
+      var chromeH = header.implicitHeight + win.pad * 4 + theme.gap * 2
       if (win.narrow) chromeH += sidebar.implicitHeight + theme.gap
       if (footer.visible) chromeH += footer.implicitHeight + theme.gap
       var targetH = theme.windowHeight(win.screen ? win.screen.height : 900, core.implicitHeight + chromeH)
@@ -275,17 +275,6 @@ ShellRoot {
             Layout.minimumWidth: 0
             Layout.minimumHeight: 0
             spacing: theme.gap
-            Text {
-              id: sectionTitle
-              Layout.fillWidth: true
-              Layout.minimumWidth: 0
-              text: core.currentTab >= 0 && core.currentTab < core.tabs.length ? core.tabs[core.currentTab].title : ""
-              color: theme.text
-              font.family: theme.fontUi
-              font.pixelSize: theme.body
-              font.bold: true
-              elide: Text.ElideRight
-            }
             Rectangle {
               Layout.fillWidth: true
               Layout.fillHeight: true

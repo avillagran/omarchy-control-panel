@@ -44,7 +44,12 @@ function saveSettings(profiles, id, settings) {
   var list = clone(profiles || [])
   for (var i = 0; i < list.length; i++) {
     if (list[i].id === id) {
-      list[i].settings = clone(settings)
+      var next = clone(settings)
+      // Section headers save current input/window settings. They must not erase
+      // layouts saved for other physical monitor combinations.
+      if (next.displayLayouts === undefined && list[i].settings && list[i].settings.displayLayouts)
+        next.displayLayouts = clone(list[i].settings.displayLayouts)
+      list[i].settings = next
       return { profiles: list, found: true, name: list[i].name }
     }
   }
@@ -63,6 +68,27 @@ function saveDisplayMap(profiles, id, displays) {
       list[i].settings = settings
       return { profiles: list, found: true, name: list[i].name }
     }
+  }
+  return { profiles: list, found: false, name: "" }
+}
+
+// A connector name is not a physical monitor identity. Store every layout
+// under the detected EDID-derived monitor combination, while retaining the
+// legacy map for older callers and a one-display fallback.
+function saveDisplayLayout(profiles, id, topology, displays) {
+  var list = clone(profiles || [])
+  var key = String(topology || "")
+  if (!key || !displays || typeof displays !== "object")
+    return { profiles: list, found: false, name: "" }
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].id !== id) continue
+    var settings = clone(list[i].settings || {})
+    var layouts = clone(settings.displayLayouts || {})
+    layouts[key] = clone(displays)
+    settings.displayLayouts = layouts
+    settings.displays = clone(displays)
+    list[i].settings = settings
+    return { profiles: list, found: true, name: list[i].name }
   }
   return { profiles: list, found: false, name: "" }
 }

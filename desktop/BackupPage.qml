@@ -424,8 +424,23 @@ ColumnLayout {
         }
         palette.highlight: theme.accent
     }
-    Heading {
-        text: root.t("backupWizardTitle")
+    RowLayout {
+        Layout.fillWidth: true
+        Text {
+            text: "󰆓"
+            color: theme.text
+            font.family: theme.fontUi
+            font.pixelSize: theme.body + 4
+        }
+        Heading {
+            Layout.fillWidth: true
+            text: root.t("backupWizardTitle")
+        }
+        Action {
+            Layout.fillWidth: false
+            text: root.t("backupStart")
+            onClicked: root.step = 0
+        }
     }
     Copy {
         text: root.t("backupStep") + " " + (root.step + 1) + " / 4 · " + root.t(["backupStart", "backupConnection", root.intent === "backup" ? "backupScope" : "backupSelectSnapshot", "backupReview"][root.step])
