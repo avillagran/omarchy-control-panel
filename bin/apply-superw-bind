@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+prefs="$HOME/.local/state/omarchy/control-panel-prefs.json"
+requested="${1:-}"
+
+case "$requested" in
+  true|false)
+    browser_close_tab="$requested"
+    force=1
+    ;;
+  "")
+    browser_close_tab=$(python3 - "$prefs" <<'PY'
+import json
+import os
+import sys
+
+path = sys.argv[1]
+value = True
+try:
+    st = os.lstat(path)
+    if not os.path.islink(path) and st.st_size <= 65536:
+        with open(path, "r", encoding="utf-8") as handle:
+            value = json.load(handle).get("browserCloseTab", True) is True
+except (FileNotFoundError, OSError, ValueError, TypeError, AttributeError):
+    pass
+print("true" if value else "false")
+PY
+)
+    force=0
+    ;;
+  *)
+    printf 'usage: %s [true|false]\n' "$0" >&2
+    exit 2
+    ;;
+esac
+
+# The bar widget runs this watchdog periodically. Avoid re-registering a release
+# bind while SUPER is held: only repair it when Hyprland no longer has both of
+# our consuming function callbacks (for example, after `hyprctl reload`).
+if (( force == 0 )); then
+  bindings=$(hyprctl binds -j 2>/dev/null || true)
+  if printf '%s' "$bindings" | python3 -c '
+import json, sys
+try:
+    rows = json.load(sys.stdin)
+except (ValueError, TypeError):
+    raise SystemExit(1)
+matches = [row for row in rows
+           if str(row.get("key", "")).upper() == "W"
+           and int(row.get("modmask", 0)) == 64
+           and not bool(row.get("non_consuming", False))
+           and str(row.get("dispatcher", "")).startswith("function:")]
+raise SystemExit(0 if ({bool(row.get("release", False)) for row in matches} == {False, True}) else 1)
+'; then
+    exit 0
+  fi
+fi
+
+lua="hl.unbind(\"SUPER + W\"); hl.bind(\"SUPER + W\", function() end); hl.bind(\"SUPER + W\", function() local ok, win = pcall(function() return hl.get_active_window() end) local isBrowser = false if ok and win then for _, tag in ipairs(win.tags or {}) do local clean = tostring(tag):gsub(\"%*$\", \"\") if clean == \"chromium-based-browser\" or clean == \"firefox-based-browser\" then isBrowser = true break end end local cls = string.lower(tostring(win.class or win.initial_class or \"\")) if cls:match(\"chrome\") or cls:match(\"chromium\") or cls:match(\"firefox\") or cls:match(\"edge\") or cls:match(\"brave\") or cls:match(\"opera\") or cls:match(\"vivaldi\") or cls:match(\"epiphany\") or cls:match(\"gnome%-web\") then isBrowser = true end end if isBrowser and ${browser_close_tab} then hl.dispatch(hl.dsp.send_key_state({ mods = \"CTRL\", key = \"W\", state = \"down\" })) hl.timer(function() hl.dispatch(hl.dsp.send_key_state({ mods = \"CTRL\", key = \"W\", state = \"up\" })) end, { timeout = 50, type = \"oneshot\" }) else hl.dispatch(hl.dsp.window.close()) end end, { release = true })"
+
+last_error=""
+for _attempt in $(seq 1 20); do
+  if output=$(hyprctl eval "$lua" 2>&1); then
+    case "$output" in
+      *ok*) exit 0 ;;
+    esac
+  fi
+  last_error="$output"
+  sleep 0.25
+done
+
+printf 'Could not install SUPER+W binding: %s\n' "$last_error" >&2
+exit 1

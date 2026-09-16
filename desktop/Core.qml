@@ -830,32 +830,9 @@ Item {
       }
     }
 
-
-    // When enabled, SUPER+W closes the active TAB in browsers (native Ctrl+W
-    // key states) instead of killing the whole window. Outside browsers it
-    // falls back to closing the window normally. We unbind the default SUPER+W
-    // first so the two don't collide/error.
-    //
-    // FIXES (verified against the sensei/Hyprland rewrite):
-    //  - The browser branch used `os.execute("bash script &")`. Hyprland reaps its
-    //    own children, so the detached subprocess could be killed before wtype
-    //    delivered Ctrl+W — the tab never closed. We now launch it through
-    //    `hl.dsp.exec_cmd(...)`, the same exec dispatcher Omarchy uses for every
-    //    other keybind, which Hyprland manages as a real exec (not a reaped child).
-    //  - We pass the already-detected class as $1 so the script never re-reads the
-    //    active window (removes the focus/timing race between keypress and script).
-    //  - The non-browser branch used `hl.dispatch(hl.dsp.window.close())`, which
-    //    errors ("expected a dispatcher"). It is now `hl.dsp.window.close()` — the
-    //    current close dispatcher.
-    // NOTE: sensei.lua wraps hl.bind(keys:string, dispatcher, options) — passing a
-    // table as arg1 errors ("expected string, got table"), so use the string +
-    // function form, same as the rest of the config.
-    // SUPER+W bind is NOT written to the generated Lua. Re-issuing hl.bind on
-    // every plugin (re)load / hyprctl reload re-registers the key and, because it
-    // uses { release = true }, Hyprland fires the callback if SUPER is held when
-    // the bind is re-added — which closed the focused window in a loop. The bind
-    // is applied exactly once via applySuperWBind() (called from the settings
-    // toggles), never from the reloadable Lua.
+    // SUPER+W intentionally stays out of this reloadable Lua. The idempotent
+    // apply-superw-bind helper owns it: the bar widget ensures it at login and
+    // repairs it only when missing, while preference changes force an update.
 
     // When enabled, unbind the middle-mouse-button screenshot (mouse:274) that
     // the user.trackpad-gestures plugin defines — an uncomfortable combo for
@@ -1398,30 +1375,12 @@ Item {
         statusMessage = "Botón central · " + (on ? "desactivado" : "activado")
   }
 
-  // Apply the SUPER+W bind exactly once via a direct hyprctl eval. This must
-  // NOT go through the reloadable Lua: re-issuing hl.bind on every plugin
-  // (re)load / hyprctl reload re-registers the key, and with { release = true }
-  // Hyprland fires the callback if SUPER is held when the bind is re-added —
-  // which closed the focused window in a loop. Applying it once here (and only
-  // when the toggle changes) avoids that.
+  // Delegate SUPER+W to the idempotent startup helper. The always-running bar
+  // widget repairs a missing bind after login or Hyprland reload; this path
+  // forces an immediate update after preferences load or the toggle changes.
   function applySuperWBind() {
-    // A release-only bind leaves the original W press/repeat visible to clients.
-    // Kitty renders that leaked enhanced-keyboard event as "9;9u". Consume the
-    // press (and key-repeat) with a no-op bind; perform the action once on release.
-    var lua = 'hl.unbind("SUPER + W"); hl.bind("SUPER + W", function() end); hl.bind("SUPER + W", function() ' +
-      'local ok, win = pcall(function() return hl.get_active_window() end) ' +
-      'local isBrowser = false ' +
-      'if ok and win then ' +
-      'for _, tag in ipairs(win.tags or {}) do ' +
-      'local clean = tostring(tag):gsub("%*$", "") ' +
-      'if clean == "chromium-based-browser" or clean == "firefox-based-browser" then isBrowser = true break end end ' +
-      'local cls = string.lower(tostring(win.class or win.initial_class or "")) ' +
-      'if cls:match("chrome") or cls:match("chromium") or cls:match("firefox") or cls:match("edge") or cls:match("brave") or cls:match("opera") or cls:match("vivaldi") or cls:match("epiphany") or cls:match("gnome%-web") then isBrowser = true end end ' +
-      'if isBrowser and ' + (saved.browserCloseTab ? "true" : "false") + ' then ' +
-      'hl.dispatch(hl.dsp.send_key_state({ mods = "CTRL", key = "W", state = "down" })) ' +
-      'hl.timer(function() hl.dispatch(hl.dsp.send_key_state({ mods = "CTRL", key = "W", state = "up" })) end, { timeout = 50, type = "oneshot" }) ' +
-      'else hl.dispatch(hl.dsp.window.close()) end end, { release = true })'
-    Quickshell.execDetached(["hyprctl", "eval", lua])
+    Quickshell.execDetached(["bash", root.binDir + "/apply-superw-bind",
+      saved.browserCloseTab ? "true" : "false"])
   }
 
   function setBrowserCloseTab(on) {
@@ -1974,6 +1933,9 @@ Item {
       saved.middleButtonScreenshotOff = d.middleButtonScreenshotOff === true
       middleBtnOff = saved.middleButtonScreenshotOff
       prefsLoaded = true
+      // Preference loading is asynchronous. Bind only after it resolves so
+      // startup never installs the object default and waits for a manual toggle.
+      root.applySuperWBind()
       // Rewrite once after loading to migrate older prefs files with the new
       // workspace-topology fields, without dropping any existing values.
       if (needsPrefsMigration) Qt.callLater(root.savePrefs)
@@ -1985,7 +1947,10 @@ Item {
       // source of truth) and triggers the write itself once it's done.
       // Do not refresh here. reapplyProc serializes persisted replay -> live
       // read; starting readProc from this loader would reintroduce the race.
-    } catch (e) {}
+    } catch (e) {
+      prefsLoaded = true
+      root.applySuperWBind()
+    }
   }
 
   function savePrefs() {
@@ -2660,9 +2625,6 @@ Item {
     repeat: false
     onTriggered: {
       root.loadSavedState()
-      // Apply the SUPER+W bind once at load (direct eval, not via the reloadable
-      // Lua, to avoid the release-bind re-register loop that closed windows).
-      root.applySuperWBind()
     }
   }
 

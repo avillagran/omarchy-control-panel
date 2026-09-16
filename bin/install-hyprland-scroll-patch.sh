@@ -5,7 +5,7 @@
 # touchpad scroll acceleration + coast patch (plus opt-in physical mouse-wheel
 # inertia) TODAY, without waiting for the upstream PRs to merge:
 #
-#   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash
 #
 # What it does:
 #   1. Installs the omarchy-control-panel plugin (omarchy plugin add) and
@@ -34,7 +34,7 @@
 #
 # Removal:
 #
-#   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
 #
 # After installing or uninstalling, log out and back in for the change to take
 # effect (the compositor binary is chosen at session start).
@@ -44,11 +44,12 @@ set -euo pipefail
 PLUGIN_ID="io.github.avillagran.omarchy-control-panel"
 PANEL_REPO="https://github.com/avillagran/omarchy-control-panel.git"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+RELEASE_TAG="0.4"
 HYPRLAND_REPO="https://github.com/hyprwm/Hyprland.git"
 # Upstream commit the patch series was authored against (v0.56.0-190-g1b85c7aa).
 # The patches apply cleanly to exactly this tree; refresh both together.
 HYPRLAND_PIN="1b85c7aa1b5c41d906880f0f495bcd0749a23175"
-PATCH_BASE="https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/patches/hyprland"
+PATCH_BASE="https://raw.githubusercontent.com/avillagran/omarchy-control-panel/$RELEASE_TAG/patches/hyprland"
 PATCH_NAMES="0001-input-touchpad-scroll-acceleration-profiles.patch
 0002-input-fix-std-clamp-type-mismatch-in-scroll-accel-fl.patch
 0003-config-drop-input-refresh-from-scroll-accel-options.patch
@@ -188,19 +189,17 @@ plugin_installed_by_us=false
 if ! omarchy plugin list --json 2>/dev/null | grep -q "$PLUGIN_ID"; then
   omarchy plugin add "$PANEL_REPO" --yes
   plugin_installed_by_us=true
-else
-  # A safe rerun must update the panel too: otherwise the one-liner can build
-  # a new compositor patch while leaving an older plugin UI that cannot expose
-  # its controls. Never overwrite local plugin work; require a clean checkout
-  # and a fast-forward from the declared upstream instead.
-  [ -d "$PLUGIN_DIR/.git" ] || die "existing plugin at $PLUGIN_DIR is not a git checkout; update it manually before rerunning"
-  if ! git -C "$PLUGIN_DIR" diff --quiet || ! git -C "$PLUGIN_DIR" diff --cached --quiet; then
-    die "existing plugin at $PLUGIN_DIR has local changes; commit or stash them before rerunning"
-  fi
-  log "Updating the existing Control Panel plugin from origin/main ..."
-  git -C "$PLUGIN_DIR" fetch --depth 1 origin main
-  git -C "$PLUGIN_DIR" merge --ff-only FETCH_HEAD
 fi
+
+# Keep the script, plugin checkout and fallback patch downloads on one immutable
+# release. A rerun updates safely but never silently consumes unreleased main.
+[ -d "$PLUGIN_DIR/.git" ] || die "existing plugin at $PLUGIN_DIR is not a git checkout; update it manually before rerunning"
+if ! git -C "$PLUGIN_DIR" diff --quiet || ! git -C "$PLUGIN_DIR" diff --cached --quiet; then
+  die "existing plugin at $PLUGIN_DIR has local changes; commit or stash them before rerunning"
+fi
+log "Updating the Control Panel plugin to release $RELEASE_TAG ..."
+git -C "$PLUGIN_DIR" fetch --depth 1 origin "refs/tags/$RELEASE_TAG"
+git -C "$PLUGIN_DIR" merge --ff-only FETCH_HEAD
 
 log "Enabling the bar widget on the RIGHT side ..."
 omarchy plugin enable "$PLUGIN_ID" --section right
@@ -372,5 +371,5 @@ cat <<'EOF'
      and "Config like macOS".
 
 Removal:
-  curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
+  curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
 EOF
