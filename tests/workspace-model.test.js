@@ -28,28 +28,36 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(visual["5"])), { monitor: "eDP-
 assert.deepStrictEqual(JSON.parse(JSON.stringify(visual["6"])), { monitor: "HDMI-A-1", colorRole: "yellow" })
 assert.deepStrictEqual(JSON.parse(JSON.stringify(visual["10"])), { monitor: "HDMI-A-1", colorRole: "yellow" })
 
-// Moving a display in the layout must NOT renumber its workspaces: with a
-// previous map, each monitor keeps its range regardless of position.
+// Workspace ranges follow physical display order. Moving HDMI to the left
+// makes it own the first range; stacking uses y when x is equal.
 const swapped = [
   { name: "HDMI-A-1", x: 0, y: 0 },     // HDMI moved to the LEFT
   { name: "eDP-1", x: 2560, y: 0 }
 ]
-const pinned = context.workspaceVisualMap(swapped, 10, 5, {}, visual)
-assert.strictEqual(pinned["1"].monitor, "eDP-1", "eDP-1 must keep workspaces 1-5 after being moved right")
-assert.strictEqual(pinned["5"].monitor, "eDP-1")
-assert.strictEqual(pinned["6"].monitor, "HDMI-A-1", "HDMI-A-1 must keep workspaces 6-10 after being moved left")
-assert.strictEqual(pinned["10"].monitor, "HDMI-A-1")
+const reordered = context.workspaceVisualMap(swapped, 10, 5, {}, visual)
+assert.strictEqual(reordered["1"].monitor, "HDMI-A-1", "the left display owns workspaces 1-5")
+assert.strictEqual(reordered["5"].monitor, "HDMI-A-1")
+assert.strictEqual(reordered["6"].monitor, "eDP-1", "the right display owns workspaces 6-10")
+assert.strictEqual(reordered["10"].monitor, "eDP-1")
 
-// Without a previous map the ranges follow position (first run behavior).
+// This must also hold when no prior map exists.
 const fresh = context.workspaceVisualMap(swapped, 10, 5, {})
 assert.strictEqual(fresh["1"].monitor, "HDMI-A-1")
 assert.strictEqual(fresh["6"].monitor, "eDP-1")
 
-// A newly connected display appends after the claimed ranges.
+// A newly connected display at the right receives the final range.
 const three = swapped.concat([{ name: "DP-1", x: 5120, y: 0 }])
-const grown = context.workspaceVisualMap(three, 10, 5, {}, pinned)
-assert.strictEqual(grown["1"].monitor, "eDP-1")
-assert.strictEqual(grown["6"].monitor, "HDMI-A-1")
+const grown = context.workspaceVisualMap(three, 10, 5, {}, reordered)
+assert.strictEqual(grown["1"].monitor, "HDMI-A-1")
+assert.strictEqual(grown["6"].monitor, "eDP-1")
 assert.strictEqual(grown["11"].monitor, "DP-1", "new monitor takes the next free range")
 assert.strictEqual(grown["15"].monitor, "DP-1")
+
+const stacked = [
+  { name: "eDP-1", x: 180, y: 1440 },
+  { name: "HDMI-A-1", x: 0, y: 0 }
+]
+const vertical = context.workspaceVisualMap(stacked, 10, 5, {})
+assert.strictEqual(vertical["1"].monitor, "HDMI-A-1", "the top display owns the first range")
+assert.strictEqual(vertical["6"].monitor, "eDP-1", "the bottom display owns the final range")
 console.log("WorkspaceModel tests passed")

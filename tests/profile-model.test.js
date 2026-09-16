@@ -44,6 +44,27 @@ const saved = context.saveSettings(duplicated.profiles, "personal-101", { cursor
 assert.strictEqual(saved.found, true)
 assert.deepStrictEqual(plain(saved.profiles[4].settings), { cursorSize: 55, gapsIn: 8 })
 
+// A manual monitor realignment must update only the active profile's display
+// map. That map is the source used by the persistent hotplug helper after an
+// HDMI disconnect/reconnect, so it must not retain the old left/right order.
+const layoutBefore = [{
+  id: "desk", name: "Desk", builtin: false,
+  settings: { cursorSize: 42, displays: { "eDP-1": { x: 3648 }, "HDMI-A-1": { x: 1728 } } }
+}]
+const layoutAfter = context.saveDisplayMap(layoutBefore, "desk", {
+  "eDP-1": { x: 3648, y: 50, scale: 2 },
+  "HDMI-A-1": { x: 5376, y: 78, scale: 1 }
+})
+assert.strictEqual(layoutAfter.found, true)
+assert.strictEqual(layoutAfter.profiles[0].settings.cursorSize, 42,
+  "saving the layout must retain unrelated profile settings")
+assert.deepStrictEqual(plain(layoutAfter.profiles[0].settings.displays), {
+  "eDP-1": { x: 3648, y: 50, scale: 2 },
+  "HDMI-A-1": { x: 5376, y: 78, scale: 1 }
+})
+assert.strictEqual(layoutBefore[0].settings.displays["HDMI-A-1"].x, 1728,
+  "saving the layout must not mutate the previous profile snapshot")
+
 const renamedBuiltin = context.rename(saved.profiles, "default", "Broken")
 assert.strictEqual(renamedBuiltin.found, false)
 const renamed = context.rename(saved.profiles, "personal-101", "Windows-like")

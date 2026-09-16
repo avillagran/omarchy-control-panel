@@ -107,6 +107,7 @@ def sync_settings(config):
     settings = {
         "workspaceIndicatorMode": prefs.get("workspaceIndicatorMode", "none"),
         "workspaceIndicatorPadding": prefs.get("workspaceIndicatorPadding", 4),
+        "workspaceNumeralStyle": prefs.get("workspaceNumeralStyle", "arabic"),
         "workspaceVisuals": prefs.get("workspaceVisuals", {}),
     }
     changed = False
@@ -155,10 +156,13 @@ def main():
     }
     source = Path(__file__).resolve().parent.parent / "workspace-colors.qml"
     palette_source = source.parent / "ThemePalette.js"
-    if not source.is_file() or not palette_source.is_file():
+    numerals_source = source.parent / "WorkspaceNumerals.js"
+    if not source.is_file() or not palette_source.is_file() or not numerals_source.is_file():
         print(f"Cannot read widget sources in {source.parent}", file=sys.stderr)
         return 1
-    digest = hashlib.sha256(source.read_bytes() + palette_source.read_bytes()).hexdigest()[:12]
+    digest = hashlib.sha256(
+        source.read_bytes() + palette_source.read_bytes() + numerals_source.read_bytes()
+    ).hexdigest()[:12]
     module_id = f"{MODULE_PREFIX}-{digest}"
     module_dir = Path(os.environ.get("OMARCHY_MODULE_DIR", Path.home() / ".config/omarchy/bar/modules"))
     module = module_dir / module_id / f"{MODULE_PREFIX}.qml"
@@ -181,6 +185,10 @@ def main():
         temporary_palette = palette_module.with_suffix(".js.tmp")
         shutil.copyfile(palette_source, temporary_palette)
         os.replace(temporary_palette, palette_module)
+        numerals_module = module.parent / "WorkspaceNumerals.js"
+        temporary_numerals = numerals_module.with_suffix(".js.tmp")
+        shutil.copyfile(numerals_source, temporary_numerals)
+        os.replace(temporary_numerals, numerals_module)
         for candidate in module_dir.glob(f"{MODULE_PREFIX}*.qml"):
             candidate.unlink()
         for candidate in module_dir.glob(f"{MODULE_PREFIX}-*"):

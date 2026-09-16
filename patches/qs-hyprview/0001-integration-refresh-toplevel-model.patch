@@ -1,0 +1,67 @@
+From 1fdea0ac9faea585771d4da3680397e449285706 Mon Sep 17 00:00:00 2001
+Subject: [PATCH] integration: support current Hyprland workspace identity
+
+The Omarchy launcher starts qs-hyprview as a standalone Quickshell process.
+On Hyprland 0.56, numbered workspaces are represented by name/address rather
+than id. The upstream backend consequently drops every normal window. Refresh
+the model after startup and accept the current numbered workspace identity.
+
+---
+ services/HyprlandBackend.qml | 21 +++++++++++++++++++--
+ 1 file changed, 19 insertions(+), 2 deletions(-)
+
+diff --git i/services/HyprlandBackend.qml w/services/HyprlandBackend.qml
+index e73a3c4..4b794e2 100644
+--- i/services/HyprlandBackend.qml
++++ w/services/HyprlandBackend.qml
+@@ -12,6 +12,11 @@ QtObject {
+     signal thumbsInvalidated()
+
+     property bool active: false
++    // Hyprland's ObjectModel can be empty during the first event-loop turn
++    // after a standalone Quickshell shell starts. The upstream overview opens
++    // in that same turn, so retain a generation dependency and refresh while
++    // visible rather than permanently caching an empty window list.
++    property int refreshGeneration: 0
+
+     // Hyprland dims behind the overlay itself, through the dim_around
+     // layerrule documented in the README.
+@@ -29,15 +34,19 @@ QtObject {
+     }
+
+     readonly property var windows: {
++        var generation = refreshGeneration
+         var out = []
+
+         for (var toplevel of (rawToplevels || [])) {
+             var client = toplevel && toplevel.lastIpcObject ? toplevel.lastIpcObject : {}
+             var workspace = client.workspace ?? null
+-            var workspaceId = (workspace && workspace.id !== undefined) ? workspace.id : undefined
++            // Hyprland 0.56 exposes numbered workspaces as name/address rather
++            // than id. Resolve both forms and reject special workspaces without
++            // accidentally dropping every normal window on current Hyprland.
++            var workspaceId = workspace ? (Number(workspace.id) || Number(workspace.name)) : 0
+
+             // A window without a workspace is not mapped anywhere yet
+-            if (workspaceId === undefined || workspaceId === null) continue
++            if (!workspaceId || !Number.isInteger(workspaceId)) continue
+
+             var size = client.size ?? [0, 0]
+             var at = client.at ?? [-1000, -1000]
+@@ -66,6 +75,14 @@ QtObject {
+
+     function refresh() {
+         Hyprland.refreshToplevels()
++        refreshGeneration++
++    }
++
++    property Timer refreshTimer: Timer {
++        interval: 200
++        repeat: true
++        running: backend.active
++        onTriggered: backend.refresh()
+     }
+
+     function activateWindow(win) {
+--
+2.52.0

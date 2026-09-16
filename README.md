@@ -51,12 +51,14 @@ packages are not reinstalled, and staged configurations are not activated.
 Review restored data before applying it. See [the backup contract](docs/backup.md)
 for exclusions, format, recovery procedure, limitations and fixture-only tests.
 
-## Mission Control y parche de scroll
+## Mission Control and experimental scroll patch
 
-Mission Control is implemented directly in this plugin with Quickshell's native
-Wayland and toplevel APIs; it does not load a compositor plugin. It is inspired
-by the Mission Control interaction model and acknowledges [hymission](https://github.com/gfhdhytghd/hymission)
-as prior art. The window-card implementation here is original to this project.
+QuickView uses [qs-hyprview](https://github.com/dom0/qs-hyprview), authored by
+Domenico Martella ([dom0](https://github.com/dom0)), as its overview renderer.
+It remains a pinned GPL-3.0 submodule; this plugin owns only its launcher,
+gesture/key-binding integration, and Omarchy-specific extensions. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the pinned revision and
+license notice.
 
 The Trackpad tab includes **Scroll feel** presets and live sliders for touchpad
 scroll acceleration + coast. They are **Dev mode** features because they need a
@@ -66,6 +68,15 @@ patched Hyprland that is still under review:
   acceleration, coast and `scroll_ignore_classes`
 - [hyprwm/aquamarine#405](https://github.com/hyprwm/aquamarine/pull/405) — Wayland
   axis source propagation (only needed for nested testing)
+
+### Experimental physical mouse-wheel inertia
+
+The same Dev-mode card includes an opt-in **Apply to mouse wheel** switch. It
+enables the experimental acceleration and inertial coast behavior for physical
+mouse-wheel input using the patched Hyprland build. It is disabled by default:
+enable it only if the wheel feel works well with your mouse and applications.
+The switch uses dedicated `input:mouse:scroll_*` options, so it does not change
+the touchpad setting and is never written for stock Hyprland.
 
 You don't have to wait for the merge — and you don't depend on this repo's
 fork either. The patch ships as a git series in [`patches/hyprland/`](patches/hyprland);

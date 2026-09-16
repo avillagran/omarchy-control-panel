@@ -1,0 +1,3 @@
+[submodule "external/qs-hyprview"]
+	path = external/qs-hyprview
+	url = https://github.com/dom0/qs-hyprview.git

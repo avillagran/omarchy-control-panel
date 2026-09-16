@@ -106,4 +106,12 @@ assert.equal(context.luaConfigStatement(2, 1.0, 3.0, 600, 'kitty', false),
   'hl.config({ input = { touchpad = { scroll_accel_profile = 2, scroll_accel_speed = 1.00, scroll_accel_max = 3.00, scroll_decel = 600 } } })');
 assert.doesNotMatch(context.luaConfigStatement(2, 1.0, 3.0, 600, 'kitty', false), /scroll_ignore_classes/);
 
+// Physical mouse wheels are always opt-in. The generated statement is a
+// separate input:mouse block and fully disables acceleration/coasting at off.
+assert.equal(context.mouseLuaConfigStatement(false, 2, 1.0, 3.0, 600),
+  'hl.config({ input = { mouse = { scroll_accel_profile = 0, scroll_accel_speed = 1.00, scroll_accel_max = 3.00, scroll_decel = 0 } } })');
+assert.equal(context.mouseLuaConfigStatement(true, 2, 1.0, 3.0, 600),
+  'hl.config({ input = { mouse = { scroll_accel_profile = 2, scroll_accel_speed = 1.00, scroll_accel_max = 3.00, scroll_decel = 600 } } })');
+assert.equal(context.mouseLuaConfigStatement(true, 7, 1.0, 3.0, 600), '');
+
 console.log('ScrollFeelModel tests passed');

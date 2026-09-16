@@ -7,6 +7,16 @@ const loadProfiles = core.match(/function loadProfilesFromText\(raw\) \{([\s\S]*
 assert.ok(loadProfiles, 'profile loader must exist');
 assert.match(core, /var list = root\.displays && root\.displays\.length \? root\.displays : root\.saved\.displays/,
   'profile capture must use the current display layout');
+assert.match(core, /function saveActiveProfileDisplayMap\(\)[\s\S]*?ProfileModel\.saveDisplayMap\(root\.profiles, root\.activeProfileId, map\)/,
+  'a manual display apply must update the active profile map used by hotplug recovery');
+assert.match(core, /id:\s*displayInstantProc[\s\S]*?root\.saveActiveProfileDisplayMap\(\)/,
+  'the profile map must update only after an instant display apply succeeds');
+assert.match(core, /function displaySave\(\) \{[\s\S]*?displayApplyChanges\(\)/,
+  'Save must route through the existing safe preview/direct-apply decision');
+assert.match(core, /text:\s*root\.t\(root\.uiLang, "saveDisplayLayout"\)[\s\S]*?onClicked:\s*root\.displaySave\(\)/,
+  'the Displays header must expose an explicit Save action beside Identify');
+assert.match(core, /function displayKeep\(\)[\s\S]*?root\.saveActiveProfileDisplayMap\(\)/,
+  'keeping a previewed mode or orientation must also update the hotplug profile map');
 assert.match(core, /saved\.mirror !== undefined/,
   'profile display restore must include mirror state');
 
@@ -36,5 +46,10 @@ assert.match(core, /delete copy\[name\]/,
   'clicking the selected monitor color again must clear it');
 assert.match(core, /property string assignedColorRole:/,
   'display outlines must distinguish an explicit color from no selection');
+
+const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../desktop/i18n.json'), 'utf8'));
+for (const [lang, strings] of Object.entries(catalog)) {
+  assert.ok(strings.saveDisplayLayout, `${lang} requires the display Save translation`);
+}
 
 console.log('Panel startup and local backup device safety tests passed');
