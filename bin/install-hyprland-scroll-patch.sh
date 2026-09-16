@@ -2,8 +2,8 @@
 # install-hyprland-scroll-patch.sh
 #
 # One-liner that installs the Omarchy Control Panel AND lets you try the
-# touchpad scroll acceleration + coast patch TODAY, without waiting for the
-# upstream PRs to merge:
+# touchpad scroll acceleration + coast patch (plus opt-in physical mouse-wheel
+# inertia) TODAY, without waiting for the upstream PRs to merge:
 #
 #   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/main/bin/install-hyprland-scroll-patch.sh | bash
 #
@@ -43,6 +43,7 @@ set -euo pipefail
 
 PLUGIN_ID="io.github.avillagran.omarchy-control-panel"
 PANEL_REPO="https://github.com/avillagran/omarchy-control-panel.git"
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 HYPRLAND_REPO="https://github.com/hyprwm/Hyprland.git"
 # Upstream commit the patch series was authored against (v0.56.0-190-g1b85c7aa).
 # The patches apply cleanly to exactly this tree; refresh both together.
@@ -188,7 +189,17 @@ if ! omarchy plugin list --json 2>/dev/null | grep -q "$PLUGIN_ID"; then
   omarchy plugin add "$PANEL_REPO" --yes
   plugin_installed_by_us=true
 else
-  log "Plugin already installed; skipping add."
+  # A safe rerun must update the panel too: otherwise the one-liner can build
+  # a new compositor patch while leaving an older plugin UI that cannot expose
+  # its controls. Never overwrite local plugin work; require a clean checkout
+  # and a fast-forward from the declared upstream instead.
+  [ -d "$PLUGIN_DIR/.git" ] || die "existing plugin at $PLUGIN_DIR is not a git checkout; update it manually before rerunning"
+  if ! git -C "$PLUGIN_DIR" diff --quiet || ! git -C "$PLUGIN_DIR" diff --cached --quiet; then
+    die "existing plugin at $PLUGIN_DIR has local changes; commit or stash them before rerunning"
+  fi
+  log "Updating the existing Control Panel plugin from origin/main ..."
+  git -C "$PLUGIN_DIR" fetch --depth 1 origin main
+  git -C "$PLUGIN_DIR" merge --ff-only FETCH_HEAD
 fi
 
 log "Enabling the bar widget on the RIGHT side ..."

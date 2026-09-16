@@ -10,6 +10,12 @@ const pinnedCommit = installer.match(/^HYPRLAND_PIN="([0-9a-f]{40})"$/m)?.[1];
 assert.ok(pinnedCommit, 'scroll-patch installer must declare a full 40-character Hyprland commit');
 assert.match(installer, new RegExp(`git -C "\\$SRC_DIR" checkout -q --detach ${pinnedCommit}`),
   'scroll-patch installer must detached-checkout the literal pinned commit before building');
+assert.match(installer, /PLUGIN_DIR="\$HOME\/\.config\/omarchy\/plugins\/\$PLUGIN_ID"/,
+  'installer must locate an already-installed plugin for safe reruns');
+assert.match(installer, /git -C "\$PLUGIN_DIR" fetch --depth 1 origin main[\s\S]*?git -C "\$PLUGIN_DIR" merge --ff-only FETCH_HEAD/,
+  'a one-liner rerun must fast-forward a clean existing plugin to expose newly shipped controls');
+assert.match(installer, /has local changes; commit or stash them before rerunning/,
+  'a one-liner rerun must refuse to overwrite user plugin edits');
 
 assert.match(core, /import "ScrollFeelModel\.js" as ScrollFeelModel/);
 for (const property of ['scrollAccelProfile', 'scrollAccelSpeed', 'scrollAccelMax',
