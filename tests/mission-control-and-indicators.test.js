@@ -45,6 +45,11 @@ const rootPalette = fs.readFileSync(path.join(__dirname, '../ThemePalette.js'), 
 const desktopPalette = fs.readFileSync(path.join(__dirname, '../desktop/ThemePalette.js'), 'utf8');
 const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../desktop/i18n.json'), 'utf8'));
 
+assert.equal(catalog.en.missionControl, 'QuickView');
+assert.equal(catalog.es.missionControl, 'QuickView');
+assert.doesNotMatch(shell, /id:\s*sectionTitle/,
+  'the standalone content must not duplicate the icon/title/action section header');
+
 assert.match(core, /import "ThemePalette\.js" as ThemePalette/);
 assert.equal(desktopPalette, rootPalette);
 assert.match(core, /property string workspaceIndicatorMode:\s*"none"/);
@@ -60,6 +65,8 @@ assert.match(core, /id: applyOnLoadTimer[\s\S]*?onTriggered: \{[\s\S]*?root\.loa
   'the standalone window must read state on load rather than replay control-panel.lua');
 assert.doesNotMatch(core, /id: applyOnLoadTimer[\s\S]*?onTriggered: \{[\s\S]*?reapplySaved\(\)/,
   'opening the standalone panel must not reissue Hyprland configuration');
+assert.match(core, /id:\s*displayInstantProc[\s\S]*?root\.applyWorkspaceLayout\(true\)/,
+  'display reorders must immediately recalculate virtual-workspace output positions');
 
 assert.match(catalog.es.missionControlHint, /SUPER\+SHIFT\+↑/);
 assert.match(widget, /bar\.targetWindow \? bar\.targetWindow\(root\)/,
@@ -151,4 +158,4 @@ for (const lang of ['en', 'es']) {
     assert.ok(catalog[lang][key], `${lang} translation missing: ${key}`);
   }
 }
-console.log('Mission Control and workspace indicator tests passed');
+console.log('QuickView and workspace indicator tests passed');

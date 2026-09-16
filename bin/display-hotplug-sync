@@ -16,11 +16,22 @@ def load_json(path):
         return {}
 
 
-def active_display_map(profiles):
+def display_topology(current):
+    identities = [str(row.get("fingerprint") or row.get("name") or "")
+                  for row in current if not row.get("disabled")]
+    return "::".join(sorted(identity for identity in identities if identity))
+
+
+def active_display_map(profiles, current=None):
     active_id = profiles.get("activeProfileId")
     for profile in profiles.get("profiles", []):
         if profile.get("id") == active_id:
-            displays = profile.get("settings", {}).get("displays")
+            settings = profile.get("settings", {})
+            layouts = settings.get("displayLayouts")
+            topology = display_topology(current or [])
+            if isinstance(layouts, dict) and topology and isinstance(layouts.get(topology), dict):
+                return layouts[topology]
+            displays = settings.get("displays")
             return displays if isinstance(displays, dict) else {}
     return {}
 
@@ -31,7 +42,7 @@ def merge_layout(current, active_names, saved):
         name = display.get("name")
         if name not in active_names:
             continue
-        wanted = saved.get(name)
+        wanted = saved.get(display.get("fingerprint")) or saved.get(name)
         if not isinstance(wanted, dict):
             result.append(display)
             continue
@@ -62,14 +73,14 @@ def main():
     try:
         with lock_path.open("w", encoding="utf-8") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            saved = active_display_map(load_json(profiles_path))
+            current = run_json([str(display_manager), "state"])
+            saved = active_display_map(load_json(profiles_path), current)
             if not saved:
                 print(json.dumps({"ok": True, "changed": False, "reason": "no active profile display map"}))
                 return 0
 
             active = run_json(["hyprctl", "-j", "monitors"])
             active_names = {row.get("name") for row in active if row.get("name")}
-            current = run_json([str(display_manager), "state"])
             wanted = merge_layout(current, active_names, saved)
             if not wanted:
                 print(json.dumps({"ok": True, "changed": False, "reason": "no active displays"}))

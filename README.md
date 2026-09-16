@@ -15,15 +15,42 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   - 3-finger swipe to switch workspaces
 - **Animations**: system animations, workspace transition, flat pointer acceleration, speed/sensitivity
 - **Windows**: inner/outer gaps, font size, animations and workspace distribution
-- **Displays**: layout, resolution/refresh/orientation/scale, a color per monitor, and square/rounded/circle/none workspace indicators in the bar
+- **Displays**: layout, resolution/refresh/orientation/scale, a color per monitor, and square/rounded/circle/none workspace indicators in the bar. Profiles remember a separate layout for each physical monitor combination using EDID identity rather than connector names.
 - **Devices**: keyboard backlight, APFS (macOS disks)
-- **Mission Control**: native Control Panel overview with live window cards and workspace activation.
+- **QuickView (development)**: native Control Panel overview with live window cards and workspace activation, available from Dev mode.
 - **Keyboard & Language**: physical layout, system language
 - **Night light**, and more
 
+## What's new in 0.4
+
+- **Monitor-aware profile layouts**: each profile stores layouts by the exact
+  connected monitor combination (`make | model | serial`). Connecting another
+  display to the same HDMI/DisplayPort connector no longer applies geometry
+  belonging to a different monitor. Existing connector-based profiles remain
+  compatible.
+- **Reliable display persistence**: confirmed arrangements survive later
+  Trackpad, Windows, Keyboard, Device, and profile edits instead of reverting
+  when Hyprland reloads. Reordering displays also recalculates numbered
+  workspace ranges immediately.
+- **Save from every section**: section headers now use one icon/title/action
+  pattern, with direct saving to the active custom profile where applicable.
+- **Safe `SUPER+W` behavior**: Omarchy's Chromium/Firefox window tags identify
+  browsers reliably. Browser windows receive native `Ctrl+W` and close only the
+  active tab; other applications close normally. The binding consumes the
+  original key press and key-repeat, so terminals receive no escape-sequence
+  text while the shortcut is held.
+- **QuickView preview (Dev mode)**: a native workspace/window overview powered by the pinned
+  [qs-hyprview](https://github.com/dom0/qs-hyprview) project, with
+  Omarchy-specific launcher and integration patches kept separately.
+- **Experimental mouse-wheel inertia**: the patched Hyprland installer now
+  offers an independent opt-in for physical mouse-wheel acceleration and
+  coasting, without changing touchpad behavior.
+- **Safe installer reruns**: running the one-liner again updates an existing
+  plugin checkout instead of leaving an older installed revision in place.
+
 ## Backup and recovery (development)
 
-Backup, Network Devices, Mission Control and the SUPER+W browser override are development features hidden by default. Enable **Dev mode** from the Profiles title only when testing them.
+Backup, Network Devices, QuickView and the SUPER+W browser override are development features hidden by default. Enable **Dev mode** from the Profiles title only when testing them.
 
 The standalone desktop panel includes a Backup page, before Profiles, with
 independent configuration and file selections, preview/confirmation, snapshot
@@ -51,7 +78,7 @@ packages are not reinstalled, and staged configurations are not activated.
 Review restored data before applying it. See [the backup contract](docs/backup.md)
 for exclusions, format, recovery procedure, limitations and fixture-only tests.
 
-## Mission Control and experimental scroll patch
+## QuickView and experimental scroll patch
 
 QuickView uses [qs-hyprview](https://github.com/dom0/qs-hyprview), authored by
 Domenico Martella ([dom0](https://github.com/dom0)), as its overview renderer.
@@ -144,6 +171,12 @@ curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/ma
 
 ```bash
 omarchy plugin add https://github.com/avillagran/omarchy-control-panel
+```
+
+Update an existing git-managed installation to the latest release with:
+
+```bash
+omarchy plugin update io.github.avillagran.omarchy-control-panel --yes
 ```
 
 Or clone manually into `~/.config/omarchy/plugins/io.github.avillagran.omarchy-control-panel/` and enable it.

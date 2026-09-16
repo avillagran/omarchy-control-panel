@@ -14,7 +14,7 @@ assert.match(core, /label:\s*"Dev mode"[\s\S]*checked:\s*root\.devMode/,
 assert.match(core, /label: root\.t\(root\.uiLang, "browserCloseTab"\)[\s\S]*visible:\s*root\.devMode/,
   'SUPER+W must stay hidden outside Dev mode');
 assert.match(core, /label: root\.missionControlBusy[^\n]*\n\s*visible:\s*root\.devMode/,
-  'unfinished Mission Control must stay hidden outside Dev mode');
+  'unfinished QuickView must stay hidden outside Dev mode');
 assert.match(core, /label:\s*"Dev mode"[\s\S]*foreground:\s*Color\.urgent/,
   'Dev mode control must be highlighted in red');
 assert.match(shell, /navButton\.modelData\.devOnly \? theme\.urgent/,

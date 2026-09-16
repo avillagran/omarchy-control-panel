@@ -304,6 +304,12 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         Text {
+            text: "󰛳"
+            color: theme.text
+            font.family: theme.fontUi
+            font.pixelSize: theme.body + 4
+        }
+        Text {
             Layout.fillWidth: true
             text: root.t("networkDevicesTitle")
             color: theme.text

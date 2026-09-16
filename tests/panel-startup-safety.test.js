@@ -7,7 +7,7 @@ const loadProfiles = core.match(/function loadProfilesFromText\(raw\) \{([\s\S]*
 assert.ok(loadProfiles, 'profile loader must exist');
 assert.match(core, /var list = root\.displays && root\.displays\.length \? root\.displays : root\.saved\.displays/,
   'profile capture must use the current display layout');
-assert.match(core, /function saveActiveProfileDisplayMap\(\)[\s\S]*?ProfileModel\.saveDisplayMap\(root\.profiles, root\.activeProfileId, map\)/,
+assert.match(core, /function saveActiveProfileDisplayMap\(\)[\s\S]*?ProfileModel\.saveDisplayLayout\(root\.profiles, root\.activeProfileId,[\s\S]*?root\.currentDisplayTopology\(\), map\)/,
   'a manual display apply must update the active profile map used by hotplug recovery');
 assert.match(core, /id:\s*displayInstantProc[\s\S]*?root\.saveActiveProfileDisplayMap\(\)/,
   'the profile map must update only after an instant display apply succeeds');
@@ -17,8 +17,30 @@ assert.match(core, /text:\s*root\.t\(root\.uiLang, "saveDisplayLayout"\)[\s\S]*?
   'the Displays header must expose an explicit Save action beside Identify');
 assert.match(core, /function displayKeep\(\)[\s\S]*?root\.saveActiveProfileDisplayMap\(\)/,
   'keeping a previewed mode or orientation must also update the hotplug profile map');
+assert.match(core, /function currentDisplayTopology\(\)[\s\S]*?fingerprint/,
+  'the current display combination must derive from stable monitor fingerprints');
+assert.match(core, /function saveActiveProfileDisplayMap\(\)[\s\S]*?ProfileModel\.saveDisplayLayout/,
+  'display persistence must scope the map to the detected monitor combination');
+assert.match(core, /activeP\.settings\.displayLayouts[\s\S]*?physicalTopology[\s\S]*?byIdentity\[ki\]/,
+  'the in-panel hotplug path must restore the exact fingerprint-keyed monitor combination');
+assert.match(core, /id:\s*displayInstantProc[\s\S]*?root\.applyWorkspaceLayout\(true\)/,
+  'reordering physical displays must immediately recompute numbered workspace ranges');
+assert.match(core, /function saveCurrentToActiveProfile\(\)[\s\S]*?saveCurrentToProfile\(root\.activeProfileId\)/,
+  'section headers need a shared active-profile save path');
+assert.match(core, /text:\s*root\.t\(root\.uiLang, "profileSave"\)[\s\S]*?root\.saveCurrentToActiveProfile\(\)/,
+  'Trackpad must expose a header Save action for the current profile');
 assert.match(core, /saved\.mirror !== undefined/,
   'profile display restore must include mirror state');
+assert.match(core, /L\.push\(["']-- Display layout["']\)[\s\S]*?hl\.monitor/,
+  'rewriting control-panel.lua must retain the applied monitor layout');
+assert.match(core, /win\.tags[\s\S]*?chromium-based-browser[\s\S]*?firefox-based-browser/,
+  'SUPER+W must use Omarchy browser tags instead of depending only on a class field');
+assert.match(core, /hl\.dsp\.send_key_state\(\{ mods = "CTRL", key = "W", state = "down" \}\)[\s\S]*?state = "up"/,
+  'browser SUPER+W must deliver native Ctrl+W key states instead of closing the window');
+assert.match(core, /hl\.dsp\.window\.close\(\)\) end end, \{ release = true \}/,
+  'SUPER+W Lua must close both the branch and callback before bind options');
+assert.match(core, /hl\.unbind\("SUPER \+ W"\); hl\.bind\("SUPER \+ W", function\(\) end\); hl\.bind\("SUPER \+ W"/,
+  'SUPER+W must consume press/repeat events before handling the release');
 
 assert.doesNotMatch(loadProfiles[1], /queueApplyActiveProfile|applyProfile\(/,
   'opening the panel must not apply the active profile or touch display modes');

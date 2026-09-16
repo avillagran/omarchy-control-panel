@@ -65,6 +65,25 @@ assert.deepStrictEqual(plain(layoutAfter.profiles[0].settings.displays), {
 assert.strictEqual(layoutBefore[0].settings.displays["HDMI-A-1"].x, 1728,
   "saving the layout must not mutate the previous profile snapshot")
 
+// Layouts belong to a detected monitor combination, not a connector name.
+// The same HDMI port can carry a different physical display tomorrow.
+const comboBefore = [{ id: "desk", name: "Desk", builtin: false, settings: {} }]
+const comboAfter = context.saveDisplayLayout(comboBefore, "desk", "BOE|Panel|ABC::Dell|U2723QE|XYZ", {
+  "BOE|Panel|ABC": { name: "eDP-1", scale: 2 },
+  "Dell|U2723QE|XYZ": { name: "HDMI-A-1", x: 1728 }
+})
+assert.strictEqual(comboAfter.found, true)
+assert.deepStrictEqual(plain(comboAfter.profiles[0].settings.displayLayouts), {
+  "BOE|Panel|ABC::Dell|U2723QE|XYZ": {
+    "BOE|Panel|ABC": { name: "eDP-1", scale: 2 },
+    "Dell|U2723QE|XYZ": { name: "HDMI-A-1", x: 1728 }
+  }
+})
+const comboSavedFromTrackpad = context.saveSettings(comboAfter.profiles, "desk", { naturalScroll: true })
+assert.deepStrictEqual(plain(comboSavedFromTrackpad.profiles[0].settings.displayLayouts),
+  plain(comboAfter.profiles[0].settings.displayLayouts),
+  "saving Trackpad must retain layouts for every detected monitor combination")
+
 const renamedBuiltin = context.rename(saved.profiles, "default", "Broken")
 assert.strictEqual(renamedBuiltin.found, false)
 const renamed = context.rename(saved.profiles, "personal-101", "Windows-like")
