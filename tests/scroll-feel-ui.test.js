@@ -12,7 +12,7 @@ assert.match(installer, new RegExp(`git -C "\\$SRC_DIR" checkout -q --detach ${p
   'scroll-patch installer must detached-checkout the literal pinned commit before building');
 assert.match(installer, /PLUGIN_DIR="\$HOME\/\.config\/omarchy\/plugins\/\$PLUGIN_ID"/,
   'installer must locate an already-installed plugin for safe reruns');
-assert.match(installer, /^RELEASE_TAG="0\.4"$/m,
+assert.match(installer, /^RELEASE_TAG="0\.5"$/m,
   'the one-liner must identify the current immutable plugin release');
 assert.match(installer, /git -C "\$PLUGIN_DIR" fetch --depth 1 origin "refs\/tags\/\$RELEASE_TAG"[\s\S]*?git -C "\$PLUGIN_DIR" merge --ff-only FETCH_HEAD/,
   'a one-liner rerun must fast-forward a clean existing plugin to the current release tag');

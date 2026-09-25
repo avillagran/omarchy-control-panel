@@ -5,7 +5,7 @@
 # touchpad scroll acceleration + coast patch (plus opt-in physical mouse-wheel
 # inertia) TODAY, without waiting for the upstream PRs to merge:
 #
-#   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.5/bin/install-hyprland-scroll-patch.sh | bash
 #
 # What it does:
 #   1. Installs the omarchy-control-panel plugin (omarchy plugin add) and
@@ -34,7 +34,7 @@
 #
 # Removal:
 #
-#   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.5/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
 #
 # After installing or uninstalling, log out and back in for the change to take
 # effect (the compositor binary is chosen at session start).
@@ -44,7 +44,7 @@ set -euo pipefail
 PLUGIN_ID="io.github.avillagran.omarchy-control-panel"
 PANEL_REPO="https://github.com/avillagran/omarchy-control-panel.git"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
-RELEASE_TAG="0.4"
+RELEASE_TAG="0.5"
 HYPRLAND_REPO="https://github.com/hyprwm/Hyprland.git"
 # Upstream commit the patch series was authored against (v0.56.0-190-g1b85c7aa).
 # The patches apply cleanly to exactly this tree; refresh both together.
@@ -371,5 +371,5 @@ cat <<'EOF'
      and "Config like macOS".
 
 Removal:
-  curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
+  curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.5/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
 EOF

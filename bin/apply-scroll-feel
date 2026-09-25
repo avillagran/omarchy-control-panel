@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+runtime_dir=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
+lock_file="$runtime_dir/omarchy-control-panel-scroll-feel.lock"
+exec 9>"$lock_file"
+flock -n 9 || exit 0
+
+python3 - "$HOME/.local/state/omarchy/control-panel-prefs.json" <<'PY'
+import json
+import math
+import os
+import subprocess
+import sys
+
+
+PREFS_LIMIT = 65536
+IGNORE_CLASSES = "google-chrome,chromium,firefox,brave-browser,microsoft-edge,vivaldi,kitty"
+
+
+def clamp_number(value, fallback, minimum, maximum):
+    try:
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError
+    except (TypeError, ValueError):
+        number = fallback
+    return max(minimum, min(maximum, number))
+
+
+def clamp_profile(value):
+    return int(round(clamp_number(value, 2, 0, 2)))
+
+
+def clamp_speed(value):
+    return round(clamp_number(value, 1.0, 0.2, 3.0) * 20) / 20
+
+
+def clamp_max(value):
+    return round(clamp_number(value, 3.0, 1.0, 10.0) * 4) / 4
+
+
+def clamp_decel(value):
+    return int(round(clamp_number(value, 600, 0, 3000) / 50) * 50)
+
+
+def load_preferences(path):
+    try:
+        stat = os.lstat(path)
+        if os.path.islink(path) or stat.st_size > PREFS_LIMIT:
+            return None
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or data.get("scrollFeelConfigured") is not True:
+        return None
+    return data
+
+
+def get_option(key):
+    try:
+        process = subprocess.run(
+            ["hyprctl", "getoption", key, "-j"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if process.returncode != 0:
+        return None
+    try:
+        value = json.loads(process.stdout)
+    except (ValueError, TypeError):
+        return None
+    return value if isinstance(value, dict) and value.get("option") == key else None
+
+
+def numeric_value(option):
+    if option is None:
+        return None
+    for key in ("int", "float"):
+        value = option.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return None
+
+
+def live_matches(expected, include_ignore, include_mouse):
+    numeric_keys = {
+        "input:touchpad:scroll_accel_profile": expected["touch_profile"],
+        "input:touchpad:scroll_accel_speed": expected["speed"],
+        "input:touchpad:scroll_accel_max": expected["max"],
+        "input:touchpad:scroll_decel": expected["decel"],
+    }
+    if include_mouse:
+        numeric_keys.update({
+            "input:mouse:scroll_accel_profile": expected["mouse_profile"],
+            "input:mouse:scroll_accel_speed": expected["speed"],
+            "input:mouse:scroll_accel_max": expected["max"],
+            "input:mouse:scroll_decel": expected["mouse_decel"],
+        })
+    for key, wanted in numeric_keys.items():
+        current = numeric_value(get_option(key))
+        if current is None or abs(current - wanted) > 0.001:
+            return False
+    if include_ignore:
+        option = get_option("input:touchpad:scroll_ignore_classes")
+        if option is None or str(option.get("str", "")) != expected["ignore"]:
+            return False
+    return True
+
+
+preferences = load_preferences(sys.argv[1])
+if preferences is None:
+    raise SystemExit(0)
+
+mode = preferences.get("scrollIgnoreMode", "browsers")
+if mode not in ("off", "browsers", "native"):
+    mode = "browsers"
+profile = clamp_profile(preferences.get("scrollAccelProfile"))
+expected = {
+    "touch_profile": 0 if mode == "native" else profile,
+    "mouse_profile": profile if preferences.get("mouseScrollFeelEnabled") is True else 0,
+    "speed": clamp_speed(preferences.get("scrollAccelSpeed")),
+    "max": clamp_max(preferences.get("scrollAccelMax")),
+    "decel": clamp_decel(preferences.get("scrollDecel")),
+    "ignore": IGNORE_CLASSES if mode == "browsers" else "",
+}
+expected["mouse_decel"] = expected["decel"] if preferences.get("mouseScrollFeelEnabled") is True else 0
+
+# The touchpad deceleration option is the capability gate. A stock compositor
+# must never receive these patched-only keys. The bar retries on its next
+# watchdog interval, so this helper stays short-lived when Hyprland is absent.
+if get_option("input:touchpad:scroll_decel") is None:
+    raise SystemExit(0)
+
+include_ignore = get_option("input:touchpad:scroll_ignore_classes") is not None
+include_mouse = get_option("input:mouse:scroll_decel") is not None
+if live_matches(expected, include_ignore, include_mouse):
+    raise SystemExit(0)
+
+touch = (
+    "hl.config({ input = { touchpad = {"
+    f" scroll_accel_profile = {expected['touch_profile']},"
+    f" scroll_accel_speed = {expected['speed']:.2f},"
+    f" scroll_accel_max = {expected['max']:.2f},"
+    f" scroll_decel = {expected['decel']}"
+)
+if include_ignore:
+    touch += f', scroll_ignore_classes = "{expected["ignore"]}"'
+touch += " } } })"
+
+statements = [touch]
+if include_mouse:
+    statements.append(
+        "hl.config({ input = { mouse = {"
+        f" scroll_accel_profile = {expected['mouse_profile']},"
+        f" scroll_accel_speed = {expected['speed']:.2f},"
+        f" scroll_accel_max = {expected['max']:.2f},"
+        f" scroll_decel = {expected['mouse_decel']}"
+        " } } })"
+    )
+
+try:
+    process = subprocess.run(
+        ["hyprctl", "eval", "; ".join(statements)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=1,
+    )
+except subprocess.TimeoutExpired:
+    print("Could not restore persisted scroll feel: hyprctl timed out", file=sys.stderr)
+    raise SystemExit(1)
+
+output = (process.stdout + process.stderr).strip()
+if process.returncode == 0 and "ok" in output.lower():
+    raise SystemExit(0)
+print(f"Could not restore persisted scroll feel: {output}", file=sys.stderr)
+raise SystemExit(1)
+PY
