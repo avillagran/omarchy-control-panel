@@ -1,9 +1,8 @@
 // Omarchy Control Panel — BarWidget launcher.
-// Click (izq): abre la ventana desktop (FloatingWindow independiente) vía
-// bin/toggle-desktop.sh, el mismo patrón que gmail-panel/x-panel usan con
-// Quickshell.execDetached. La ventana vive en un proceso Quickshell aparte,
-// así sobrevive a reinicios de la barra.
-// El comando toggle: si la ventana ya está, la cierra; si no, la abre.
+// Left click opens the standalone desktop FloatingWindow through
+// bin/toggle-desktop.sh, following the gmail-panel/x-panel pattern. The window
+// runs in a separate Quickshell process and survives bar restarts. The toggle
+// closes an existing window or launches it when absent.
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -15,6 +14,7 @@ BarWidget {
 
   readonly property string binPath: Qt.resolvedUrl("bin/toggle-desktop.sh").toString().replace("file://", "")
   readonly property string superWBindPath: Qt.resolvedUrl("bin/apply-superw-bind").toString().replace("file://", "")
+  readonly property string scrollFeelPath: Qt.resolvedUrl("bin/apply-scroll-feel").toString().replace("file://", "")
 
   // Shape contract for shell.summon/hide/toggle routing (Bar.findPanelWidget
   // requires open/close/opened on the bar-widget root).
@@ -29,17 +29,18 @@ BarWidget {
   function closeForPopoutSwitch() {}
 
   // This widget exists with the main shell, unlike the standalone settings
-  // window. Install the persisted bind at login and repair it if a Hyprland
-  // reload restores Omarchy's default window-closing SUPER+W.
-  function ensureSuperWBind() {
+  // window. Restore persistent runtime state at login and repair it after a
+  // Hyprland reload or another component resets the live values.
+  function ensurePersistentState() {
     Quickshell.execDetached(["bash", root.superWBindPath])
+    Quickshell.execDetached(["bash", root.scrollFeelPath])
   }
-  Component.onCompleted: root.ensureSuperWBind()
+  Component.onCompleted: root.ensurePersistentState()
   Timer {
     interval: 5000
     repeat: true
     running: true
-    onTriggered: root.ensureSuperWBind()
+    onTriggered: root.ensurePersistentState()
   }
 
   implicitWidth: button.implicitWidth

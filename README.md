@@ -23,6 +23,14 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **Keyboard & Language**: physical layout, system language
 - **Night light**, and more
 
+## What's new in 0.5
+
+- **Crash-safe scroll inertia**: the always-running bar widget now restores the
+  persisted touchpad and physical mouse scroll settings when Quickshell starts.
+  A lightweight watchdog repairs live values after delayed Hyprland reloads or
+  another component resets them, without requiring the Control Panel window to
+  be opened and without reapplying values that are already correct.
+
 ## What's new in 0.4
 
 - **Monitor-aware profile layouts**: each profile stores layouts by the exact
@@ -118,7 +126,7 @@ the series, and builds it as a reversible **shadow binary** (`~/.local/bin/Hyprl
 which takes precedence over `/usr/bin` via PATH — no pacman conflicts):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.5/bin/install-hyprland-scroll-patch.sh | bash
 ```
 
 The installer (Arch/Omarchy) does everything in one pass:
@@ -154,7 +162,7 @@ if the pin and the series no longer match.
 To go back to stock Hyprland:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.4/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.5/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
 ```
 
 ## Internationalization

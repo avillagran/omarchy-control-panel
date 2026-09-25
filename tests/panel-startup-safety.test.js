@@ -43,8 +43,10 @@ assert.match(superWStartup, /hl\.dsp\.window\.close\(\)\) end end, \{ release = 
   'SUPER+W Lua must close both the branch and callback before bind options');
 assert.match(superWStartup, /hl\.unbind\(\\"SUPER \+ W\\"\); hl\.bind\(\\"SUPER \+ W\\", function\(\) end\); hl\.bind\(\\"SUPER \+ W\\"/,
   'SUPER+W must consume press/repeat events before handling the release');
-assert.match(barWidget, /apply-superw-bind[\s\S]*Component\.onCompleted:\s*root\.ensureSuperWBind\(\)/,
+assert.match(barWidget, /apply-superw-bind[\s\S]*Component\.onCompleted:\s*root\.ensurePersistentState\(\)/,
   'the always-running bar widget must install SUPER+W without opening the panel');
+assert.match(barWidget, /apply-scroll-feel[\s\S]*Component\.onCompleted:\s*root\.ensurePersistentState\(\)/,
+  'the always-running bar widget must restore persisted scroll feel without opening the panel');
 assert.match(superWStartup, /control-panel-prefs\.json[\s\S]*browserCloseTab/,
   'the startup installer must read the persisted browser-tab preference');
 assert.doesNotMatch(core, /id:\s*applyOnLoadTimer[\s\S]*?onTriggered:\s*\{[\s\S]*?applySuperWBind\(\)/,
