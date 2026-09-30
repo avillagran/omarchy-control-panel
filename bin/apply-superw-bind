@@ -4,29 +4,36 @@ set -euo pipefail
 prefs="$HOME/.local/state/omarchy/control-panel-prefs.json"
 requested="${1:-}"
 
+# Shortcut ownership is independent of browser tab/window behavior. Read it
+# even for forced UI calls, so another owner (e.g. Reprieve) is never displaced.
+read -r manage_superw persisted_close_tab < <(python3 - "$prefs" <<'PY_PREFS'
+import json
+import os
+import sys
+
+manage = True
+close_tab = True
+try:
+    path = sys.argv[1]
+    st = os.lstat(path)
+    if not os.path.islink(path) and st.st_size <= 65536:
+        with open(path, "r", encoding="utf-8") as handle:
+            prefs = json.load(handle)
+        manage = prefs.get("manageSuperW", True) is not False
+        close_tab = prefs.get("browserCloseTab", True) is True
+except (FileNotFoundError, OSError, ValueError, TypeError, AttributeError):
+    pass
+print("true" if manage else "false", "true" if close_tab else "false")
+PY_PREFS
+)
+
 case "$requested" in
   true|false)
     browser_close_tab="$requested"
     force=1
     ;;
   "")
-    browser_close_tab=$(python3 - "$prefs" <<'PY'
-import json
-import os
-import sys
-
-path = sys.argv[1]
-value = True
-try:
-    st = os.lstat(path)
-    if not os.path.islink(path) and st.st_size <= 65536:
-        with open(path, "r", encoding="utf-8") as handle:
-            value = json.load(handle).get("browserCloseTab", True) is True
-except (FileNotFoundError, OSError, ValueError, TypeError, AttributeError):
-    pass
-print("true" if value else "false")
-PY
-)
+    browser_close_tab="$persisted_close_tab"
     force=0
     ;;
   *)
@@ -34,6 +41,29 @@ PY
     exit 2
     ;;
 esac
+
+[[ "$manage_superw" == true ]] || exit 0
+
+# Reprieve's managed block records explicit ownership of this shortcut.
+# Older prefs lack manageSuperW, so the default must not erase that owner.
+# This also applies to forced calls from a settings window loaded earlier.
+if python3 - "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/bindings.lua" <<'PY_OWNER'
+import pathlib
+import re
+import sys
+try:
+    path = pathlib.Path(sys.argv[1])
+    if path.is_symlink() or path.stat().st_size > 1048576:
+        raise SystemExit(1)
+    text = path.read_text()
+except OSError:
+    raise SystemExit(1)
+block = re.search(r"^-- BEGIN tech\.greyforge\.reprieve\s*$([\s\S]*?)^-- END tech\.greyforge\.reprieve\s*$", text, re.M)
+raise SystemExit(0 if block and re.search(r'o\.bind\(\s*"SUPER \+ W"\s*,\s*"Park window \(Reprieve\)"', block.group(1)) else 1)
+PY_OWNER
+then
+  exit 0
+fi
 
 # The bar widget runs this watchdog periodically. Avoid re-registering a release
 # bind while SUPER is held: only repair it when Hyprland no longer has both of

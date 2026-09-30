@@ -7,6 +7,7 @@ trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/home/.local/state/omarchy"
 export CAPTURE="$tmp/eval.lua"
 export BIND_MODE=missing
+export XDG_CONFIG_HOME="$tmp/home/.config"
 
 cat > "$tmp/bin/hyprctl" <<'SH'
 #!/usr/bin/env bash

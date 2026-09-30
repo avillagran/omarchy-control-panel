@@ -111,6 +111,7 @@ Panel {
   property var allMiceNames: []
   property bool middleBtnOff: false
   property bool browserCloseTabOn: true
+  property bool manageSuperW: true
   property string defaultTerm: ""
   property string pluginDir: Qt.resolvedUrl(".").toString().replace("file://", "")
 
@@ -469,6 +470,7 @@ Panel {
     // function form, same as the rest of the config.
       // SUPER+W: close browser tab (if browserCloseTab is on and active window is a
       // known browser) or close the active window otherwise.
+    if (root.manageSuperW) {
       var scriptPath = Qt.resolvedUrl("bin/close-tab-or-window.sh").toString().replace("file://", "")
       L.push('-- SUPER+W closes browser tabs when browserCloseTab is enabled, otherwise closes window')
       L.push('hl.unbind("SUPER + W")')
@@ -485,6 +487,7 @@ Panel {
         '  end',
         'end, { release = true })'
       ].join("\n"))
+    }
 
     // When enabled, unbind the middle-mouse-button screenshot (mouse:274) that
     // the user.trackpad-gestures plugin defines — an uncomfortable combo for
@@ -761,6 +764,7 @@ Panel {
       saved.tapToClick = tapToClick
       saved.browserCloseTab = d.browserCloseTab === true
       browserCloseTabOn = saved.browserCloseTab
+      manageSuperW = d.manageSuperW !== false
       saved.middleButtonScreenshotOff = d.middleButtonScreenshotOff === true
       middleBtnOff = saved.middleButtonScreenshotOff
       prefsLoaded = true
@@ -780,7 +784,7 @@ Panel {
 
   function savePrefs() {
     prefsWriter.command = ["bash", Qt.resolvedUrl("write-prefs-atomic.sh").toString().replace("file://", ""),
-      prefsPath, JSON.stringify({ swipe3: swipe3On, inertia: inertiaOn, naturalScroll: naturalScroll, tapToClick: tapToClick, browserCloseTab: browserCloseTabOn, middleButtonScreenshotOff: middleBtnOff })]
+      prefsPath, JSON.stringify({ swipe3: swipe3On, inertia: inertiaOn, naturalScroll: naturalScroll, tapToClick: tapToClick, browserCloseTab: browserCloseTabOn, manageSuperW: manageSuperW, middleButtonScreenshotOff: middleBtnOff })]
     prefsWriter.running = true
   }
 
@@ -2196,6 +2200,7 @@ Panel {
 
         ToggleRow {
           label: root.t(root.uiLang, "browserCloseTab")
+          enabled: root.manageSuperW
           checked: root.browserCloseTabOn
           onClicked: { root.setBrowserCloseTab(!root.browserCloseTabOn) }
         }
@@ -2249,4 +2254,3 @@ Panel {
   // panel (or restarts the shell) while a preview is still armed, the dialog
   // reappears and lets them Keep or Revert.
 }
-

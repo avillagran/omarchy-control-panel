@@ -191,6 +191,7 @@ Item {
   property var allMiceNames: []
   property bool middleBtnOff: false
   property bool browserCloseTabOn: true
+  property bool manageSuperW: true
   property string defaultTerm: ""
   property string pluginDir: Qt.resolvedUrl(".").toString().replace("file://", "")
   readonly property string binDir: Quickshell.shellDir + "/../bin"
@@ -1379,6 +1380,7 @@ Item {
   // widget repairs a missing bind after login or Hyprland reload; this path
   // forces an immediate update after preferences load or the toggle changes.
   function applySuperWBind() {
+    if (!root.manageSuperW) return
     Quickshell.execDetached(["bash", root.binDir + "/apply-superw-bind",
       saved.browserCloseTab ? "true" : "false"])
   }
@@ -1930,6 +1932,7 @@ Item {
       saved.tapToClick = tapToClick
       saved.browserCloseTab = d.browserCloseTab === true
       browserCloseTabOn = saved.browserCloseTab
+      manageSuperW = d.manageSuperW !== false
       saved.middleButtonScreenshotOff = d.middleButtonScreenshotOff === true
       middleBtnOff = saved.middleButtonScreenshotOff
       prefsLoaded = true
@@ -1961,6 +1964,7 @@ Item {
       naturalScroll: naturalScroll,
       tapToClick: tapToClick,
       browserCloseTab: browserCloseTabOn,
+      manageSuperW: manageSuperW,
       middleButtonScreenshotOff: middleBtnOff,
       singleMonitorWorkspaces: singleMonitorWorkspaces,
       multiMonitorWorkspaces: multiMonitorWorkspaces,
@@ -4504,6 +4508,7 @@ Item {
 
         ToggleRow {
           label: root.t(root.uiLang, "browserCloseTab")
+          enabled: root.manageSuperW
           visible: root.devMode
           foreground: Color.urgent
           checked: root.browserCloseTabOn
