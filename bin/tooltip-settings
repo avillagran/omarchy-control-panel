@@ -1,0 +1,116 @@
+#!/usr/bin/python3
+"""Read and update the shared Omarchy tooltip preferences without touching Hyprland."""
+
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+
+DEFAULTS = {"shape": "theme", "borderMode": "theme", "borderColor": "#ffffff"}
+CHOICES = {"shape": {"theme", "square", "rounded"},
+           "borderMode": {"theme", "transparent", "custom"}}
+COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
+
+
+class SettingsError(ValueError):
+    pass
+
+
+def validate(field, value):
+    if field in CHOICES and value in CHOICES[field]:
+        return value
+    if field == "borderColor" and isinstance(value, str) and COLOR.fullmatch(value):
+        return value.lower()
+    raise SettingsError("invalid_" + field)
+
+
+def config_path():
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "omarchy" / "tooltips.json"
+
+
+def available():
+    root = os.environ.get("OMARCHY_PATH", "")
+    return (Path("/usr/lib/qt6/qml/Omarchy/Kit/Commons/ToolTipStyle.qml").is_file()
+            or bool(root and (Path(root) / "shell/Commons/ToolTipStyle.qml").is_file()))
+
+
+def read(path):
+    try:
+        with path.open(encoding="utf-8") as stream:
+            data = json.load(stream)
+    except FileNotFoundError:
+        return dict(DEFAULTS)
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise SettingsError("invalid_file") from error
+    if not isinstance(data, dict):
+        raise SettingsError("invalid_file")
+    # Unknown keys survive every update. Invalid known values cannot silently
+    # become authoritative; refuse writes until the file is repaired.
+    for key in DEFAULTS.keys() & data.keys():
+        try:
+            data[key] = validate(key, data[key])
+        except (SettingsError, TypeError) as error:
+            raise SettingsError("invalid_file") from error
+    return {**DEFAULTS, **data}
+
+
+def update(path, field, value):
+    value = validate(field, value)
+    if not available():
+        raise SettingsError("unavailable")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # The stable sidecar lock survives os.replace; two independent writers
+    # cannot both read the same old snapshot and lose one another's changes.
+    lock_path = path.with_name(path.name + ".lock")
+    with lock_path.open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        data = read(path)
+        if path.exists() and data[field] == value:
+            return data
+        data[field] = value
+        fd, tmp = tempfile.mkstemp(prefix=".tooltips-", dir=path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                os.fchmod(stream.fileno(), 0o600)
+                json.dump(data, stream, ensure_ascii=False, sort_keys=True)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, path)
+            dir_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        return data
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=["get", "set"])
+    parser.add_argument("field", nargs="?")
+    parser.add_argument("value", nargs="?")
+    args = parser.parse_args()
+    if args.action == "set" and (args.field is None or args.value is None):
+        parser.error("set requires a field and a value")
+    if args.action == "get" and (args.field is not None or args.value is not None):
+        parser.error("get accepts no field or value")
+    try:
+        state = update(config_path(), args.field, args.value) if args.action == "set" else read(config_path())
+        print(json.dumps({"ok": True, "available": available(), "settings": state}))
+    except (SettingsError, OSError) as error:
+        code = str(error) if isinstance(error, SettingsError) else "io_error"
+        print(json.dumps({"ok": False, "error": code}))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
