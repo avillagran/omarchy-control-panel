@@ -12,14 +12,16 @@ assert.match(installer, new RegExp(`git -C "\\$SRC_DIR" checkout -q --detach ${p
   'scroll-patch installer must detached-checkout the literal pinned commit before building');
 assert.match(installer, /PLUGIN_DIR="\$HOME\/\.config\/omarchy\/plugins\/\$PLUGIN_ID"/,
   'installer must locate an already-installed plugin for safe reruns');
-assert.match(installer, /^RELEASE_TAG="0\.5"$/m,
-  'the one-liner must identify the current immutable plugin release');
-assert.match(installer, /git -C "\$PLUGIN_DIR" fetch --depth 1 origin "refs\/tags\/\$RELEASE_TAG"[\s\S]*?git -C "\$PLUGIN_DIR" merge --ff-only FETCH_HEAD/,
-  'a one-liner rerun must fast-forward a clean existing plugin to the current release tag');
-assert.match(installer, /raw\.githubusercontent\.com\/avillagran\/omarchy-control-panel\/\$RELEASE_TAG\/patches\/hyprland/,
-  'remote fallback patches must come from the same immutable release tag');
-assert.match(installer, /has local changes; commit or stash them before rerunning/,
-  'a one-liner rerun must refuse to overwrite user plugin edits');
+assert.match(installer, /^RELEASE_TAG=\$\{OMARCHY_PANEL_REF:-0\.5\}$/m,
+  'the one-liner accepts an immutable commit without moving a release tag');
+assert.match(installer, /git -C "\$panel_stage" fetch --depth 1 origin "\$RELEASE_TAG"/,
+  'the one-liner fetches its pinned panel commit');
+assert.match(installer, /raw\.githubusercontent\.com\/avillagran\/omarchy-control-panel\/\$panel_sha\/patches\/hyprland/,
+  'fallback patches come from the verified panel commit');
+assert.match(installer, /plugin has dirty tracked edits/,
+  'the installer refuses to overwrite tracked plugin edits');
+assert.match(installer, /bash "\$PLUGIN_DIR\/bin\/install-tooltip-patch\.sh"/,
+  'the combined installer also installs the pinned Omarchy tooltip integration');
 
 assert.match(core, /import "ScrollFeelModel\.js" as ScrollFeelModel/);
 for (const property of ['scrollAccelProfile', 'scrollAccelSpeed', 'scrollAccelMax',
