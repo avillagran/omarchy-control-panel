@@ -126,10 +126,10 @@ the touchpad setting and is never written for stock Hyprland.
 Install the Control Panel, the scroll inertia trial and [Omarchy's unified tooltip PR #15694](https://github.com/omacom/omarchy/pull/15694) together:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0c570866ff8c4a64faab3b53841b19431cc9bd33/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=0c570866ff8c4a64faab3b53841b19431cc9bd33 bash
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/25aa630efde26e7b3c1699590b0b839ef1c59e20/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=25aa630efde26e7b3c1699590b0b839ef1c59e20 bash
 ```
 
-The script, plugin checkout and fallback scroll patches use the same immutable Control Panel commit (`0c570866ff8c4a64faab3b53841b19431cc9bd33`). The tooltip bootstrap verifies Omarchy commit `0cf7154757b4cfa31400df676f4d620c88659b63` from the official Omarchy repository. No moving `main` branch or retagged release is downloaded.
+The script, plugin checkout and fallback scroll patches use the same immutable Control Panel commit (`25aa630efde26e7b3c1699590b0b839ef1c59e20`). The tooltip bootstrap verifies Omarchy commit `9cefb2fe88a56b76a64d0c206cbfa10455acbff7` from the official Omarchy repository. No moving `main` branch or retagged release is downloaded.
 
 The installer (Arch/Omarchy) performs these steps:
 
@@ -149,7 +149,7 @@ The tooltip integration covers Omarchy and Qt Quick Controls applications. GTK, 
 To restore the previous configuration and packages installed by this combined trial, then reboot:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0c570866ff8c4a64faab3b53841b19431cc9bd33/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=0c570866ff8c4a64faab3b53841b19431cc9bd33 bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/25aa630efde26e7b3c1699590b0b839ef1c59e20/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=25aa630efde26e7b3c1699590b0b839ef1c59e20 bash -s -- --uninstall
 ```
 
 Rollback restores the original plugin directory and any previous shadow binary, and removes the tooltip trial only if this installer created it. It refuses modified replacement files or an unrelated later Omarchy selection. Personal tooltip preferences are retained.
