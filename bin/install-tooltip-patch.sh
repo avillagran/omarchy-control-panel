@@ -5,7 +5,7 @@ set -euo pipefail
 
 OMARCHY_REPO="https://github.com/omacom/omarchy.git"
 # Reviewed Omarchy PR #15694. Keep the exact source revision immutable.
-OMARCHY_TOOLTIP_COMMIT="0cf7154757b4cfa31400df676f4d620c88659b63"
+OMARCHY_TOOLTIP_COMMIT="9cefb2fe88a56b76a64d0c206cbfa10455acbff7"
 OMARCHY_TOOLTIP_PR="15694"
 state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy
 state_file=$state_dir/tooltip-trial.json
