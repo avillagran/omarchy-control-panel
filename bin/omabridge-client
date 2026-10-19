@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Forwards one OmaBridge request to the Omarchy T3 Code client.
+#
+# ot3 owns OmaBridge: validation, confirmation, secret handling and the
+# published unit all stay there. The JSON request arrives on stdin and is
+# passed through unchanged (never on the command line); the client prints the
+# new snapshot or {"error":"<code>"} and exits 1. When ot3 is not installed
+# this prints {"error":"ot3_missing"} instead.
+set -uo pipefail
+
+config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+client=""
+for id in omarchy-t3-code io.github.avillagran.omarchy-t3-code; do
+  for base in "$config_home" "$HOME/.config"; do
+    candidate="$base/omarchy/plugins/$id/bin/omarchy-t3-client"
+    if [[ -f $candidate && -x $candidate ]]; then
+      client=$candidate
+      break 2
+    fi
+  done
+done
+
+if [[ -z $client ]]; then
+  printf '{"error":"ot3_missing"}\n'
+  exit 1
+fi
+
+# Publishing waits for the user service; anything slower than this is stuck.
+exec timeout --kill-after=5 120 "$client" omabridge-action

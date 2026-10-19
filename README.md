@@ -21,6 +21,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **Devices**: keyboard backlight, APFS (macOS disks)
 - **QuickView (development)**: native Control Panel overview with live window cards and workspace activation, available from Dev mode.
 - **Keyboard & Language**: physical layout, system language
+- **OmaBridge**: private links between your devices through [Omarchy T3 Code](#omabridge)
 - **Night light**, and more
 
 ## What's new in 0.5
@@ -59,6 +60,25 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   coasting, without changing touchpad behavior.
 - **Safe installer reruns**: running the one-liner again updates an existing
   plugin checkout instead of leaving an older installed revision in place.
+
+## OmaBridge
+
+The OmaBridge page manages private links between your devices: this device's
+identity, publishing it (off by default, optionally with SSH), one-use
+invitations with an optional QR code, pairing from an invitation file,
+*Check again* for pairings awaiting approval, approving requests and revoking
+paired devices.
+
+Omarchy T3 Code owns OmaBridge. The page talks only to its client
+(`omarchy-t3-client omabridge-action`) through `bin/omabridge-client`, one JSON
+request on stdin per action, so validation and secret handling stay in one
+place. Every change of trust asks for confirmation first. An invitation's path
+and QR are shown once and forgotten when their dialog closes; *Delete invitation
+file* removes the file. Nothing from OmaBridge is logged or saved in the
+panel's preferences.
+
+When Omarchy T3 Code is missing, or too old to accept `omabridge-action`, the
+page asks you to install or update it and changes nothing.
 
 ## Backup and recovery (development)
 

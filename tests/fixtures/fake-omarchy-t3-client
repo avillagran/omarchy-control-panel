@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Stand-in for omarchy-t3-client's OmaBridge commands, for tests only.
+
+Keeps its state in $FAKE_OT3_STATE (JSON) and appends every invocation
+(argv and the raw stdin request) to $FAKE_OT3_LOG. Nothing on the real
+system is read or changed. A state with "mode": "outdated" answers like an
+ot3 release that predates omabridge-action.
+"""
+import json
+import os
+from pathlib import Path
+import sys
+import time
+
+STATE = Path(os.environ["FAKE_OT3_STATE"])
+LOG = Path(os.environ["FAKE_OT3_LOG"])
+# Peers are named by 64 hex digits; pairings awaiting approval by a UUID.
+PEER_A = "a1" * 32
+PEER_B = "b2" * 32
+AWAITING = "aaaaaaaa-1111-4111-8111-111111111111"
+QR = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCIvPg=="
+
+
+def fail(code):
+    print(json.dumps({"error": code}))
+    sys.exit(1)
+
+
+def load():
+    if STATE.exists():
+        return json.loads(STATE.read_text())
+    return {"mode": "ready", "available": True, "device": None, "published": False, "ssh": False,
+            "peers": [], "pending": [], "awaiting": [], "invites": []}
+
+
+def snapshot(state):
+    services = ["t3", "ssh"] if state["ssh"] else ["t3"]
+    return {
+        "revision": "r1", "available": state["available"], "version": "0.0.0-test", "identity": bool(state["device"]),
+        "stateDir": "/nonexistent", "default": "auto", "routes": {}, "active": {},
+        "device": state["device"], "peers": state["peers"], "pending": state["pending"], "awaiting": state["awaiting"],
+        "published": {"enabled": state["published"], "active": state["published"], "stale": False,
+                      "sshAvailable": True, "services": services if state["published"] else []},
+        "error": "",
+    }
+
+
+def main():
+    raw = sys.stdin.read() if sys.argv[1:] == ["omabridge-action"] else ""
+    with LOG.open("a") as log:
+        log.write(json.dumps({"argv": sys.argv[1:], "stdin": raw}) + "\n")
+    state = load()
+    if state["mode"] == "outdated" or sys.argv[1:] not in (["omabridge-action"], ["omabridge-read"]):
+        fail("invalid_command")
+    if sys.argv[1:] == ["omabridge-read"]:
+        print(json.dumps(snapshot(state)))
+        return
+    try:
+        request = json.loads(raw)
+    except ValueError:
+        fail("invalid_command")
+    action = request.get("action")
+    extra = {}
+    if action != "read":
+        if request.get("confirmed") is not True:
+            fail("confirmation_required")
+        if action == "identity-create":
+            state["device"] = {"id": "cccccccc-3333-4333-8333-333333333333", "name": "test-device"}
+        elif action == "publish":
+            state["published"], state["ssh"] = True, request.get("ssh") is True
+        elif action == "unpublish":
+            state["published"] = False
+        elif action == "invite":
+            if not state["published"]:
+                fail("omabridge_not_published")
+            path = STATE.parent / f"omabridge-invite-{len(state['invites'])}.json"
+            path.write_text("{}")
+            path.chmod(0o600)
+            state["invites"].append(str(path))
+            extra["created"] = {"path": str(path), "expires": int(time.time()) + 600,
+                                "services": request.get("services"), "qrImage": QR if request.get("qr") else None}
+        elif action == "invite-discard":
+            Path(request["path"]).unlink(missing_ok=True)
+        elif action == "pair":
+            if "expired" in request.get("path", ""):
+                fail("omabridge_invite_expired")
+            state["awaiting"].append({"id": AWAITING, "name": "remote-a", "expires": int(time.time()) + 600})
+            extra["paired"] = {"status": "pending", "name": "remote-a", "id": AWAITING}
+            state["pending"].append({"id": PEER_B, "name": "remote-b", "services": ["t3"], "expires": int(time.time()) + 600})
+        elif action == "pair-retry":
+            state["awaiting"] = [a for a in state["awaiting"] if a["id"] != request.get("id")]
+            state["peers"].append({"id": PEER_A, "name": "remote-a", "services": [], "remoteServices": ["t3"]})
+            extra["paired"] = {"status": "approved", "name": "remote-a"}
+        elif action == "pair-discard":
+            state["awaiting"] = [a for a in state["awaiting"] if a["id"] != request.get("id")]
+        elif action == "approve":
+            match = [p for p in state["pending"] if p["id"] == request.get("peer")]
+            if not match:
+                fail("omabridge_peer_not_found")
+            state["pending"].remove(match[0])
+            state["peers"].append({"id": match[0]["id"], "name": match[0]["name"], "services": match[0]["services"], "remoteServices": []})
+        elif action == "revoke":
+            before = len(state["peers"])
+            state["peers"] = [p for p in state["peers"] if p["id"] != request.get("peer")]
+            if len(state["peers"]) == before:
+                fail("omabridge_peer_not_found")
+        else:
+            fail("invalid_action")
+        STATE.write_text(json.dumps(state))
+    print(json.dumps({**snapshot(state), **extra}))
+
+
+main()

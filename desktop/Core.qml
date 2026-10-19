@@ -92,10 +92,13 @@ Item {
     { title: t(uiLang, "displays"), page: 2, devOnly: false },
     { title: t(uiLang, "kblang"), page: 3, devOnly: false },
     { title: t(uiLang, "devices"), page: 4, devOnly: false },
+    { title: t(uiLang, "omabridge"), page: 8, devOnly: false },
     { title: t(uiLang, "networkDevices"), page: 5, devOnly: true },
     { title: t(uiLang, "backup"), page: 6, devOnly: true },
     { title: t(uiLang, "profiles"), page: 7, devOnly: false }
   ]
+  // Pages are numbered independently of their order in the navigation.
+  readonly property int profilesPage: 7
   property int currentTab: 0
   property bool devMode: false
   property var networkDevices: []
@@ -104,7 +107,7 @@ Item {
   function setDevMode(on) {
     root.devMode = on
     if (!on && (root.currentTab === 5 || root.currentTab === 6))
-      root.currentTab = 7
+      root.currentTab = root.profilesPage
     root.savePrefs()
   }
 
@@ -1756,7 +1759,7 @@ Item {
     // through displayApplyPreview (Keep/Revert) because a bad mode can blank
     // the screen.
     root.displayApplyInstant()
-    if (root.displayAwaitingConfirmation) root.currentTab = root.tabs.length - 1
+    if (root.displayAwaitingConfirmation) root.currentTab = root.profilesPage
   }
 
   function applyDisplayScaleInstant(scale) {
@@ -2548,7 +2551,7 @@ Item {
         root.displaySecondsRemaining = 15
         root.displayStatusMessage = "Confirm display settings?"
         // Make sure the user lands on the Profiles tab to see the dialog.
-        root.currentTab = root.tabs.length - 1
+        root.currentTab = root.profilesPage
         console.warn("[CP] pending restored, awaiting=true")
       } else {
         root.continueOpen()
@@ -2690,12 +2693,12 @@ Item {
             required property var modelData
             required property int index
             text: modelData.title
-            selected: root.currentTab === index
+            selected: root.currentTab === modelData.page
             fontSize: Style.font.caption
             horizontalPadding: Style.space(6)
             verticalPadding: Style.space(3)
             foreground: root.fg
-            onClicked: root.currentTab = index
+            onClicked: root.currentTab = modelData.page
           }
         }
       }
@@ -3737,6 +3740,13 @@ Item {
           foreground: root.fg
           onClicked: root.copyToClipboard(root.apfsCommandText)
         }
+      }
+
+      // ---------- OmaBridge (managed through Omarchy T3 Code) ----------
+      OmaBridgePage {
+        Layout.fillWidth: true
+        visible: root.currentTab === 8
+        core: root
       }
 
       // ---------- Network devices (manual scans only) ----------

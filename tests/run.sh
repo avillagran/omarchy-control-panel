@@ -13,6 +13,10 @@ node "$project_dir/tests/scroll-feel-ui.test.js"
 node "$project_dir/tests/paths.test.js"
 node "$project_dir/tests/backup-model.test.js"
 node "$project_dir/tests/backup-connection-ui-model.test.js"
+node "$project_dir/tests/omabridge-model.test.js"
+if command -v quickshell >/dev/null 2>&1; then
+  python3 "$project_dir/tests/run-omabridge-integration.py"
+fi
 node "$project_dir/tests/panel-startup-safety.test.js"
 bash "$project_dir/tests/superw-startup.test.sh"
 bash "$project_dir/tests/scroll-feel-startup.test.sh"
@@ -23,7 +27,7 @@ node "$project_dir/tests/mission-control-and-indicators.test.js"
 python3 -m unittest "$project_dir/tests/test_workspace_widget_installer.py" "$project_dir/tests/test_display_hotplug_sync.py"
 python3 -m unittest discover -s "$project_dir/tests" -p 'test_backup*.py' -v
 python3 "$project_dir/tests/test_display_isolation.py"
-bash -n "$project_dir/bin/display-manager" "$project_dir/bin/apply-superw-bind" "$project_dir/tests/run.sh" "$project_dir/tests/helper.test.sh" "$project_dir/tests/superw-startup.test.sh"
+bash -n "$project_dir/bin/display-manager" "$project_dir/bin/omabridge-client" "$project_dir/bin/apply-superw-bind" "$project_dir/tests/run.sh" "$project_dir/tests/helper.test.sh" "$project_dir/tests/superw-startup.test.sh"
 if command -v omarchy >/dev/null 2>&1; then
   omarchy plugin validate "$project_dir"
 fi
