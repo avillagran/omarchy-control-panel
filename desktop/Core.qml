@@ -92,7 +92,7 @@ Item {
     { title: t(uiLang, "displays"), page: 2, devOnly: false },
     { title: t(uiLang, "kblang"), page: 3, devOnly: false },
     { title: t(uiLang, "devices"), page: 4, devOnly: false },
-    { title: t(uiLang, "omabridge"), page: 8, devOnly: false },
+    { title: t(uiLang, "omabridge"), page: 9, devOnly: false },
     { title: t(uiLang, "networkDevices"), page: 5, devOnly: true },
     { title: t(uiLang, "backup"), page: 6, devOnly: true },
     { title: t(uiLang, "profiles"), page: 7, devOnly: false }
@@ -3745,7 +3745,7 @@ Item {
       // ---------- OmaBridge (managed through Omarchy T3 Code) ----------
       OmaBridgePage {
         Layout.fillWidth: true
-        visible: root.currentTab === 8
+        visible: root.currentTab === 9
         core: root
       }
 
