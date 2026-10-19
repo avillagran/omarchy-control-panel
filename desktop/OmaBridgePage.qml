@@ -7,7 +7,7 @@ import Quickshell
 import Quickshell.Io
 import "OmaBridgeModel.js" as OmaBridgeModel
 
-// OmaBridge private links between devices, managed through Omarchy T3 Code:
+// OmaBridge private links between devices, managed through `omabridge manage`:
 // this device's identity, publishing, one-use invitations, pairing from an
 // invitation file, approvals and revocation. Every change of trust is
 // confirmed first. Invitation paths and QR codes are secrets: shown once,
@@ -94,7 +94,9 @@ ColumnLayout {
     }
     function openPublish() {
         errorCode = "";
-        publishSsh.checked = (root.published.services || []).indexOf("ssh") >= 0;
+        var services = root.published.services || [];
+        publishT3.checked = !!root.published.t3Available && (!root.published.enabled || services.indexOf("t3") >= 0);
+        publishSsh.checked = services.indexOf("ssh") >= 0;
         publishDialog.open();
     }
     function finish(text, exitCode) {
@@ -105,7 +107,7 @@ ColumnLayout {
         busy = false;
         action = "";
         if (!response.ok) {
-            var lost = response.error === "ot3_missing" || (done === "read" && OmaBridgeModel.stateFor(response) === "outdated");
+            var lost = ["missing", "outdated"].indexOf(OmaBridgeModel.stateFor(response)) >= 0 && (done === "read" || response.error !== "invalid_command");
             if (done === "read" && (lost || !root.snapshot))
                 result = response;
             else if (lost) {
@@ -311,17 +313,17 @@ ColumnLayout {
         text: root.t("omabridgeIntro")
     }
 
-    // ot3 missing, too old, or shipped without OmaBridge.
+    // OmaBridge missing or too old for `omabridge manage`.
     Card {
         visible: root.pageState !== "ready"
         Heading {
             objectName: "omabridgeStateTitle"
-            text: root.pageState === "loading" ? root.t("omabridgeChecking") : (root.pageState === "failed" ? root.errorText(root.result.error, false) : root.t("omabridgeInstallOt3"))
+            text: root.pageState === "loading" ? root.t("omabridgeChecking") : (root.pageState === "failed" ? root.errorText(root.result.error, false) : root.t("omabridgeInstall"))
         }
         Copy {
             objectName: "omabridgeStateDetail"
             visible: text !== ""
-            text: root.pageState === "missing" ? root.t("omabridgeOt3Missing") : (root.pageState === "outdated" ? root.t("omabridgeOt3Outdated") : (root.pageState === "unavailable" ? root.t("omabridgeBinaryMissing") : ""))
+            text: root.pageState === "missing" ? root.t("omabridgeMissingDetail") : (root.pageState === "outdated" || root.pageState === "unavailable" ? root.t("omabridgeOutdatedDetail") : "")
         }
     }
 
@@ -377,7 +379,7 @@ ColumnLayout {
             }
             Copy {
                 objectName: "omabridgePublishStatus"
-                text: root.t(OmaBridgeModel.publishStatusKey(root.published)) + (root.published.enabled && root.published.active && !root.published.stale ? " · " + OmaBridgeModel.servicesText(root.published.services) : "")
+                text: root.t(OmaBridgeModel.publishStatusKey(root.published)) + ((root.published.enabled || root.published.external) && root.published.active && !root.published.stale ? " · " + OmaBridgeModel.servicesText(root.published.services) : "")
                 color: root.published.stale ? theme.urgent : theme.textMuted
             }
             Flow {
@@ -385,7 +387,7 @@ ColumnLayout {
                 spacing: theme.gap
                 Action {
                     objectName: "omabridgePublishButton"
-                    visible: !root.published.enabled
+                    visible: !root.published.enabled && !root.published.external
                     primary: true
                     enabled: !root.busy && !!root.device
                     text: root.t("omabridgePublishAction")
@@ -608,9 +610,19 @@ ColumnLayout {
                 text: root.t("omabridgePublishDetail")
             }
             Check {
+                id: publishT3
+                objectName: "omabridgePublishT3"
+                text: root.t("omabridgeShareT3")
+                enabled: !root.busy && !!root.published.t3Available
+            }
+            Copy {
+                visible: !root.published.t3Available
+                text: root.t("omabridgeErrorT3Unavailable")
+            }
+            Check {
                 id: publishSsh
                 objectName: "omabridgePublishSsh"
-                text: root.t("omabridgeAlsoSsh")
+                text: root.t("omabridgeShareSsh")
                 enabled: !root.busy && !!root.published.sshAvailable
             }
             Copy {
@@ -630,10 +642,9 @@ ColumnLayout {
                 Action {
                     objectName: "omabridgePublishConfirm"
                     primary: true
+                    enabled: !root.busy && (OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked).t3 || OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked).ssh)
                     text: root.t("omabridgePublishAction")
-                    onClicked: root.confirmed("publish", {
-                        ssh: publishSsh.checked && publishSsh.enabled
-                    })
+                    onClicked: root.confirmed("publish", OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked))
                 }
             }
         }

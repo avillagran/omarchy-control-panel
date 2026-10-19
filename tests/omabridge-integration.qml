@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import "desktop"
 
-// Drives the real OmaBridge page against tests/fixtures/fake-omarchy-t3-client.
+// Drives the real OmaBridge page against tests/fixtures/fake-omabridge.
 // OMABRIDGE_EXPECT selects the scenario: "ready" walks every action,
 // "outdated" and "missing" only check the install/update state.
 ShellRoot {
@@ -75,8 +75,8 @@ ShellRoot {
                 if (page.pageState === "loading" && ++test.idle < 100)
                     return;
                 test.ensure(page.pageState === test.expect, "state " + page.pageState);
-                test.ensure(test.control("omabridgeStateTitle").text === "omabridgeInstallOt3", "install/update title");
-                test.ensure(test.control("omabridgeStateDetail").text === (test.expect === "missing" ? "omabridgeOt3Missing" : "omabridgeOt3Outdated"), "state detail");
+                test.ensure(test.control("omabridgeStateTitle").text === "omabridgeInstall", "install/update title");
+                test.ensure(test.control("omabridgeStateDetail").text === (test.expect === "missing" ? "omabridgeMissingDetail" : "omabridgeOutdatedDetail"), "state detail");
                 test.ensure(!test.shown("omabridgeInviteButton"), "management hidden");
                 console.log("OMABRIDGE_PASS", test.expect);
                 Qt.quit();
@@ -97,6 +97,7 @@ ShellRoot {
                 test.ensure(!test.control("omabridgeInviteButton").enabled, "invite needs publishing");
                 test.click("omabridgePublishButton");
                 test.ensure(test.shown("omabridgePublishConfirm") && !page.busy, "publish waits for confirmation");
+                test.ensure(test.control("omabridgePublishT3").checked, "T3 Code is offered when it runs");
                 test.control("omabridgePublishSsh").checked = true;
                 test.click("omabridgePublishConfirm");
                 break;

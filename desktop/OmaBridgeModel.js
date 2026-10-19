@@ -1,40 +1,45 @@
 .pragma library
 
-// OmaBridge is managed through Omarchy T3 Code (bin/omabridge-client). These
-// helpers only shape requests and responses; ot3 validates everything again.
+// OmaBridge manages itself through `omabridge manage` (bin/omabridge-client);
+// this panel is one front end among several. These helpers only shape requests
+// and responses; OmaBridge validates everything again.
 
 var ACTIONS = ["identity-create", "invite", "invite-discard", "pair", "pair-retry",
                "pair-discard", "approve", "revoke", "publish", "unpublish"]
 
 var ERROR_KEYS = {
-    ot3_missing: "omabridgeErrorOt3Missing",
+    omabridge_missing: "omabridgeErrorMissing",
+    omabridge_outdated: "omabridgeErrorOutdated",
     invalid_command: "omabridgeErrorOutdated",
     invalid_action: "omabridgeErrorOutdated",
     confirmation_required: "omabridgeErrorConfirmation",
-    omabridge_unavailable: "omabridgeErrorUnavailable",
+    local_error: "omabridgeErrorLocal",
     omabridge_identity_missing: "omabridgeErrorIdentityMissing",
     omabridge_not_published: "omabridgeErrorNotPublished",
     omabridge_service_not_published: "omabridgeErrorServiceNotPublished",
     omabridge_ssh_unavailable: "omabridgeErrorSshUnavailable",
-    omabridge_invite_expired: "omabridgeErrorInviteExpired",
-    omabridge_invite_invalid: "omabridgeErrorInviteInvalid",
-    omabridge_invite_unreadable: "omabridgeErrorInviteInvalid",
-    omabridge_invite_directory: "omabridgeErrorInviteDirectory",
-    omabridge_path_unsupported: "omabridgeErrorInviteInvalid",
-    omabridge_peer_not_found: "omabridgeErrorPeerNotFound",
+    omabridge_t3_unavailable: "omabridgeErrorT3Unavailable",
+    omabridge_nothing_to_publish: "omabridgeErrorNothingToPublish",
+    omabridge_already_running: "omabridgeErrorAlreadyRunning",
     omabridge_unit_foreign: "omabridgeErrorUnitForeign",
+    omabridge_path_unsupported: "omabridgeErrorPathUnsupported",
     omabridge_publish_failed: "omabridgeErrorPublishFailed",
-    omabridge_already_running: "omabridgeErrorUnitForeign",
+    omabridge_invite_directory: "omabridgeErrorInviteDirectory",
+    omabridge_invite_unreadable: "omabridgeErrorInviteInvalid",
+    omabridge_invite_invalid: "omabridgeErrorInviteInvalid",
+    omabridge_invite_expired: "omabridgeErrorInviteExpired",
+    omabridge_pair_denied: "omabridgeErrorPairDenied",
+    omabridge_peer_unreachable: "omabridgeErrorPeerUnreachable",
+    omabridge_peer_not_found: "omabridgeErrorPeerNotFound",
+    omabridge_request_changed: "omabridgeErrorRequestChanged",
     omabridge_command_failed: "omabridgeErrorCommandFailed",
-    invalid_omabridge_routes: "omabridgeErrorRoutes",
-    omabridge_routes_read_failed: "omabridgeErrorRoutes",
     timeout: "omabridgeErrorTimeout",
     failed_start: "omabridgeErrorFailedStart",
     invalid_response: "omabridgeErrorInvalidResponse"
 }
 
-// `invalid_command` from a read means the installed ot3 predates
-// omabridge-action; from an action it means ot3 rejected the request.
+// From an action, `invalid_command` means OmaBridge rejected the request; the
+// helper reports a binary without `manage` as `omabridge_outdated`.
 function errorKey(code, fromAction) {
     if (fromAction && (code === "invalid_command" || code === "invalid_action"))
         return "omabridgeErrorInvalidRequest"
@@ -74,8 +79,10 @@ function normalize(raw) {
         published: {
             enabled: published.enabled === true,
             active: published.active === true,
+            external: published.external === true,
             stale: published.stale === true,
             sshAvailable: published.sshAvailable === true,
+            t3Available: published.t3Available === true,
             services: _list(published.services)
         },
         error: _text(raw.error)
@@ -105,13 +112,13 @@ function parseResponse(text, exitCode) {
     return { ok: true, error: "", snapshot: normalize(raw), created: created, paired: paired }
 }
 
-// Page state from the last read: ot3 missing, ot3 too old for omabridge-action,
-// OmaBridge itself missing from ot3, or ready to manage.
+// Page state from the last read: OmaBridge missing, too old for `manage`,
+// unavailable, or ready to manage.
 function stateFor(result) {
     if (!result) return "loading"
     if (!result.ok) {
-        if (result.error === "ot3_missing") return "missing"
-        if (result.error === "invalid_command" || result.error === "invalid_action") return "outdated"
+        if (result.error === "omabridge_missing") return "missing"
+        if (result.error === "omabridge_outdated" || result.error === "invalid_command" || result.error === "invalid_action") return "outdated"
         return "failed"
     }
     return result.snapshot.available ? "ready" : "unavailable"
@@ -152,7 +159,16 @@ function shortId(id) {
     return _text(id).slice(0, 8)
 }
 
+// The services a publish request offers, limited to what can be served now.
+function publishValues(published, shareT3, shareSsh) {
+    return {
+        t3: shareT3 === true && !!published && published.t3Available === true,
+        ssh: shareSsh === true && !!published && published.sshAvailable === true
+    }
+}
+
 function publishStatusKey(published) {
+    if (published && published.external && !published.enabled) return "omabridgePublishExternal"
     if (!published || !published.enabled) return "omabridgePublishOff"
     if (published.stale) return "omabridgePublishStale"
     if (!published.active) return "omabridgePublishInactive"

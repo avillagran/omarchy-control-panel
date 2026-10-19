@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run the real OmaBridge page and helper against a fake ot3 client.
+"""Run the real OmaBridge page and helper against a fake `omabridge manage`.
 
-Everything happens under a throwaway HOME: no real ot3, OmaBridge, user
-service or invitation is touched.
+Everything happens under a throwaway HOME with a minimal PATH: no real
+OmaBridge, T3 Code, user service or invitation is touched.
 """
 import json
 import os
@@ -12,7 +12,11 @@ import subprocess
 import tempfile
 
 repo = Path(__file__).resolve().parents[1]
+# A release without `manage` stays first in line, so the helper must fall back
+# to the copy Omarchy T3 Code bundles.
+OLD_BIN = ".local/bin"
 PLUGIN_BIN = ".config/omarchy/plugins/omarchy-t3-code/bin"
+OLD_RELEASE = "#!/bin/sh\necho \"error: unrecognized subcommand 'manage'\" >&2\nexit 2\n"
 
 
 def scenario(expect, install=True, mode="ready"):
@@ -25,8 +29,11 @@ def scenario(expect, install=True, mode="ready"):
         shutil.copy2(repo / "bin/omabridge-client", root / "bin/omabridge-client")
         home = root / "home"
         if install:
+            (home / OLD_BIN).mkdir(parents=True)
+            (home / OLD_BIN / "omabridge").write_text(OLD_RELEASE)
+            (home / OLD_BIN / "omabridge").chmod(0o755)
             (home / PLUGIN_BIN).mkdir(parents=True)
-            shutil.copy2(repo / "tests/fixtures/fake-omarchy-t3-client", home / PLUGIN_BIN / "omarchy-t3-client")
+            shutil.copy2(repo / "tests/fixtures/fake-omabridge", home / PLUGIN_BIN / "omabridge")
         state, log = root / "fake/state.json", root / "fake/requests.log"
         if mode != "ready":
             state.write_text(json.dumps({"mode": mode}))
@@ -39,17 +46,20 @@ def scenario(expect, install=True, mode="ready"):
         env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"), XDG_STATE_HOME=str(root / "state"),
                    XDG_DATA_HOME=str(root / "data"), XDG_CACHE_HOME=str(root / "cache"), XDG_RUNTIME_DIR=str(root / "runtime"),
                    QT_QPA_PLATFORM="offscreen", QT_QPA_PLATFORMTHEME="basic", QT_QUICK_CONTROLS_STYLE="Basic",
-                   QML2_IMPORT_PATH=str(root), FAKE_OT3_STATE=str(state), FAKE_OT3_LOG=str(log), OMABRIDGE_EXPECT=expect)
+                   QML2_IMPORT_PATH=str(root), PATH="/usr/bin:/bin", FAKE_OMABRIDGE_STATE=str(state),
+                   FAKE_OMABRIDGE_LOG=str(log), OMABRIDGE_EXPECT=expect)
         result = subprocess.run(["quickshell", "-p", str(root / "desktop/shell.qml")], env=env, capture_output=True, text=True, timeout=60)
         output = result.stdout + result.stderr
         assert result.returncode == 0 and f"OMABRIDGE_PASS {expect}" in output and "OMABRIDGE_FAILED" not in output, output
         requests = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
         if not install:
-            assert requests == [], "no client may run when ot3 is missing"
+            assert requests == [], "nothing may run when OmaBridge is missing"
             return
         for entry in requests:
-            assert entry["argv"] == ["omabridge-action"], "requests travel on stdin, never argv"
-            json.loads(entry["stdin"])
+            assert entry["argv"] == ["manage"], "requests travel on stdin, never argv"
+        if expect == "outdated":
+            assert requests and all(entry["stdin"] == "" for entry in requests), "a release without manage acts on nothing"
+            return
         bodies = [json.loads(entry["stdin"]) for entry in requests]
         assert bodies[0] == {"action": "read"}, "the page opens with a read"
         if expect != "ready":
@@ -63,7 +73,7 @@ def scenario(expect, install=True, mode="ready"):
         assert bodies[bodies.index(next(b for b in bodies if b["action"] == "invite")) + 1] == {"action": "read"}, \
             "the client output holding the invitation is replaced immediately"
         publish = next(b for b in bodies if b["action"] == "publish")
-        assert publish == {"action": "publish", "ssh": True, "confirmed": True}
+        assert publish == {"action": "publish", "t3": True, "ssh": True, "confirmed": True}
         invites = [b for b in bodies if b["action"] == "invite"]
         assert invites[0] == {"action": "invite", "services": ["t3"], "qr": True, "confirmed": True}, invites[0]
         assert invites[1]["qr"] is False
@@ -79,4 +89,4 @@ def scenario(expect, install=True, mode="ready"):
 scenario("ready")
 scenario("outdated", mode="outdated")
 scenario("missing", install=False)
-print("OmaBridge integration passed: ready, outdated and missing ot3")
+print("OmaBridge integration passed: ready (with fallback), outdated and missing OmaBridge")

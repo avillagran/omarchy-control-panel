@@ -28,15 +28,14 @@ assert.equal(ready.snapshot.device.name, 'laptop');
 assert.equal(ready.snapshot.published.active, true);
 assert.equal(ready.created, null);
 assert.equal(model.stateFor(model.parseResponse(JSON.stringify({ ...snapshot, available: false }), 0)), 'unavailable');
-assert.equal(model.stateFor(model.parseResponse('{"error":"invalid_command"}', 1)), 'outdated', 'an ot3 without omabridge-action');
-assert.equal(model.stateFor(model.parseResponse('{"error":"invalid_command"}', 0)), 'outdated', 'old omabridge-read exits 0');
-assert.equal(model.stateFor(model.parseResponse('{"error":"ot3_missing"}', 1)), 'missing');
+assert.equal(model.stateFor(model.parseResponse('{"error":"omabridge_outdated"}', 1)), 'outdated', 'no omabridge knows manage');
+assert.equal(model.stateFor(model.parseResponse('{"error":"omabridge_missing"}', 1)), 'missing');
 assert.equal(model.stateFor(model.parseResponse('{"error":"omabridge_command_failed"}', 1)), 'failed');
 assert.equal(model.stateFor(null), 'loading');
 assert.equal(model.parseResponse('', 124).error, 'timeout');
 assert.equal(model.parseResponse('not json', 0).error, 'invalid_response');
 assert.equal(model.parseResponse('[]', 0).error, 'invalid_response');
-assert.equal(model.normalize({}).published.enabled, false, 'publishing is off unless ot3 says otherwise');
+assert.equal(model.normalize({}).published.enabled, false, 'publishing is off unless OmaBridge says otherwise');
 
 // The created invitation is kept apart from the snapshot; only SVG data URIs are shown.
 const invited = model.parseResponse(JSON.stringify({ ...snapshot, created: { path: '/tmp/omabridge-invite-1.json', expires: 5, services: ['t3'], qrImage: 'data:image/svg+xml;base64,AAA' } }), 0);
@@ -64,13 +63,20 @@ assert.equal(model.publishStatusKey({ enabled: false }), 'omabridgePublishOff');
 assert.equal(model.publishStatusKey({ enabled: true, stale: true, active: true }), 'omabridgePublishStale');
 assert.equal(model.publishStatusKey({ enabled: true, active: false }), 'omabridgePublishInactive');
 assert.equal(model.publishStatusKey({ enabled: true, active: true }), 'omabridgePublishOn');
+assert.equal(model.publishStatusKey({ enabled: false, active: true, external: true }), 'omabridgePublishExternal');
+assert.deepEqual(plain(model.publishValues({ t3Available: true, sshAvailable: false }, true, true)), { t3: true, ssh: false }, 'only what can be served');
+assert.deepEqual(plain(model.publishValues({ t3Available: false, sshAvailable: true }, true, true)), { t3: false, ssh: true });
+assert.equal(model.normalize({ published: { external: true, t3Available: true } }).published.external, true);
 assert.equal(model.localPath('file:///home/u/My%20Invites/omabridge-invite-1.json'), '/home/u/My Invites/omabridge-invite-1.json');
 
 // Every documented error code has a readable message.
-const contractCodes = ['confirmation_required', 'invalid_command', 'omabridge_unavailable', 'omabridge_identity_missing',
-  'omabridge_not_published', 'omabridge_service_not_published', 'omabridge_ssh_unavailable', 'omabridge_invite_expired',
-  'omabridge_invite_invalid', 'omabridge_invite_unreadable', 'omabridge_peer_not_found', 'omabridge_unit_foreign',
-  'omabridge_publish_failed', 'omabridge_command_failed'];
+// The codes `omabridge manage` documents, plus the helper's own two.
+const contractCodes = ['invalid_command', 'invalid_action', 'confirmation_required', 'local_error',
+  'omabridge_identity_missing', 'omabridge_not_published', 'omabridge_service_not_published', 'omabridge_ssh_unavailable',
+  'omabridge_t3_unavailable', 'omabridge_nothing_to_publish', 'omabridge_already_running', 'omabridge_unit_foreign',
+  'omabridge_path_unsupported', 'omabridge_publish_failed', 'omabridge_invite_directory', 'omabridge_invite_unreadable',
+  'omabridge_invite_invalid', 'omabridge_invite_expired', 'omabridge_pair_denied', 'omabridge_peer_unreachable',
+  'omabridge_peer_not_found', 'omabridge_request_changed', 'omabridge_command_failed', 'omabridge_missing', 'omabridge_outdated'];
 for (const code of contractCodes) assert.notEqual(model.errorKey(code, true), 'omabridgeErrorGeneric', code);
 assert.equal(model.errorKey('invalid_command', false), 'omabridgeErrorOutdated');
 assert.equal(model.errorKey('invalid_command', true), 'omabridgeErrorInvalidRequest');
@@ -96,38 +102,61 @@ const keys = new Set([
   'omabridge',
   ...[...page.matchAll(/root\.tr?\("(omabridge[A-Za-z0-9]+)"/g)].map(match => match[1]),
   ...Object.values(model.ERROR_KEYS), 'omabridgeErrorInvalidRequest', 'omabridgeErrorGeneric',
-  'omabridgePublishOff', 'omabridgePublishStale', 'omabridgePublishInactive', 'omabridgePublishOn', 'cancel'
+  'omabridgePublishOff', 'omabridgePublishStale', 'omabridgePublishInactive', 'omabridgePublishOn', 'omabridgePublishExternal', 'cancel'
 ]);
 for (const lang of ['en', 'es']) for (const key of keys) assert.ok(catalog[lang][key], `${lang} translation missing: ${key}`);
-assert.equal(catalog.es.omabridgeInstallOt3, 'Instala o actualiza Omarchy T3 Code para gestionar OmaBridge');
+assert.equal(catalog.es.omabridgeInstall, 'Instala o actualiza OmaBridge para gestionarlo aquí');
+assert.doesNotMatch(page + fs.readFileSync(path.join(repo, 'desktop/OmaBridgeModel.js'), 'utf8'), /omarchy-t3-client|ot3_missing/, 'the panel does not depend on T3 Code');
 for (const key of keys) if (/%1/.test(catalog.en[key])) assert.match(catalog.es[key], /%1/, key);
 
-// The helper finds ot3 under either plugin id and reports when it is missing.
+// The helper finds `omabridge` on PATH, in ~/.local/bin or bundled with T3 Code,
+// skips a release without `manage`, and reports when none is usable.
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'omabridge-client-'));
-const run = (home, input) => cp.spawnSync(path.join(repo, 'bin/omabridge-client'), [], {
-  input, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home, FAKE_OT3_STATE: path.join(home, 'state.json'), FAKE_OT3_LOG: path.join(home, 'log') }
+const fake = path.join(repo, 'tests/fixtures/fake-omabridge');
+const install = (file, source) => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (source) fs.copyFileSync(source, file);
+  else fs.writeFileSync(file, '#!/bin/sh\necho "error: unrecognized subcommand" >&2\nexit 2\n');
+  fs.chmodSync(file, 0o755);
+};
+const run = (home, input, extraPath = '') => cp.spawnSync(path.join(repo, 'bin/omabridge-client'), [], {
+  input, encoding: 'utf8',
+  env: { PATH: `${extraPath}/usr/bin:/bin`, HOME: home, FAKE_OMABRIDGE_STATE: path.join(home, 'state.json'), FAKE_OMABRIDGE_LOG: path.join(home, 'log') }
 });
+const logOf = home => fs.readFileSync(path.join(home, 'log'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
 const missingHome = path.join(fixture, 'missing');
 fs.mkdirSync(missingHome);
 const missing = run(missingHome, '{"action":"read"}');
 assert.equal(missing.status, 1);
-assert.deepEqual(JSON.parse(missing.stdout), { error: 'ot3_missing' });
-for (const id of ['omarchy-t3-code', 'io.github.avillagran.omarchy-t3-code']) {
-  const home = path.join(fixture, id);
-  const bin = path.join(home, '.config/omarchy/plugins', id, 'bin');
-  fs.mkdirSync(bin, { recursive: true });
-  fs.copyFileSync(path.join(repo, 'tests/fixtures/fake-omarchy-t3-client'), path.join(bin, 'omarchy-t3-client'));
-  fs.chmodSync(path.join(bin, 'omarchy-t3-client'), 0o755);
-  const read = run(home, '{"action":"read"}');
-  assert.equal(read.status, 0, read.stdout + read.stderr);
+assert.deepEqual(JSON.parse(missing.stdout), { error: 'omabridge_missing' });
+const oldHome = path.join(fixture, 'old');
+install(path.join(oldHome, '.local/bin/omabridge'));
+assert.deepEqual(JSON.parse(run(oldHome, '{"action":"read"}').stdout), { error: 'omabridge_outdated' });
+const layouts = {
+  path: home => { install(path.join(home, 'tools/omabridge'), fake); return `${home}/tools:`; },
+  local: home => { install(path.join(home, '.local/bin/omabridge'), fake); return ''; },
+  bundled: home => {
+    install(path.join(home, '.local/bin/omabridge'));
+    install(path.join(home, '.config/omarchy/plugins/omarchy-t3-code/bin/omabridge'), fake);
+    return '';
+  },
+  'bundled-id': home => { install(path.join(home, '.config/omarchy/plugins/io.github.avillagran.omarchy-t3-code/bin/omabridge'), fake); return ''; }
+};
+for (const [name, layout] of Object.entries(layouts)) {
+  const home = path.join(fixture, name);
+  const extraPath = layout(home);
+  const read = run(home, '{"action":"read"}', extraPath);
+  assert.equal(read.status, 0, name + read.stdout + read.stderr);
   assert.equal(JSON.parse(read.stdout).available, true);
-  const refused = run(home, '{"action":"identity-create"}');
+  const refused = run(home, '{"action":"identity-create"}', extraPath);
   assert.equal(refused.status, 1);
   assert.deepEqual(JSON.parse(refused.stdout), { error: 'confirmation_required' });
-  const log = fs.readFileSync(path.join(home, 'log'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
-  assert.deepEqual(log.map(entry => entry.argv), [['omabridge-action'], ['omabridge-action']]);
+  const log = logOf(home);
+  assert.deepEqual(log.map(entry => entry.argv), [['manage'], ['manage']], name);
   assert.equal(log[1].stdin, '{"action":"identity-create"}', 'stdin passes through unchanged');
 }
+const large = run(path.join(fixture, 'local'), ' '.repeat(70 * 1024));
+assert.deepEqual(JSON.parse(large.stdout), { error: 'invalid_command' });
 fs.rmSync(fixture, { recursive: true, force: true });
 
 console.log('OmaBridgeModel tests passed');

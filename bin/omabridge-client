@@ -1,29 +1,58 @@
 #!/usr/bin/env bash
-# Forwards one OmaBridge request to the Omarchy T3 Code client.
+# Forwards one OmaBridge request to `omabridge manage`.
 #
-# ot3 owns OmaBridge: validation, confirmation, secret handling and the
-# published unit all stay there. The JSON request arrives on stdin and is
-# passed through unchanged (never on the command line); the client prints the
-# new snapshot or {"error":"<code>"} and exits 1. When ot3 is not installed
-# this prints {"error":"ot3_missing"} instead.
+# OmaBridge owns validation, confirmation, secrets and the publishing unit;
+# this panel is one of several front ends (T3 Code, bar widgets) and depends
+# on none of them. The JSON request arrives on stdin and is passed through
+# unchanged (never on the command line); OmaBridge prints the new snapshot or
+# {"error":"<code>"} and exits 1. This helper adds two codes of its own:
+# omabridge_missing (no binary found) and omabridge_outdated (no installed
+# binary knows `manage` yet).
 set -uo pipefail
 
 config_home=${XDG_CONFIG_HOME:-$HOME/.config}
-client=""
+candidates=()
+if found=$(command -v omabridge 2>/dev/null); then
+  candidates+=("$found")
+fi
+candidates+=("$HOME/.local/bin/omabridge")
+# Omarchy T3 Code bundles a pinned copy; use it when nothing else is installed.
 for id in omarchy-t3-code io.github.avillagran.omarchy-t3-code; do
   for base in "$config_home" "$HOME/.config"; do
-    candidate="$base/omarchy/plugins/$id/bin/omarchy-t3-client"
-    if [[ -f $candidate && -x $candidate ]]; then
-      client=$candidate
-      break 2
-    fi
+    candidates+=("$base/omarchy/plugins/$id/bin/omabridge")
   done
 done
 
-if [[ -z $client ]]; then
-  printf '{"error":"ot3_missing"}\n'
+# Read the request once so it can be offered to an older and a newer binary.
+request=$(head -c 65537)
+if (( $(printf '%s' "$request" | wc -c) > 65536 )); then
+  printf '{"error":"invalid_command"}\n'
   exit 1
 fi
 
-# Publishing waits for the user service; anything slower than this is stuck.
-exec timeout --kill-after=5 120 "$client" omabridge-action
+seen=" "
+any=false
+for candidate in "${candidates[@]}"; do
+  [[ -f $candidate && -x $candidate ]] || continue
+  real=$(readlink -f -- "$candidate") || continue
+  [[ $seen == *" $real "* ]] && continue
+  seen+="$real "
+  any=true
+  # Publishing waits for the user service; anything slower than this is stuck.
+  output=$(printf '%s' "$request" | timeout --kill-after=5 120 "$real" manage 2>/dev/null)
+  status=$?
+  # A release without `manage` rejects the subcommand (exit 2) before doing
+  # anything, so the next candidate can safely receive the same request.
+  if (( status == 2 )) && [[ -z $output ]]; then
+    continue
+  fi
+  printf '%s\n' "$output"
+  exit "$status"
+done
+
+if [[ $any == true ]]; then
+  printf '{"error":"omabridge_outdated"}\n'
+else
+  printf '{"error":"omabridge_missing"}\n'
+fi
+exit 1
