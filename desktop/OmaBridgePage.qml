@@ -34,6 +34,10 @@ ColumnLayout {
     property var remoteSnapshot: null
     property string remoteAction: ""
     property string remoteRelayChoice: "public"
+    // Requests sent one after another (moving devices to a hosted relay).
+    property var queue: []
+    property int queueTotal: 0
+    property int queueDone: 0
     // The invitation chosen for pairing, while its contents are inspected.
     property string inspectPath: ""
     property string errorCode: ""
@@ -86,6 +90,20 @@ ColumnLayout {
         renameDialog.open();
     }
     // Opens the confirmation dialog; nothing is sent until Confirm.
+    function askRun(title, detail, task) {
+        if (busy)
+            return;
+        errorCode = "";
+        confirmRequest = {
+            action: "queue",
+            values: {},
+            title: title,
+            detail: detail,
+            consent: "",
+            run: task
+        };
+        confirmDialog.open();
+    }
     // `consent`, when set, adds an unchecked box whose answer becomes `allowManage`.
     function ask(job, values, title, detail, consent) {
         if (busy)
@@ -105,6 +123,12 @@ ColumnLayout {
         return run(OmaBridgeModel.confirmedRequest(job, values));
     }
     function confirmAsked() {
+        if (confirmRequest.run) {
+            var task = confirmRequest.run;
+            confirmDialog.close();
+            task();
+            return;
+        }
         var values = {};
         for (var key in confirmRequest.values)
             values[key] = confirmRequest.values[key];
@@ -144,6 +168,25 @@ ColumnLayout {
             return;
         remoteAction = command.action;
         confirmed("remote", values);
+    }
+    // Moves every managed device, then this one, to the relay `url`.
+    function useRelayEverywhere(url) {
+        queue = OmaBridgeModel.relayEverywhereRequests(url, snapshot ? snapshot.peers : []);
+        queueTotal = queue.length;
+        queueDone = 0;
+        nextQueued();
+    }
+    function nextQueued() {
+        if (!queue.length) {
+            if (queueTotal) {
+                status = t("omabridgeHostUsed").replace("%1", queueDone).replace("%2", queueTotal);
+                queueTotal = 0;
+            }
+            return;
+        }
+        var request = queue[0];
+        queue = queue.slice(1);
+        run(request);
     }
     function askRemote(command, title, detail) {
         var values = OmaBridgeModel.remoteValues(remotePeer ? remotePeer.id : "", command);
@@ -203,6 +246,8 @@ ColumnLayout {
         var response = OmaBridgeModel.parseResponse(text, exitCode);
         busy = false;
         action = "";
+        if (queueTotal)
+            Qt.callLater(nextQueued);
         if (!response.ok) {
             if (done === "remote")
                 remoteAction = "";
@@ -229,6 +274,12 @@ ColumnLayout {
             ok: true,
             snapshot: response.snapshot
         };
+        if (queueTotal) {
+            queueDone++;
+            if (done === "remote" && response.remote && remotePeer && response.remote.device && response.remote.device.id === remotePeer.id)
+                remoteSnapshot = response.remote;
+            return;
+        }
         if (done === "invite") {
             created = response.created;
             // The client's output still holds the secret; replace it right away.
@@ -261,7 +312,7 @@ ColumnLayout {
                 remoteRenameField.text = "";
             }
             // A relay change is undone on that device unless it is reached again soon.
-            if (changed === "relay-set")
+            if (changed === "relay-set" || changed === "relay-host")
                 remoteConfirm.restart();
             if (changed === "rename")
                 peersReread.restart();
@@ -1032,6 +1083,90 @@ ColumnLayout {
                     text: root.t("omabridgeRemoteRelayNote")
                 }
 
+                // Private relay hosted here
+                Heading {
+                    visible: !!root.remoteSnapshot
+                    text: root.t("omabridgeHostTitle")
+                }
+                Copy {
+                    objectName: "omabridgeRemoteHostStatus"
+                    visible: !!root.remoteSnapshot
+                    text: root.remoteSnapshot ? root.t(OmaBridgeModel.relayHostStatusKey(root.remoteSnapshot.relayHost)) + (root.remoteSnapshot.relayHost.enabled ? " · " + root.remoteSnapshot.relayHost.url : "") : ""
+                    color: root.remoteSnapshot && root.remoteSnapshot.relayHost.error ? theme.urgent : theme.textMuted
+                    wrapMode: Text.WrapAnywhere
+                }
+                Copy {
+                    visible: !!root.remoteSnapshot && !root.remoteSnapshot.relayHost.enabled
+                    text: root.remoteSnapshot && root.remoteSnapshot.relayHost.suggested ? root.tr("omabridgeHostSuggested", root.remoteSnapshot.relayHost.suggested) : root.t("omabridgeHostNoSuggestion")
+                    wrapMode: Text.WrapAnywhere
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: !!root.remoteSnapshot && !root.remoteSnapshot.relayHost.enabled
+                    Controls.TextField {
+                        id: remoteHostUrl
+                        objectName: "omabridgeRemoteHostUrl"
+                        Layout.fillWidth: true
+                        enabled: !root.busy
+                        placeholderText: root.remoteSnapshot && root.remoteSnapshot.relayHost.suggested ? root.remoteSnapshot.relayHost.suggested : "https://relay.example.net:3341"
+                        selectByMouse: true
+                        color: theme.text
+                        placeholderTextColor: theme.textMuted
+                        font.family: theme.fontUi
+                        font.pixelSize: theme.body
+                        background: Rectangle {
+                            color: theme.panelDeep
+                            radius: theme.radius
+                            border.color: remoteHostUrl.activeFocus ? theme.accent : theme.border
+                        }
+                    }
+                    Action {
+                        objectName: "omabridgeRemoteHostEnable"
+                        primary: true
+                        enabled: !root.busy && (remoteHostUrl.text.trim() !== "" ? OmaBridgeModel.relayValid("custom", remoteHostUrl.text) : !!root.remoteSnapshot && root.remoteSnapshot.relayHost.suggested !== "")
+                        text: root.t("omabridgeHostEnable")
+                        onClicked: {
+                            var command = {
+                                action: "relay-host",
+                                enabled: true
+                            };
+                            if (remoteHostUrl.text.trim() !== "")
+                                command.url = remoteHostUrl.text.trim();
+                            root.remote(command);
+                        }
+                    }
+                }
+                Copy {
+                    visible: !!root.remoteSnapshot
+                    text: root.t("omabridgeHostDetail")
+                }
+                Flow {
+                    Layout.fillWidth: true
+                    visible: !!root.remoteSnapshot && root.remoteSnapshot.relayHost.enabled
+                    spacing: theme.gap
+                    Action {
+                        objectName: "omabridgeRemoteHostUse"
+                        primary: true
+                        enabled: !root.busy && !!root.remoteSnapshot && root.remoteSnapshot.relayHost.running
+                        text: root.t("omabridgeHostUseEverywhere")
+                        onClicked: {
+                            var url = root.remoteSnapshot.relayHost.url;
+                            root.askRun(root.tr("omabridgeHostUseConfirm", url), root.t("omabridgeHostUseDetail"), function () {
+                                root.useRelayEverywhere(url);
+                            });
+                        }
+                    }
+                    Action {
+                        objectName: "omabridgeRemoteHostDisable"
+                        enabled: !root.busy
+                        text: root.t("omabridgeHostDisable")
+                        onClicked: root.askRemote({
+                            action: "relay-host",
+                            enabled: false
+                        }, root.tr("omabridgeHostDisableConfirm", root.remotePeer.name), root.t("omabridgeHostDisableDetail"))
+                    }
+                }
+
                 // Requests waiting on that device
                 Heading {
                     visible: !!root.remoteSnapshot && root.remoteSnapshot.pending.length > 0
@@ -1233,7 +1368,7 @@ ColumnLayout {
                 Action {
                     objectName: "omabridgeRelaySave"
                     primary: true
-                    enabled: !root.busy && OmaBridgeModel.relayValid(root.relayChoice, relayUrl.text)
+                    enabled: !root.busy && OmaBridgeModel.relayValid(root.relayChoice, relayUrl.text) && (root.relayChoice !== root.relay.mode || (root.relayChoice === "custom" && relayUrl.text.trim() !== root.relay.url))
                     text: root.t("omabridgeRelaySave")
                     onClicked: root.confirmed("relay-set", OmaBridgeModel.relayValues(root.relayChoice, relayUrl.text))
                 }

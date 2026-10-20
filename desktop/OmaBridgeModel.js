@@ -6,10 +6,10 @@
 
 var ACTIONS = ["identity-create", "invite", "invite-discard", "pair", "pair-retry",
                "pair-discard", "approve", "revoke", "publish", "unpublish", "relay-set", "rename",
-               "admin-set", "remote"]
+               "admin-set", "remote", "relay-host"]
 
 // What a managing device may ask a managed one; OmaBridge enforces the same list there.
-var REMOTE_ACTIONS = ["read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve"]
+var REMOTE_ACTIONS = ["read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve", "relay-host"]
 
 var ERROR_KEYS = {
     omabridge_missing: "omabridgeErrorMissing",
@@ -46,6 +46,8 @@ var ERROR_KEYS = {
     omabridge_peer_is_admin: "omabridgeErrorPeerIsAdmin",
     omabridge_remote_unsupported: "omabridgeErrorRemoteUnsupported",
     omabridge_remote_failed: "omabridgeErrorGeneric",
+    omabridge_relay_host_unavailable: "omabridgeErrorRelayHostUnavailable",
+    omabridge_relay_certificate: "omabridgeErrorRelayCertificate",
     timeout: "omabridgeErrorTimeout",
     failed_start: "omabridgeErrorFailedStart",
     invalid_response: "omabridgeErrorInvalidResponse"
@@ -102,6 +104,11 @@ function normalize(raw) {
             services: _list(published.services)
         },
         relay: { mode: relayMode, url: relayMode === "custom" ? _text(relay.url) : "" },
+        relayHost: (function(host) {
+            host = host && typeof host === "object" ? host : {}
+            return { enabled: host.enabled === true, url: _text(host.url), running: host.running === true,
+                     error: _text(host.error), suggested: _text(host.suggested) }
+        })(raw.relayHost),
         error: _text(raw.error)
     }
 }
@@ -276,6 +283,28 @@ function renamedStatus(renamed) {
     if (renamed && renamed.via === "direct")
         return { key: "omabridgeRenamedDirect", reached: renamed.reached || 0, total: renamed.total || 0 }
     return { key: "omabridgeRenamedService", reached: 0, total: 0 }
+}
+
+// The private relay a device hosts for the devices paired with it.
+function relayHostStatusKey(host) {
+    if (!host || !host.enabled) return "omabridgeHostOff"
+    if (host.running) return "omabridgeHostRunning"
+    if (host.error === "certificate") return "omabridgeHostCertificate"
+    if (host.error === "port") return "omabridgeHostPort"
+    if (host.error) return "omabridgeHostFailed"
+    return "omabridgeHostStarting"
+}
+
+// Moving to a hosted relay: every device this one manages, then this one,
+// whose own server restarts last.
+function relayEverywhereRequests(url, peers) {
+    var requests = []
+    _list(peers).forEach(function(peer) {
+        if (peer && peer.managed)
+            requests.push(confirmedRequest("remote", { peer: peer.id, command: { action: "relay-set", relay: url } }))
+    })
+    requests.push(confirmedRequest("relay-set", { relay: url }))
+    return requests
 }
 
 function publishStatusKey(published) {

@@ -60,6 +60,8 @@ def remote_snapshot(state):
         "published": {"enabled": remote["published"], "active": remote["published"], "external": False, "stale": False,
                       "sshAvailable": True, "t3Available": False, "services": remote["services"]},
         "relay": {"mode": "custom", "url": relay} if relay.startswith("https://") else {"mode": relay, "url": None},
+        "relayHost": remote.get("host") or {"enabled": False, "url": None, "running": False, "error": None,
+                                            "suggested": "https://vps.example.net:3341/"},
     }
 
 
@@ -70,7 +72,7 @@ def run_remote(state, request):
     command = request.get("command") or {}
     action = command.get("action")
     remote = state["remote"]
-    if action not in ("read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve"):
+    if action not in ("read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve", "relay-host"):
         fail("omabridge_remote_forbidden")
     if action == "rename":
         remote["name"] = command.get("name", "").strip()
@@ -87,6 +89,11 @@ def run_remote(state, request):
         if any(p["id"] == command.get("peer") and p["admin"] for p in remote["peers"]):
             fail("omabridge_peer_is_admin")
         remote["peers"] = [p for p in remote["peers"] if p["id"] != command.get("peer")]
+    elif action == "relay-host":
+        if "cert" in command or "key" in command:
+            fail("omabridge_remote_forbidden")
+        remote["host"] = {"enabled": True, "url": command.get("url") or "https://vps.example.net:3341/",
+                          "running": True, "error": None, "suggested": None} if command.get("enabled") else None
     elif action == "approve":
         remote["pending"] = [p for p in remote["pending"] if p["id"] != command.get("peer")]
     return remote_snapshot(state)

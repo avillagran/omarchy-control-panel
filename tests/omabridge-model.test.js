@@ -121,6 +121,20 @@ assert.deepEqual(plain(parsed.renamed), { via: 'direct', reached: 1, total: 2 })
 assert.deepEqual(plain(parsed.invitation), { name: 'A', expires: 5, manage: true }, 'never the token');
 assert.equal(parsed.remote.device.name, 'R');
 assert.equal(model.errorKey('omabridge_manage_consent_required', true), 'omabridgeErrorConsentRequired');
+
+// Hosted relay.
+assert.deepEqual(plain(model.normalize({}).relayHost), { enabled: false, url: '', running: false, error: '', suggested: '' });
+assert.equal(model.normalize({ relayHost: { suggested: 'https://r.example.net:3341/' } }).relayHost.suggested, 'https://r.example.net:3341/');
+assert.equal(model.relayHostStatusKey({ enabled: false }), 'omabridgeHostOff');
+assert.equal(model.relayHostStatusKey({ enabled: true, running: true }), 'omabridgeHostRunning');
+assert.equal(model.relayHostStatusKey({ enabled: true, error: 'port' }), 'omabridgeHostPort');
+assert.equal(model.relayHostStatusKey({ enabled: true, error: 'certificate' }), 'omabridgeHostCertificate');
+assert.equal(model.relayHostStatusKey({ enabled: true }), 'omabridgeHostStarting');
+const moves = plain(model.relayEverywhereRequests('https://r/', [{ id: 'a', managed: true }, { id: 'b', managed: false }, { id: 'c', managed: true }]));
+assert.deepEqual(moves.map(r => r.action === 'remote' ? r.peer : 'self'), ['a', 'c', 'self'], 'managed devices first, this one last');
+assert.deepEqual(moves[0], { action: 'remote', peer: 'a', command: { action: 'relay-set', relay: 'https://r/' }, confirmed: true });
+assert.deepEqual(moves[2], { action: 'relay-set', relay: 'https://r/', confirmed: true });
+assert.notEqual(model.remoteValues('p', { action: 'relay-host', enabled: true }), null);
 assert.deepEqual(plain(model.publishValues({ t3Available: true, sshAvailable: false }, true, true)), { t3: true, ssh: false }, 'only what can be served');
 assert.deepEqual(plain(model.publishValues({ t3Available: false, sshAvailable: true }, true, true)), { t3: false, ssh: true });
 assert.equal(model.normalize({ published: { external: true, t3Available: true } }).published.external, true);

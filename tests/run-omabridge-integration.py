@@ -73,7 +73,7 @@ def scenario(expect, install=True, mode="ready"):
                    for body in bodies if body["action"] not in ("read", "invite-inspect") and body.get("command", {}).get("action") != "read"]
         assert {"action": "rename", "name": "Desk at home", "confirmed": True} in bodies
         assert actions == ["identity-create", "publish", "invite", "invite-discard", "invite", "invite", "pair", "pair-retry",
-                           "remote:rename", "remote:relay-set", "remote:revoke", "admin-set", "approve", "revoke", "pair",
+                           "remote:rename", "remote:relay-set", "remote:revoke", "remote:relay-host", "remote:relay-set", "relay-set", "admin-set", "approve", "revoke", "pair",
                            "pair", "relay-set", "rename", "sync", "unpublish"], actions
         pairs = [b for b in bodies if b["action"] == "pair"]
         assert "allowManage" not in pairs[0], "plain invitations carry no consent"
@@ -92,8 +92,11 @@ def scenario(expect, install=True, mode="ready"):
         discard = next(b for b in bodies if b["action"] == "invite-discard")
         assert discard["path"].endswith("omabridge-invite-0.json") and not Path(discard["path"]).exists()
         assert (root / "fake/omabridge-invite-1.json").exists(), "closing the dialog only forgets, it does not delete"
-        assert next(b for b in bodies if b["action"] == "relay-set") == \
-            {"action": "relay-set", "relay": "https://relay.example.net", "confirmed": True}
+        local_relays = [b for b in bodies if b["action"] == "relay-set"]
+        assert local_relays == [{"action": "relay-set", "relay": "https://vps.example.net:3341/", "confirmed": True},
+                                {"action": "relay-set", "relay": "https://relay.example.net", "confirmed": True}], local_relays
+        assert {"action": "remote", "peer": "a1" * 32, "command": {"action": "relay-host", "enabled": True},
+                "confirmed": True} in bodies, "hosting without a URL uses the suggestion"
         assert next(b for b in bodies if b["action"] == "pair")["path"] == "/invitations/omabridge invite.json"
         assert next(b for b in bodies if b["action"] == "pair-retry")["id"] == "aaaaaaaa-1111-4111-8111-111111111111"
         assert next(b for b in bodies if b["action"] == "approve")["peer"] == "b2" * 32
