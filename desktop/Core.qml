@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "DisplayModel.js" as DisplayModel
 import "WorkspaceModel.js" as WorkspaceModel
@@ -34,7 +35,7 @@ Item {
   }
 
   // Desktop standalone - stubs for bar/settings
-  property var bar: ({ barForeground: Color.foreground, fontFamily: Style.font.family, switchPanelFrom: function(){return false} })
+  property var bar: ({ barForeground: Commons.Color.foreground, fontFamily: Style.font.family, switchPanelFrom: function(){return false} })
   property var settings: ({})
   property string moduleName: "omarchy-control-panel"
   property string ipcTarget: "omarchy-control-panel"
@@ -43,7 +44,7 @@ Item {
   signal closeRequested()
   function toggle(){ opened ? close() : open() }
   property var controller: QtObject { property bool open: root.opened; function show(){ root.opened = true } function hide(){ root.closeRequested() } function toggle(){ root.toggle() } }
-  readonly property color barForeground: Color.foreground
+  readonly property color barForeground: Commons.Color.foreground
   property var anchorItem: null
   property var hostWidget: null
   readonly property int contentWidth: 495
@@ -2019,7 +2020,7 @@ Item {
   }
 
   Connections {
-    target: Color
+    target: Commons.Color
     function onAccentChanged() { workspaceThemeFile.reload() }
     function onForegroundChanged() { workspaceThemeFile.reload() }
     function onUrgentChanged() { workspaceThemeFile.reload() }
@@ -2661,7 +2662,7 @@ Item {
 
         Text {
           text: "󰒓"
-          color: Color.accent
+          color: Commons.Color.accent
           font.family: root.fontFamily
           font.pixelSize: Style.font.title
           anchors.verticalCenter: parent.verticalCenter
@@ -2715,7 +2716,7 @@ Item {
         Text {
           width: parent.width
           text: root.t(root.uiLang, "keepChangesPrompt")
-          color: Color.accent
+          color: Commons.Color.accent
           font.family: root.fontFamily
           font.pixelSize: Style.font.subtitle
           font.bold: true
@@ -2727,7 +2728,7 @@ Item {
           spacing: Style.space(16)
           Text {
             text: root.displaySecondsRemaining + "s"
-            color: Color.accent
+            color: Commons.Color.accent
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
             font.bold: true
@@ -2750,7 +2751,7 @@ Item {
           width: parent.width
           visible: root.displaySecondsRemaining <= 5
           text: root.t(root.uiLang, "displayRevertHint")
-          color: Qt.darker(Color.foreground, 1.4)
+          color: Qt.darker(Commons.Color.foreground, 1.4)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           wrapMode: Text.WordWrap
@@ -2836,7 +2837,7 @@ Item {
           width: parent.width
           visible: root.showSuggestion
           height: suggestionRow.implicitHeight + Style.space(14)
-          color: Style.selectedFillFor(root.fg, Color.accent)
+          color: Style.selectedFillFor(root.fg, Commons.Color.accent)
           radius: Style.cornerRadius > 0 ? Style.cornerRadius : 4
 
           Row {
@@ -2974,7 +2975,7 @@ Item {
           height: pointerFeelContent.implicitHeight + Style.space(24)
           radius: Style.cornerRadius
           color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.035)
-          border.color: root.pointerFeelDirty ? Color.accent : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.16)
+          border.color: root.pointerFeelDirty ? Commons.Color.accent : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.16)
           border.width: 1
           enabled: root.pointerFeelReady
           opacity: root.pointerFeelReady ? 1 : 0.55
@@ -3126,7 +3127,7 @@ Item {
             PrecisionCircuit {
               width: parent.width
               foreground: root.fg
-              accent: Color.accent
+              accent: Commons.Color.accent
               pointIndex: root.practiceTargetIndex
               hits: root.practiceHits
               onHit: root.advancePracticeTarget()
@@ -3139,7 +3140,7 @@ Item {
           visible: !root.devMode
           wrapMode: Text.WordWrap
           text: root.t(root.uiLang, "scrollFeelDevHint")
-          color: Color.urgent
+          color: Commons.Color.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
         }
@@ -3165,7 +3166,7 @@ Item {
           height: visible ? scrollFeelContent.implicitHeight + Style.space(24) : 0
           radius: Style.cornerRadius
           color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.035)
-          border.color: Color.urgent
+          border.color: Commons.Color.urgent
           border.width: 1
           enabled: root.scrollPatchSupported
           opacity: root.scrollPatchSupported ? 1 : 0.55
@@ -3194,12 +3195,12 @@ Item {
                 width: devBadgeText.implicitWidth + Style.space(10)
                 height: devBadgeText.implicitHeight + Style.space(4)
                 radius: 4
-                color: Qt.alpha(Color.urgent, 0.18)
+                color: Qt.alpha(Commons.Color.urgent, 0.18)
                 Text {
                   id: devBadgeText
                   anchors.centerIn: parent
                   text: "DEV"
-                  color: Color.urgent
+                  color: Commons.Color.urgent
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   font.bold: true
@@ -3213,7 +3214,7 @@ Item {
               text: root.scrollPatchSupported
                 ? root.t(root.uiLang, "scrollFeelSupported")
                 : root.t(root.uiLang, "scrollFeelUnsupported")
-              color: root.scrollPatchSupported ? root.fg : Color.urgent
+              color: root.scrollPatchSupported ? root.fg : Commons.Color.urgent
               opacity: root.scrollPatchSupported ? 0.66 : 1
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -3319,7 +3320,7 @@ Item {
               text: root.scrollIgnoreSupported
                 ? root.t(root.uiLang, "scrollIgnoreHint")
                 : root.t(root.uiLang, "scrollIgnoreUnsupported")
-              color: root.scrollIgnoreSupported ? root.fg : Color.urgent
+              color: root.scrollIgnoreSupported ? root.fg : Commons.Color.urgent
               opacity: root.scrollIgnoreSupported ? 0.66 : 1
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -3536,12 +3537,12 @@ Item {
           onMoved: root.applyFontSize(value)
         }
 
-        PanelSeparator { visible: root.devMode; foreground: Color.urgent }
+        PanelSeparator { visible: root.devMode; foreground: Commons.Color.urgent }
 
         ToggleRow {
           label: root.missionControlBusy ? root.t(root.uiLang, "missionControlInstalling") : root.t(root.uiLang, "missionControl")
           visible: root.devMode
-          foreground: Color.urgent
+          foreground: Commons.Color.urgent
           checked: root.missionControlEnabled
           enabled: !root.missionControlBusy
           onClicked: root.setMissionControl(!root.missionControlEnabled)
@@ -3561,7 +3562,7 @@ Item {
           visible: root.devMode && root.missionControlError !== ""
           width: parent.width
           text: root.missionControlError
-          color: Color.urgent
+          color: Commons.Color.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           wrapMode: Text.WordWrap
@@ -3781,7 +3782,7 @@ Item {
             Layout.preferredWidth: Style.space(150)
             label: "Dev mode"
             checked: root.devMode
-            foreground: Color.urgent
+            foreground: Commons.Color.urgent
             onClicked: root.setDevMode(!root.devMode)
           }
         }
@@ -3798,7 +3799,7 @@ Item {
           Rectangle {
             width: parent.width
             height: Style.space(1)
-            color: Color.accent
+            color: Commons.Color.accent
             opacity: 0.6
           }
 
@@ -3852,8 +3853,8 @@ Item {
                 required property var modelData
                 width: parent.width
                 height: profileCard.height + Style.space(12)
-                color: root.activeProfileId === modelData.id ? Style.selectedFillFor(root.fg, Color.accent) : Color.popups.background
-                border.color: root.activeProfileId === modelData.id ? Color.accent : "transparent"
+                color: root.activeProfileId === modelData.id ? Style.selectedFillFor(root.fg, Commons.Color.accent) : Commons.Color.popups.background
+                border.color: root.activeProfileId === modelData.id ? Commons.Color.accent : "transparent"
                 border.width: Style.space(1)
                 radius: Style.cornerRadius
 
@@ -4018,7 +4019,7 @@ Item {
           height: Math.min(240, Math.max(170, root.contentWidth * 0.31))
           radius: Style.cornerRadius
           color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.035)
-          border.color: root.displayValidLayout ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.18) : Color.urgent
+          border.color: root.displayValidLayout ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.18) : Commons.Color.urgent
           border.width: 1
 
           // Commit a drag: convert canvas px to logical coords, keep the layout
@@ -4105,7 +4106,7 @@ Item {
         Text {
           visible: !root.displayValidLayout
           text: root.displayActiveCount === 0 ? root.t(root.uiLang, "displayAtLeastOne") : root.t(root.uiLang, "displayNoOverlap")
-          color: Color.urgent
+          color: Commons.Color.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
         }
@@ -4429,8 +4430,8 @@ Item {
           Rectangle {
             id: confirmCardBg
             anchors.fill: confirmRow
-            color: Color.popups.background
-            border.color: Color.accent
+            color: Commons.Color.popups.background
+            border.color: Commons.Color.accent
             border.width: Style.space(2)
             radius: Style.cornerRadius * 2
             opacity: confirmRow.opacity
@@ -4449,7 +4450,7 @@ Item {
             Text {
               width: parent.width
               text: root.t(root.uiLang, "keepChangesPrompt")
-              color: Color.accent
+              color: Commons.Color.accent
               font.family: root.fontFamily
               font.pixelSize: Style.font.subtitle
               font.bold: true
@@ -4461,7 +4462,7 @@ Item {
               spacing: Style.space(16)
               Text {
                 text: root.displaySecondsRemaining + "s"
-                color: Color.accent
+                color: Commons.Color.accent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.title
                 font.bold: true
@@ -4484,7 +4485,7 @@ Item {
               width: parent.width
               visible: root.displaySecondsRemaining <= 5
               text: root.t(root.uiLang, "displayRevertHint")
-              color: Qt.darker(Color.foreground, 1.4)
+              color: Qt.darker(Commons.Color.foreground, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap
@@ -4505,7 +4506,7 @@ Item {
         ToggleRow {
           label: root.t(root.uiLang, "browserCloseTab")
           visible: root.devMode
-          foreground: Color.urgent
+          foreground: Commons.Color.urgent
           checked: root.browserCloseTabOn
           onClicked: { root.setBrowserCloseTab(!root.browserCloseTabOn) }
         }

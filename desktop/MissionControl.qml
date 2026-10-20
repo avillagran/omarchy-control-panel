@@ -6,6 +6,7 @@ import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 
 Item {
   id: root
@@ -166,8 +167,8 @@ Item {
   }
 
   function workspaceColor(workspace) {
-    var color = Color[colorRoleForWorkspace(workspace)]
-    return color || Color.accent
+    var color = Commons.Color[colorRoleForWorkspace(workspace)]
+    return color || Commons.Color.accent
   }
 
   function workspaceTint(workspace, alpha) {
@@ -232,14 +233,14 @@ Item {
             Text {
               Layout.fillWidth: true
               text: "QuickView"
-              color: Color.foreground
+              color: Commons.Color.foreground
               font.family: Style.font.family
               font.pixelSize: Style.font.heading
               font.bold: true
             }
             Text {
               text: "Drag windows between workspaces · drag a workspace header to insert it · ESC to close"
-              color: Color.foreground
+              color: Commons.Color.foreground
               opacity: 0.68
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -349,7 +350,7 @@ Item {
                       y: index * (height + Style.space(6))
                       radius: Style.cornerRadius
                       z: cardDrag.active ? 10 : 1
-                      color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, cardDrag.active ? 0.22 : 0.12)
+                      color: Qt.rgba(Commons.Color.foreground.r, Commons.Color.foreground.g, Commons.Color.foreground.b, cardDrag.active ? 0.22 : 0.12)
                       border.width: 1
                       border.color: root.workspaceTint(workspaceCard.modelData, 0.72)
                       Drag.active: cardDrag.active
@@ -386,7 +387,7 @@ Item {
                         Text {
                           width: parent.width
                           text: root.clientTitle(modelData)
-                          color: Color.foreground
+                          color: Commons.Color.foreground
                           font.family: Style.font.family
                           font.pixelSize: Style.font.caption
                           font.bold: true
@@ -395,7 +396,7 @@ Item {
                         Text {
                           width: parent.width
                           text: String(modelData.class || "")
-                          color: Color.foreground
+                          color: Commons.Color.foreground
                           opacity: 0.68
                           font.family: Style.font.family
                           font.pixelSize: Style.font.caption

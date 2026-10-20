@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import "ThemePalette.js" as ThemePalette
 
 QtObject {
@@ -13,17 +14,17 @@ QtObject {
     return typeof value === "string" && value.length > 0 ? value : fallback
   }
 
-  // Exact semantic surfaces from the active Omarchy theme. Color.* remains a
+  // Exact semantic surfaces from the active Omarchy theme. Commons.Color.* remains a
   // safe fallback only while colors.toml is loading.
-  readonly property color app: paletteColor("background", Color.background)
+  readonly property color app: paletteColor("background", Commons.Color.background)
   readonly property color panel: paletteColor("lighter_background", app)
   readonly property color panelAlt: paletteColor("selection", panel)
   readonly property color panelDeep: paletteColor("darker_background", app)
-  readonly property color border: paletteColor("muted", Qt.alpha(Color.foreground, 0.16))
-  readonly property color text: paletteColor("foreground", Color.foreground)
+  readonly property color border: paletteColor("muted", Qt.alpha(Commons.Color.foreground, 0.16))
+  readonly property color text: paletteColor("foreground", Commons.Color.foreground)
   readonly property color textMuted: paletteColor("light_foreground", Qt.alpha(text, 0.72))
-  readonly property color accent: paletteColor("accent", Color.accent)
-  readonly property color urgent: Color.urgent
+  readonly property color accent: paletteColor("accent", Commons.Color.accent)
+  readonly property color urgent: Commons.Color.urgent
   readonly property color accentSoft: paletteColor("selection", Qt.tint(app, Qt.alpha(accent, 0.14)))
   readonly property color transparent: Qt.rgba(0, 0, 0, 0)
   readonly property int radius: 6
@@ -44,7 +45,7 @@ QtObject {
   }
 
   property Connections colorConnections: Connections {
-    target: Color
+    target: Commons.Color
     function onAccentChanged() { theme.themeFile.reload() }
     function onForegroundChanged() { theme.themeFile.reload() }
   }

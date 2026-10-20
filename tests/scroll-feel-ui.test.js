@@ -75,7 +75,7 @@ assert.match(core, /scrollFeelDevRepo[\s\S]*?Qt\.openUrlExternally\("https:\/\/g
 // The UI card is developer-only and styled with the urgent token.
 assert.match(core, /id: scrollFeelCard[\s\S]*?visible: root\.devMode/,
   'scroll card must be hidden unless dev mode is on');
-assert.match(core, /id: scrollFeelCard[\s\S]*?border\.color: Color\.urgent/,
+assert.match(core, /id: scrollFeelCard[\s\S]*?border\.color: Commons\.Color\.urgent/,
   'scroll card must use the urgent theme token');
 assert.match(core, /model: ScrollFeelModel\.presetIds\(\)/, 'preset selector missing');
 assert.match(core, /model: ScrollFeelModel\.ignoreModes/, 'ignore-mode selector missing');

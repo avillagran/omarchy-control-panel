@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // Minimalist labeled toggle row: title on the left, a switch on the right,
@@ -10,8 +11,8 @@ Item {
 
   property string label: ""
   property bool checked: false
-  property color foreground: Color.foreground
-  property color accent: Color.accent
+  property color foreground: Commons.Color.foreground
+  property color accent: Commons.Color.accent
   property string fontFamily: Style.font.family
   property real titleSize: Style.font.subtitle
 

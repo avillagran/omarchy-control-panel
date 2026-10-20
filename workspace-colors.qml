@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import "ThemePalette.js" as ThemePalette
 import "WorkspaceNumerals.js" as WorkspaceModel
 
@@ -182,7 +183,7 @@ Item {
   }
 
   Connections {
-    target: Color
+    target: Commons.Color
     function onAccentChanged() { themeFile.reload() }
     function onForegroundChanged() { themeFile.reload() }
     function onUrgentChanged() { themeFile.reload() }
