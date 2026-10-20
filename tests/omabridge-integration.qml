@@ -168,10 +168,25 @@ ShellRoot {
                 test.ensure(page.errorCode === "omabridge_invite_expired" && test.shown("omabridgeConfirm"), "error keeps the dialog open");
                 test.click("omabridgeConfirmCancel");
                 test.ensure(page.errorCode === "" && !test.shown("omabridgeConfirm"), "cancel clears the error");
+                test.ensure(test.control("omabridgeRelayStatus").text === "omabridgeRelayPublic", "public relays by default");
+                test.click("omabridgeRelayButton");
+                test.ensure(test.shown("omabridgeRelaySave") && !test.shown("omabridgeRelayUrl") && !page.busy, "relay dialog waits for a choice");
+                test.control("omabridgeRelay_custom").clicked();
+                var url = test.control("omabridgeRelayUrl");
+                test.ensure(url.visible && !test.control("omabridgeRelaySave").enabled, "an own relay needs its address");
+                test.ensure(test.shown("omabridgeRelayRepairNote"), "changing the relay warns about existing pairings");
+                url.text = "http://relay.example.net";
+                test.ensure(!test.control("omabridgeRelaySave").enabled, "only HTTPS relays");
+                url.text = "https://relay.example.net";
+                test.click("omabridgeRelaySave");
+                break;
+            case 13:
+                test.ensure(page.relay.mode === "custom" && page.status === "omabridgeRelaySaved" && !test.shown("omabridgeRelaySave"), "relay saved");
+                test.ensure(test.control("omabridgeRelayStatus").text === "omabridgeRelayCustom · https://relay.example.net", "own relay shown");
                 test.click("omabridgeUnpublishButton");
                 test.click("omabridgeConfirm");
                 break;
-            case 13:
+            case 14:
                 test.ensure(!page.published.enabled && page.status === "omabridgeUnpublished", "unpublished");
                 console.log("OMABRIDGE_PASS ready");
                 Qt.quit();

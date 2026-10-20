@@ -5,7 +5,7 @@
 // and responses; OmaBridge validates everything again.
 
 var ACTIONS = ["identity-create", "invite", "invite-discard", "pair", "pair-retry",
-               "pair-discard", "approve", "revoke", "publish", "unpublish"]
+               "pair-discard", "approve", "revoke", "publish", "unpublish", "relay-set"]
 
 var ERROR_KEYS = {
     omabridge_missing: "omabridgeErrorMissing",
@@ -33,6 +33,7 @@ var ERROR_KEYS = {
     omabridge_peer_not_found: "omabridgeErrorPeerNotFound",
     omabridge_request_changed: "omabridgeErrorRequestChanged",
     omabridge_command_failed: "omabridgeErrorCommandFailed",
+    omabridge_relay_invalid: "omabridgeErrorRelayInvalid",
     timeout: "omabridgeErrorTimeout",
     failed_start: "omabridgeErrorFailedStart",
     invalid_response: "omabridgeErrorInvalidResponse"
@@ -63,6 +64,8 @@ function _text(value) {
 function normalize(raw) {
     var published = raw && typeof raw.published === "object" && raw.published ? raw.published : {}
     var device = raw && raw.device && typeof raw.device === "object" ? raw.device : null
+    var relay = raw && typeof raw.relay === "object" && raw.relay ? raw.relay : {}
+    var relayMode = ["public", "custom", "none"].indexOf(relay.mode) >= 0 ? relay.mode : "public"
     return {
         available: raw.available === true,
         version: _text(raw.version),
@@ -85,6 +88,7 @@ function normalize(raw) {
             t3Available: published.t3Available === true,
             services: _list(published.services)
         },
+        relay: { mode: relayMode, url: relayMode === "custom" ? _text(relay.url) : "" },
         error: _text(raw.error)
     }
 }
@@ -165,6 +169,22 @@ function publishValues(published, shareT3, shareSsh) {
         t3: shareT3 === true && !!published && published.t3Available === true,
         ssh: shareSsh === true && !!published && published.sshAvailable === true
     }
+}
+
+// `public` (n0's relays), `none` or the custom HTTPS URL; OmaBridge validates it again.
+function relayValues(mode, url) {
+    if (mode === "custom") return { relay: String(url || "").trim() }
+    return { relay: mode === "none" ? "none" : "public" }
+}
+
+function relayValid(mode, url) {
+    return mode !== "custom" || /^https:\/\/[^\s\/]+/.test(String(url || "").trim())
+}
+
+function relayStatusKey(relay) {
+    if (relay && relay.mode === "custom") return "omabridgeRelayCustom"
+    if (relay && relay.mode === "none") return "omabridgeRelayNone"
+    return "omabridgeRelayPublic"
 }
 
 function publishStatusKey(published) {

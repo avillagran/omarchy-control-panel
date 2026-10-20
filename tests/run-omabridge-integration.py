@@ -69,7 +69,7 @@ def scenario(expect, install=True, mode="ready"):
             assert body.get("confirmed", True) is True
         actions = [body["action"] for body in bodies if body["action"] != "read"]
         assert actions == ["identity-create", "publish", "invite", "invite-discard", "invite", "invite", "pair", "pair-retry",
-                           "approve", "revoke", "pair", "unpublish"], actions
+                           "approve", "revoke", "pair", "relay-set", "unpublish"], actions
         assert bodies[bodies.index(next(b for b in bodies if b["action"] == "invite")) + 1] == {"action": "read"}, \
             "the client output holding the invitation is replaced immediately"
         publish = next(b for b in bodies if b["action"] == "publish")
@@ -80,6 +80,8 @@ def scenario(expect, install=True, mode="ready"):
         discard = next(b for b in bodies if b["action"] == "invite-discard")
         assert discard["path"].endswith("omabridge-invite-0.json") and not Path(discard["path"]).exists()
         assert (root / "fake/omabridge-invite-1.json").exists(), "closing the dialog only forgets, it does not delete"
+        assert next(b for b in bodies if b["action"] == "relay-set") == \
+            {"action": "relay-set", "relay": "https://relay.example.net", "confirmed": True}
         assert next(b for b in bodies if b["action"] == "pair")["path"] == "/invitations/omabridge invite.json"
         assert next(b for b in bodies if b["action"] == "pair-retry")["id"] == "aaaaaaaa-1111-4111-8111-111111111111"
         assert next(b for b in bodies if b["action"] == "approve")["peer"] == "b2" * 32

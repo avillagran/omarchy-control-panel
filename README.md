@@ -69,6 +69,12 @@ invitations with an optional QR code, pairing from an invitation file,
 *Check again* for pairings awaiting approval, approving requests and revoking
 paired devices.
 
+*Connection between networks* chooses how this device reaches devices behind
+NAT or with private IPs, without opening ports: n0's public relays (the
+default), your own relay (for example one hosted with `omabridge relay`) or
+direct connections only. Devices that already connect to this one must pair
+again after the relay changes.
+
 OmaBridge is independent of this panel and of Omarchy T3 Code: each is just a
 front end. The page talks only to `omabridge manage` through
 `bin/omabridge-client`, one JSON request on stdin per action, so validation,

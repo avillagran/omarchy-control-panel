@@ -29,7 +29,7 @@ def fail(code):
 def load():
     if STATE.exists():
         return json.loads(STATE.read_text())
-    return {"mode": "ready", "device": None, "published": False, "services": [],
+    return {"mode": "ready", "device": None, "published": False, "services": [], "relay": "public",
             "peers": [], "pending": [], "awaiting": [], "invites": []}
 
 
@@ -39,6 +39,8 @@ def snapshot(state):
         "device": state["device"], "peers": state["peers"], "pending": state["pending"], "awaiting": state["awaiting"],
         "published": {"enabled": state["published"], "active": state["published"], "external": False, "stale": False,
                       "sshAvailable": True, "t3Available": True, "services": state["services"]},
+        "relay": {"mode": "custom", "url": state.get("relay")} if state.get("relay", "public").startswith("https://")
+        else {"mode": state.get("relay", "public"), "url": None},
         "error": "",
     }
 
@@ -69,6 +71,11 @@ def main():
             if not services:
                 fail("omabridge_nothing_to_publish")
             state["published"], state["services"] = True, services
+        elif action == "relay-set":
+            relay = request.get("relay", "")
+            if relay not in ("public", "none") and not (relay.startswith("https://") and len(relay) > 8):
+                fail("omabridge_relay_invalid")
+            state["relay"] = relay
         elif action == "unpublish":
             state["published"], state["services"] = False, []
         elif action == "invite":

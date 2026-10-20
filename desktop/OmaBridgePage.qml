@@ -24,6 +24,11 @@ ColumnLayout {
     readonly property var snapshot: result && result.ok ? result.snapshot : null
     readonly property var device: snapshot ? snapshot.device : null
     readonly property var published: snapshot ? snapshot.published : ({})
+    readonly property var relay: snapshot && snapshot.relay ? snapshot.relay : ({
+            mode: "public",
+            url: ""
+        })
+    property string relayChoice: "public"
     property string errorCode: ""
     property string errorAction: ""
     property string status: ""
@@ -99,6 +104,12 @@ ColumnLayout {
         publishSsh.checked = services.indexOf("ssh") >= 0;
         publishDialog.open();
     }
+    function openRelay() {
+        errorCode = "";
+        relayChoice = relay.mode;
+        relayUrl.text = relay.url;
+        relayDialog.open();
+    }
     function finish(text, exitCode) {
         if (!busy)
             return;
@@ -115,6 +126,7 @@ ColumnLayout {
                 confirmDialog.close();
                 inviteDialog.close();
                 publishDialog.close();
+                relayDialog.close();
             } else {
                 errorCode = response.error;
                 errorAction = done;
@@ -138,6 +150,9 @@ ColumnLayout {
         } else if (done === "publish") {
             publishDialog.close();
             status = t("omabridgePublishedNow");
+        } else if (done === "relay-set") {
+            relayDialog.close();
+            status = t("omabridgeRelaySaved");
         } else if (done === "pair" || done === "pair-retry") {
             var paired = response.paired;
             status = paired && paired.status === "approved" ? tr("omabridgePairedWith", paired.name) : tr("omabridgeWaitingFor", paired ? paired.name : "");
@@ -157,6 +172,7 @@ ColumnLayout {
     function forget() {
         confirmDialog.close();
         publishDialog.close();
+        relayDialog.close();
         inviteDialog.close();
         created = null;
     }
@@ -407,6 +423,24 @@ ColumnLayout {
             }
         }
 
+        // How this device reaches peers it cannot dial directly (NAT, private IPs).
+        Card {
+            Heading {
+                text: root.t("omabridgeRelay")
+            }
+            Copy {
+                objectName: "omabridgeRelayStatus"
+                text: root.t(OmaBridgeModel.relayStatusKey(root.relay)) + (root.relay.mode === "custom" ? " · " + root.relay.url : "")
+                wrapMode: Text.WrapAnywhere
+            }
+            Action {
+                objectName: "omabridgeRelayButton"
+                enabled: !root.busy
+                text: root.t("omabridgeRelayChange")
+                onClicked: root.openRelay()
+            }
+        }
+
         Flow {
             Layout.fillWidth: true
             spacing: theme.gap
@@ -548,7 +582,7 @@ ColumnLayout {
     }
     ErrorLine {
         objectName: "omabridgeError"
-        visible: root.errorCode !== "" && !confirmDialog.visible && !inviteDialog.visible && !publishDialog.visible
+        visible: root.errorCode !== "" && !confirmDialog.visible && !inviteDialog.visible && !publishDialog.visible && !relayDialog.visible
     }
 
     FileDialog {
@@ -645,6 +679,83 @@ ColumnLayout {
                     enabled: !root.busy && (OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked).t3 || OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked).ssh)
                     text: root.t("omabridgePublishAction")
                     onClicked: root.confirmed("publish", OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked))
+                }
+            }
+        }
+    }
+
+    BridgeDialog {
+        id: relayDialog
+        objectName: "omabridgeRelayDialog"
+        onClosed: root.errorCode = ""
+        contentItem: ColumnLayout {
+            spacing: theme.padding
+            Heading {
+                text: root.t("omabridgeRelayConfirm")
+            }
+            Copy {
+                text: root.t("omabridgeRelayDetail")
+            }
+            Repeater {
+                model: ["public", "custom", "none"]
+                delegate: Controls.RadioButton {
+                    required property string modelData
+                    objectName: "omabridgeRelay_" + modelData
+                    enabled: !root.busy
+                    checked: root.relayChoice === modelData
+                    onClicked: root.relayChoice = modelData
+                    text: root.t(modelData === "public" ? "omabridgeRelayOptionPublic" : modelData === "custom" ? "omabridgeRelayOptionCustom" : "omabridgeRelayOptionNone")
+                    palette.highlight: theme.accent
+                    palette.windowText: theme.text
+                    font.family: theme.fontUi
+                    font.pixelSize: theme.body
+                }
+            }
+            Controls.TextField {
+                id: relayUrl
+                objectName: "omabridgeRelayUrl"
+                Layout.fillWidth: true
+                visible: root.relayChoice === "custom"
+                enabled: !root.busy
+                placeholderText: "https://relay.example.net"
+                inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase
+                selectByMouse: true
+                color: theme.text
+                placeholderTextColor: theme.textMuted
+                font.family: theme.fontUi
+                font.pixelSize: theme.body
+                background: Rectangle {
+                    color: theme.panelDeep
+                    radius: theme.radius
+                    border.color: relayUrl.activeFocus ? theme.accent : theme.border
+                }
+            }
+            Copy {
+                visible: root.relayChoice !== "public"
+                text: root.t(root.relayChoice === "custom" ? "omabridgeRelayCustomDetail" : "omabridgeRelayNoneDetail")
+            }
+            Copy {
+                objectName: "omabridgeRelayRepairNote"
+                visible: !!root.device && (root.relayChoice !== root.relay.mode || (root.relayChoice === "custom" && relayUrl.text.trim() !== root.relay.url))
+                text: root.t("omabridgeRelayRepairNote")
+                color: theme.text
+            }
+            ErrorLine {}
+            RowLayout {
+                Layout.fillWidth: true
+                Item {
+                    Layout.fillWidth: true
+                }
+                Action {
+                    text: root.t("cancel")
+                    onClicked: relayDialog.close()
+                }
+                Action {
+                    objectName: "omabridgeRelaySave"
+                    primary: true
+                    enabled: !root.busy && OmaBridgeModel.relayValid(root.relayChoice, relayUrl.text)
+                    text: root.t("omabridgeRelaySave")
+                    onClicked: root.confirmed("relay-set", OmaBridgeModel.relayValues(root.relayChoice, relayUrl.text))
                 }
             }
         }

@@ -64,6 +64,25 @@ assert.equal(model.publishStatusKey({ enabled: true, stale: true, active: true }
 assert.equal(model.publishStatusKey({ enabled: true, active: false }), 'omabridgePublishInactive');
 assert.equal(model.publishStatusKey({ enabled: true, active: true }), 'omabridgePublishOn');
 assert.equal(model.publishStatusKey({ enabled: false, active: true, external: true }), 'omabridgePublishExternal');
+
+// Relay: public by default, an own relay keeps its URL, unknown modes fall back to public.
+assert.deepEqual(plain(model.normalize({}).relay), { mode: 'public', url: '' });
+assert.deepEqual(plain(model.normalize({ relay: { mode: 'custom', url: 'https://relay.example.net/' } }).relay),
+  { mode: 'custom', url: 'https://relay.example.net/' });
+assert.deepEqual(plain(model.normalize({ relay: { mode: 'none', url: 'https://ignored' } }).relay), { mode: 'none', url: '' });
+assert.deepEqual(plain(model.normalize({ relay: { mode: 'bogus' } }).relay), { mode: 'public', url: '' });
+assert.deepEqual(plain(model.relayValues('public', 'https://x')), { relay: 'public' });
+assert.deepEqual(plain(model.relayValues('none', '')), { relay: 'none' });
+assert.deepEqual(plain(model.relayValues('custom', '  https://relay.example.net  ')), { relay: 'https://relay.example.net' });
+assert.equal(model.relayValid('custom', 'https://relay.example.net'), true);
+assert.equal(model.relayValid('custom', 'http://relay.example.net'), false);
+assert.equal(model.relayValid('custom', 'https://'), false);
+assert.equal(model.relayValid('public', ''), true);
+assert.equal(model.relayStatusKey({ mode: 'public' }), 'omabridgeRelayPublic');
+assert.equal(model.relayStatusKey({ mode: 'custom' }), 'omabridgeRelayCustom');
+assert.equal(model.relayStatusKey({ mode: 'none' }), 'omabridgeRelayNone');
+assert.equal(model.confirmedRequest('relay-set', { relay: 'none' }).confirmed, true);
+assert.equal(model.errorKey('omabridge_relay_invalid', true), 'omabridgeErrorRelayInvalid');
 assert.deepEqual(plain(model.publishValues({ t3Available: true, sshAvailable: false }, true, true)), { t3: true, ssh: false }, 'only what can be served');
 assert.deepEqual(plain(model.publishValues({ t3Available: false, sshAvailable: true }, true, true)), { t3: false, ssh: true });
 assert.equal(model.normalize({ published: { external: true, t3Available: true } }).published.external, true);
