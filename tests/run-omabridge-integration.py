@@ -65,18 +65,19 @@ def scenario(expect, install=True, mode="ready"):
         if expect != "ready":
             return
         for body in bodies:
-            unconfirmed = body["action"] in ("read", "sync", "invite-inspect") or \
+            unconfirmed = body["action"] in ("read", "sync", "invite-inspect", "gateway-check") or \
                 (body["action"] == "remote" and body["command"]["action"] == "read")
             assert ("confirmed" in body) != unconfirmed, body
             assert body.get("confirmed", True) is True
         actions = [body["action"] if body["action"] != "remote" else "remote:" + body["command"]["action"]
-                   for body in bodies if body["action"] not in ("read", "invite-inspect") and body.get("command", {}).get("action") != "read"]
+                   for body in bodies if body["action"] not in ("read", "invite-inspect", "gateway-check") and body.get("command", {}).get("action") != "read"]
         assert {"action": "rename", "name": "Desk at home", "confirmed": True} in bodies
         assert actions == ["identity-create", "publish", "invite", "invite-discard", "invite", "invite", "pair", "pair-retry",
-                           "remote:rename", "remote:relay-set", "remote:revoke", "remote:relay-host", "remote:relay-set", "relay-set", "admin-set", "approve", "revoke", "pair",
+                           "remote:rename", "remote:relay-set", "remote:revoke", "remote:relay-host", "remote:relay-set", "relay-set", "grant-set", "remote:gateway-set", "remote:gateway-set", "grant-set", "admin-set", "approve", "revoke", "pair",
                            "pair", "relay-set", "rename", "sync", "unpublish"], actions
         pairs = [b for b in bodies if b["action"] == "pair"]
         assert "allowManage" not in pairs[0], "plain invitations carry no consent"
+        assert all(pair["expect"] == "f6" * 32 for pair in pairs), "each pairing pins the device that was shown"
         assert pairs[-1]["allowManage"] is False, "consent is explicit and off unless ticked"
         assert {"action": "remote", "peer": "a1" * 32, "command": {"action": "rename", "name": "Remote desk"},
                 "confirmed": True} in bodies

@@ -6,10 +6,10 @@
 
 var ACTIONS = ["identity-create", "invite", "invite-discard", "pair", "pair-retry",
                "pair-discard", "approve", "revoke", "publish", "unpublish", "relay-set", "rename",
-               "admin-set", "remote", "relay-host"]
+               "admin-set", "remote", "relay-host", "gateway-set", "grant-set"]
 
 // What a managing device may ask a managed one; OmaBridge enforces the same list there.
-var REMOTE_ACTIONS = ["read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve", "relay-host"]
+var REMOTE_ACTIONS = ["read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve", "relay-host", "gateway-set"]
 
 var ERROR_KEYS = {
     omabridge_missing: "omabridgeErrorMissing",
@@ -48,6 +48,10 @@ var ERROR_KEYS = {
     omabridge_remote_failed: "omabridgeErrorGeneric",
     omabridge_relay_host_unavailable: "omabridgeErrorRelayHostUnavailable",
     omabridge_relay_certificate: "omabridgeErrorRelayCertificate",
+    omabridge_service_not_granted: "omabridgeErrorServiceNotGranted",
+    omabridge_port_unavailable: "omabridgeErrorPortUnavailable",
+    omabridge_gateway_host_invalid: "omabridgeErrorGatewayHost",
+    omabridge_invite_changed: "omabridgeErrorInviteChanged",
     timeout: "omabridgeErrorTimeout",
     failed_start: "omabridgeErrorFailedStart",
     invalid_response: "omabridgeErrorInvalidResponse"
@@ -86,7 +90,7 @@ function normalize(raw) {
         device: device ? { id: _text(device.id), name: _text(device.name) } : null,
         peers: _list(raw.peers).map(function(p) {
             return { id: _text(p.id), name: _text(p.name), services: _list(p.services), remoteServices: _list(p.remoteServices),
-                     admin: p.admin === true, managed: p.managed === true }
+                     public: _list(p.public), admin: p.admin === true, managed: p.managed === true }
         }),
         pending: _list(raw.pending).map(function(p) {
             return { id: _text(p.id), name: _text(p.name), services: _list(p.services), expires: p.expires }
@@ -109,6 +113,11 @@ function normalize(raw) {
             return { enabled: host.enabled === true, url: _text(host.url), running: host.running === true,
                      error: _text(host.error), suggested: _text(host.suggested) }
         })(raw.relayHost),
+        gateways: _list(raw.gateways).map(function(g) {
+            return { peer: _text(g.peer), name: _text(g.name), service: _text(g.service), url: _text(g.url),
+                     running: g.running === true, error: _text(g.error) }
+        }),
+        gatewayZones: _list(raw.gatewayZones).map(_text).filter(function(z) { return z !== "" }),
         error: _text(raw.error)
     }
 }
@@ -134,7 +143,8 @@ function parseResponse(text, exitCode) {
         status: _text(raw.paired.status), name: _text(raw.paired.name), id: _text(raw.paired.id), admin: raw.paired.admin === true
     } : null
     var invitation = raw.invitation && typeof raw.invitation === "object" ? {
-        name: _text(raw.invitation.name), expires: raw.invitation.expires, manage: raw.invitation.manage === true
+        name: _text(raw.invitation.name), expires: raw.invitation.expires, manage: raw.invitation.manage === true,
+        id: _text(raw.invitation.id)
     } : null
     var outcome = function(value) {
         return value && typeof value === "object" ? {
@@ -144,6 +154,10 @@ function parseResponse(text, exitCode) {
     return {
         ok: true, error: "", snapshot: normalize(raw), created: created, paired: paired, invitation: invitation,
         renamed: outcome(raw.renamed), synced: outcome(raw.synced),
+        gatewayCheck: raw.gatewayCheck && typeof raw.gatewayCheck === "object" ? {
+            reachable: raw.gatewayCheck.reachable === true,
+            sameEnvironment: raw.gatewayCheck.sameEnvironment === true ? true : raw.gatewayCheck.sameEnvironment === false ? false : null
+        } : null,
         remote: raw.remote && typeof raw.remote === "object" ? normalize(raw.remote) : null
     }
 }
@@ -203,8 +217,10 @@ function inspectRequest(path) {
 }
 
 // Pairing values; `allowManage` only when the invitation asked, as OmaBridge requires.
+// `expect` is the inviting device the user was shown, so a file swapped since is refused.
 function pairValues(path, invitation, allowManage) {
     var values = { path: String(path || "") }
+    if (invitation && invitation.id) values.expect = invitation.id
     if (invitation && invitation.manage) values.allowManage = allowManage === true
     return values
 }
@@ -305,6 +321,62 @@ function relayEverywhereRequests(url, peers) {
     })
     requests.push(confirmedRequest("relay-set", { relay: url }))
     return requests
+}
+
+// A DNS label from a device name: "MBP M2" becomes "mbp-m2".
+function hostLabel(name) {
+    return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63)
+}
+
+// The public name proposed for a device: its own subdomain when the gateway
+// holds a wildcard certificate, otherwise none (the gateway's name and a port).
+function gatewayHostSuggestion(name, zones) {
+    var label = hostLabel(name)
+    var list = _list(zones)
+    return label && list.length ? label + "." + list[0] : ""
+}
+
+function validHost(host) {
+    var text = String(host || "").trim().toLowerCase()
+    return text === "" || /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(text)
+}
+
+// This device's gateway on another device, if any.
+function gatewayFor(gateways, deviceId, service) {
+    return _list(gateways).filter(function(g) { return g.peer === deviceId && g.service === service })[0] || null
+}
+
+// Exposing this device's T3 through a paired device: grant it t3 here, with
+// consent to expose it publicly, then open the gateway there. `services` and
+// `exposed` are what that device may reach and expose today.
+function exposeRequests(gatewayPeer, services, deviceId, host, exposed) {
+    var granted = _list(services).slice()
+    if (granted.indexOf("t3") < 0) granted.push("t3")
+    var publicList = _list(exposed).filter(function(s) { return granted.indexOf(s) >= 0 })
+    if (publicList.indexOf("t3") < 0) publicList.push("t3")
+    var command = { action: "gateway-set", peer: deviceId, service: "t3", enabled: true }
+    var name = String(host || "").trim().toLowerCase()
+    if (name) command.host = name
+    return [confirmedRequest("grant-set", { peer: gatewayPeer, services: granted, public: publicList }),
+            confirmedRequest("remote", { peer: gatewayPeer, command: command })]
+}
+
+// Closing it: the gateway goes away there and the grant here.
+function concealRequests(gatewayPeer, services, deviceId, exposed) {
+    var remaining = _list(services).filter(function(s) { return s !== "t3" })
+    return [confirmedRequest("remote", { peer: gatewayPeer, command: { action: "gateway-set", peer: deviceId, service: "t3", enabled: false } }),
+            confirmedRequest("grant-set", { peer: gatewayPeer, services: remaining,
+                                            public: _list(exposed).filter(function(s) { return s !== "t3" && remaining.indexOf(s) >= 0 }) })]
+}
+
+function gatewayCheckRequest(url) {
+    return { action: "gateway-check", url: String(url || "") }
+}
+
+function gatewayCheckKey(check) {
+    if (!check || !check.reachable) return "omabridgeGatewayUnreachable"
+    if (check.sameEnvironment === false) return "omabridgeGatewayOtherT3"
+    return "omabridgeGatewayReady"
 }
 
 function publishStatusKey(published) {

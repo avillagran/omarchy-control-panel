@@ -38,6 +38,10 @@ ColumnLayout {
     property var queue: []
     property int queueTotal: 0
     property int queueDone: 0
+    // What runs once the queue is empty; by default, report how many succeeded.
+    property var queueFinished: null
+    // The last public gateway check, for the gateway section.
+    property var gatewayCheck: null
     // The invitation chosen for pairing, while its contents are inspected.
     property string inspectPath: ""
     property string errorCode: ""
@@ -170,23 +174,64 @@ ColumnLayout {
         confirmed("remote", values);
     }
     // Moves every managed device, then this one, to the relay `url`.
-    function useRelayEverywhere(url) {
-        queue = OmaBridgeModel.relayEverywhereRequests(url, snapshot ? snapshot.peers : []);
-        queueTotal = queue.length;
+    function runQueue(requests, finished) {
+        queue = requests;
+        queueTotal = requests.length;
         queueDone = 0;
+        queueFinished = finished || null;
         nextQueued();
+    }
+    function useRelayEverywhere(url) {
+        runQueue(OmaBridgeModel.relayEverywhereRequests(url, snapshot ? snapshot.peers : []), null);
     }
     function nextQueued() {
         if (!queue.length) {
             if (queueTotal) {
-                status = t("omabridgeHostUsed").replace("%1", queueDone).replace("%2", queueTotal);
+                var finished = queueFinished;
+                var done = queueDone, total = queueTotal;
                 queueTotal = 0;
+                queueFinished = null;
+                if (finished)
+                    finished(done, total);
+                else
+                    status = t("omabridgeHostUsed").replace("%1", done).replace("%2", total);
             }
             return;
         }
         var request = queue[0];
         queue = queue.slice(1);
         run(request);
+    }
+    // This device's peer entry for the managed device, to keep its other grants.
+    function peerEntry(id) {
+        return (snapshot ? snapshot.peers : []).filter(function (peer) {
+            return peer.id === id;
+        })[0] || null;
+    }
+    // Opens this device's T3 to the internet through the managed device, then
+    // checks the address answers with this same T3.
+    function exposeT3(host) {
+        var entry = peerEntry(remotePeer.id);
+        gatewayCheck = null;
+        runQueue(OmaBridgeModel.exposeRequests(remotePeer.id, entry ? entry.services : [], device.id, host, entry ? entry.public : []), function (done, total) {
+            var gateway = remoteSnapshot ? OmaBridgeModel.gatewayFor(remoteSnapshot.gateways, device.id, "t3") : null;
+            if (done < total || !gateway) {
+                status = t("omabridgeGatewayFailed");
+                return;
+            }
+            remoteAction = "";
+            Qt.callLater(function () {
+                root.run(OmaBridgeModel.gatewayCheckRequest(gateway.url));
+            });
+        });
+    }
+    function concealT3() {
+        var entry = peerEntry(remotePeer.id);
+        gatewayCheck = null;
+        runQueue(OmaBridgeModel.concealRequests(remotePeer.id, entry ? entry.services : [], device.id, entry ? entry.public : []), function (done, total) {
+            status = t(done === total ? "omabridgeGatewayClosed" : "omabridgeGatewayFailed");
+            remoteRead();
+        });
     }
     function askRemote(command, title, detail) {
         var values = OmaBridgeModel.remoteValues(remotePeer ? remotePeer.id : "", command);
@@ -293,6 +338,10 @@ ColumnLayout {
         } else if (done === "publish") {
             publishDialog.close();
             status = t("omabridgePublishedNow");
+        } else if (done === "gateway-check") {
+            gatewayCheck = response.gatewayCheck;
+            status = t(OmaBridgeModel.gatewayCheckKey(gatewayCheck));
+            return;
         } else if (done === "invite-inspect") {
             var invitation = response.invitation;
             var path = inspectPath;
@@ -1164,6 +1213,90 @@ ColumnLayout {
                             action: "relay-host",
                             enabled: false
                         }, root.tr("omabridgeHostDisableConfirm", root.remotePeer.name), root.t("omabridgeHostDisableDetail"))
+                    }
+                }
+
+                // Public access to this device's T3 through that device
+                Heading {
+                    visible: !!root.remoteSnapshot
+                    text: root.t("omabridgeGatewayTitle")
+                }
+                Repeater {
+                    model: root.remoteSnapshot ? root.remoteSnapshot.gateways : []
+                    delegate: RowLayout {
+                        id: gatewayRow
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Copy {
+                            objectName: "omabridgeGateway_" + gatewayRow.modelData.peer
+                            Layout.fillWidth: true
+                            text: (gatewayRow.modelData.name || OmaBridgeModel.shortId(gatewayRow.modelData.peer)) + " · " + gatewayRow.modelData.url + " · " + root.t(gatewayRow.modelData.running ? "omabridgeHostRunning" : (gatewayRow.modelData.error === "port" ? "omabridgeHostPort" : gatewayRow.modelData.error === "certificate" ? "omabridgeHostCertificate" : "omabridgeHostStarting"))
+                            color: gatewayRow.modelData.running ? theme.text : theme.urgent
+                            wrapMode: Text.WrapAnywhere
+                        }
+                    }
+                }
+                Copy {
+                    objectName: "omabridgeGatewayCheck"
+                    visible: !!root.gatewayCheck
+                    text: root.gatewayCheck ? root.t(OmaBridgeModel.gatewayCheckKey(root.gatewayCheck)) : ""
+                    color: root.gatewayCheck && root.gatewayCheck.reachable && root.gatewayCheck.sameEnvironment !== false ? theme.text : theme.urgent
+                }
+                Copy {
+                    visible: !!root.remoteSnapshot && !OmaBridgeModel.gatewayFor(root.remoteSnapshot.gateways, root.device ? root.device.id : "", "t3")
+                    text: root.t(root.published.services && root.published.services.indexOf("t3") >= 0 ? "omabridgeGatewayDetail" : "omabridgeGatewayNeedsT3")
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: !!root.remoteSnapshot && !!root.device && !OmaBridgeModel.gatewayFor(root.remoteSnapshot.gateways, root.device.id, "t3")
+                    Controls.TextField {
+                        id: gatewayHost
+                        objectName: "omabridgeGatewayHost"
+                        Layout.fillWidth: true
+                        enabled: !root.busy
+                        text: root.remoteSnapshot && root.device ? OmaBridgeModel.gatewayHostSuggestion(root.device.name, root.remoteSnapshot.gatewayZones) : ""
+                        placeholderText: root.t("omabridgeGatewayHostPlaceholder")
+                        selectByMouse: true
+                        color: theme.text
+                        placeholderTextColor: theme.textMuted
+                        font.family: theme.fontUi
+                        font.pixelSize: theme.body
+                        background: Rectangle {
+                            color: theme.panelDeep
+                            radius: theme.radius
+                            border.color: gatewayHost.activeFocus ? theme.accent : theme.border
+                        }
+                    }
+                    Action {
+                        objectName: "omabridgeGatewayOpen"
+                        primary: true
+                        enabled: !root.busy && OmaBridgeModel.validHost(gatewayHost.text) && !!root.published.services && root.published.services.indexOf("t3") >= 0
+                        text: root.t("omabridgeGatewayOpen")
+                        onClicked: {
+                            var host = gatewayHost.text.trim();
+                            root.askRun(root.tr("omabridgeGatewayConfirm", root.remotePeer.name), root.t("omabridgeGatewayWarning"), function () {
+                                root.exposeT3(host);
+                            });
+                        }
+                    }
+                }
+                Flow {
+                    Layout.fillWidth: true
+                    visible: !!root.remoteSnapshot && !!root.device && !!OmaBridgeModel.gatewayFor(root.remoteSnapshot.gateways, root.device.id, "t3")
+                    spacing: theme.gap
+                    Action {
+                        objectName: "omabridgeGatewayRecheck"
+                        enabled: !root.busy
+                        text: root.t("omabridgeGatewayRecheck")
+                        onClicked: root.run(OmaBridgeModel.gatewayCheckRequest(OmaBridgeModel.gatewayFor(root.remoteSnapshot.gateways, root.device.id, "t3").url))
+                    }
+                    Action {
+                        objectName: "omabridgeGatewayClose"
+                        enabled: !root.busy
+                        text: root.t("omabridgeGatewayCloseAction")
+                        onClicked: root.askRun(root.tr("omabridgeGatewayCloseConfirm", root.remotePeer.name), root.t("omabridgeGatewayCloseDetail"), function () {
+                            root.concealT3();
+                        })
                     }
                 }
 

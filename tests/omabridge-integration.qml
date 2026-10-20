@@ -201,43 +201,61 @@ ShellRoot {
                     return;
                 test.ensure(page.status === "omabridgeHostUsed" && page.relay.mode === "custom" && page.relay.url === "https://vps.example.net:3341/", "this device moved last");
                 test.ensure(page.remoteSnapshot.relay.url === "https://vps.example.net:3341/", "the managed device moved too");
+                test.ensure(test.control("omabridgeGatewayHost").text === "test-device.vpn.example.net", "an own subdomain is proposed");
+                test.click("omabridgeGatewayOpen");
+                test.ensure(test.shown("omabridgeConfirm") && page.confirmRequest.detail === "omabridgeGatewayWarning", "opening to the internet warns first");
+                test.click("omabridgeConfirm");
+                break;
+            case 17:
+                if (page.queueTotal || !page.gatewayCheck)
+                    return;
+                test.ensure(page.status === "omabridgeGatewayReady", "checked: " + page.status);
+                test.ensure(test.control("omabridgeGateway_" + "c3".repeat(32)).text.indexOf("https://test-device.vpn.example.net:24601/") > 0, "the address is shown");
+                test.ensure(page.snapshot.peers[0].services.indexOf("t3") >= 0, "the gateway device was granted t3");
+                test.click("omabridgeGatewayClose");
+                test.click("omabridgeConfirm");
+                break;
+            case 18:
+                if (page.queueTotal || page.status !== "omabridgeGatewayClosed")
+                    return;
+                test.ensure(page.snapshot.peers[0].services.indexOf("t3") < 0, "and the grant withdrawn");
                 test.click("omabridgeRemoteClose");
                 test.click("omabridgeAdmin_" + test.peerA);
                 test.ensure(test.shown("omabridgeConfirm") && !page.busy && page.confirmRequest.detail === "omabridgeManageWarning", "granting management warns first");
                 test.click("omabridgeConfirm");
                 break;
-            case 17:
+            case 19:
                 test.ensure(page.snapshot.peers[0].admin && page.status === "omabridgeAdminChanged", "management granted");
                 test.ensure(test.control("omabridgePeerManage_" + test.peerA).text === "omabridgeManagesThis · omabridgeYouManage", "both directions shown");
                 test.click("omabridgeApprove_" + test.peerB);
                 test.ensure(test.shown("omabridgeConfirm") && !page.busy, "approve waits for confirmation");
                 test.click("omabridgeConfirm");
                 break;
-            case 18:
+            case 20:
                 test.ensure(page.snapshot.pending.length === 0 && page.snapshot.peers.length === 2, "approved");
                 test.click("omabridgeRevoke_" + test.peerA);
                 test.click("omabridgeConfirm");
                 break;
-            case 19:
+            case 21:
                 test.ensure(page.snapshot.peers.length === 1 && page.status === "omabridgeRevoked", "revoked");
                 page.pairFile("file:///invitations/omabridge-expired.json");
                 break;
-            case 20:
+            case 22:
                 test.click("omabridgeConfirm");
                 break;
-            case 21:
+            case 23:
                 test.ensure(page.errorCode === "omabridge_invite_expired" && test.shown("omabridgeConfirm"), "error keeps the dialog open");
                 test.click("omabridgeConfirmCancel");
                 test.ensure(page.errorCode === "" && !test.shown("omabridgeConfirm"), "cancel clears the error");
                 page.pairFile("file:///invitations/omabridge-manage.json");
                 break;
-            case 22:
+            case 24:
                 var consent = test.control("omabridgeConsent");
                 test.ensure(test.shown("omabridgeConfirm") && consent.visible && !consent.checked, "an invitation that asks to manage warns, with consent unchecked");
                 test.ensure(consent.text === "omabridgeManageConsent", "consent names the request");
                 test.click("omabridgeConfirm");
                 break;
-            case 23:
+            case 25:
                 test.ensure(page.status === "omabridgeWaitingFor", "pairing without management goes ahead");
                 test.ensure(test.control("omabridgeRelayStatus").text === "omabridgeRelayCustom · https://vps.example.net:3341/", "the hosted relay is in use");
                 test.click("omabridgeRelayButton");
@@ -252,7 +270,7 @@ ShellRoot {
                 url.text = "https://relay.example.net";
                 test.click("omabridgeRelaySave");
                 break;
-            case 24:
+            case 26:
                 test.ensure(page.relay.mode === "custom" && page.status === "omabridgeRelaySaved" && !test.shown("omabridgeRelaySave"), "relay saved");
                 test.ensure(test.control("omabridgeRelayStatus").text === "omabridgeRelayCustom · https://relay.example.net", "own relay shown");
                 test.click("omabridgeRenameButton");
@@ -263,16 +281,16 @@ ShellRoot {
                 name.text = " Desk at home ";
                 test.click("omabridgeRenameSave");
                 break;
-            case 25:
+            case 27:
                 test.ensure(page.device.name === "Desk at home" && page.status === "omabridgeRenamedService" && !test.shown("omabridgeRenameSave"), "renamed");
                 test.ensure(test.control("omabridgeDeviceName").text === "Desk at home", "new name shown");
                 test.click("omabridgeRefresh");
                 break;
-            case 26:
+            case 28:
                 test.click("omabridgeUnpublishButton");
                 test.click("omabridgeConfirm");
                 break;
-            case 27:
+            case 29:
                 test.ensure(!page.published.enabled && page.status === "omabridgeUnpublished", "unpublished");
                 console.log("OMABRIDGE_PASS ready");
                 Qt.quit();

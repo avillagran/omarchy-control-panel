@@ -104,6 +104,7 @@ assert.equal(managed.managed, false, 'only a real boolean counts');
 assert.deepEqual(plain(model.pairValues('/x.json', null, true)), { path: '/x.json' }, 'no consent field unless asked');
 assert.deepEqual(plain(model.pairValues('/x.json', { manage: true }, undefined)), { path: '/x.json', allowManage: false });
 assert.deepEqual(plain(model.pairValues('/x.json', { manage: true }, true)), { path: '/x.json', allowManage: true });
+assert.deepEqual(plain(model.pairValues('/x.json', { manage: false, id: 'ab' }, true)), { path: '/x.json', expect: 'ab' }, 'the shown device is pinned');
 assert.deepEqual(plain(model.inspectRequest('/x.json')), { action: 'invite-inspect', path: '/x.json' });
 assert.equal(model.confirmedRequest('invite-inspect', {}), null, 'inspecting is never a confirmed change');
 assert.deepEqual(plain(model.remoteReadRequest('p')), { action: 'remote', peer: 'p', command: { action: 'read' } });
@@ -118,7 +119,7 @@ assert.equal(model.manageText({ admin: true, managed: true }, k => k), 'omabridg
 const parsed = model.parseResponse(JSON.stringify({ available: true, renamed: { via: 'direct', reached: 1, total: 2 },
   invitation: { name: 'A', expires: 5, manage: true, token: 'secret' }, remote: { available: true, device: { id: 'r', name: 'R' } } }), 0);
 assert.deepEqual(plain(parsed.renamed), { via: 'direct', reached: 1, total: 2 });
-assert.deepEqual(plain(parsed.invitation), { name: 'A', expires: 5, manage: true }, 'never the token');
+assert.deepEqual(plain(parsed.invitation), { name: 'A', expires: 5, manage: true, id: '' }, 'never the token');
 assert.equal(parsed.remote.device.name, 'R');
 assert.equal(model.errorKey('omabridge_manage_consent_required', true), 'omabridgeErrorConsentRequired');
 
@@ -135,6 +136,30 @@ assert.deepEqual(moves.map(r => r.action === 'remote' ? r.peer : 'self'), ['a', 
 assert.deepEqual(moves[0], { action: 'remote', peer: 'a', command: { action: 'relay-set', relay: 'https://r/' }, confirmed: true });
 assert.deepEqual(moves[2], { action: 'relay-set', relay: 'https://r/', confirmed: true });
 assert.notEqual(model.remoteValues('p', { action: 'relay-host', enabled: true }), null);
+
+// Public gateways.
+assert.equal(model.hostLabel('MBP M2'), 'mbp-m2');
+assert.equal(model.hostLabel('--Ñandú!!'), 'and');
+assert.equal(model.gatewayHostSuggestion('Node', ['vpn.example.net']), 'node.vpn.example.net');
+assert.equal(model.gatewayHostSuggestion('Node', []), '', 'no wildcard certificate: use a port');
+assert.equal(model.validHost(''), true, 'empty means the gateway picks');
+assert.equal(model.validHost('node.vpn.example.net'), true);
+assert.equal(model.validHost('node vpn'), false);
+assert.equal(model.validHost('-x.example.net'), false);
+const gw = model.normalize({ gateways: [{ peer: 'me', service: 't3', url: 'https://n.v:3/', running: true }], gatewayZones: ['v'] });
+assert.equal(model.gatewayFor(gw.gateways, 'me', 't3').url, 'https://n.v:3/');
+assert.equal(model.gatewayFor(gw.gateways, 'other', 't3'), null);
+const expose = plain(model.exposeRequests('vq', ['ssh'], 'me', ' Node.V '));
+assert.deepEqual(expose[0], { action: 'grant-set', peer: 'vq', services: ['ssh', 't3'], public: ['t3'], confirmed: true }, 'the gateway is granted t3, with consent to expose it, first');
+assert.deepEqual(expose[1].command, { action: 'gateway-set', peer: 'me', service: 't3', enabled: true, host: 'node.v' });
+assert.equal(plain(model.exposeRequests('vq', ['t3'], 'me', ''))[1].command.host, undefined, 'no name: a port of its own');
+const conceal = plain(model.concealRequests('vq', ['ssh', 't3'], 'me', ['t3']));
+assert.deepEqual(conceal[1].services, ['ssh'], 'the grant goes too');
+assert.deepEqual(conceal[1].public, [], 'and the consent to expose it');
+assert.equal(model.gatewayCheckKey({ reachable: true, sameEnvironment: true }), 'omabridgeGatewayReady');
+assert.equal(model.gatewayCheckKey({ reachable: true, sameEnvironment: false }), 'omabridgeGatewayOtherT3');
+assert.equal(model.gatewayCheckKey({ reachable: false }), 'omabridgeGatewayUnreachable');
+assert.equal(model.confirmedRequest('gateway-check', {}), null, 'checking is never a confirmed change');
 assert.deepEqual(plain(model.publishValues({ t3Available: true, sshAvailable: false }, true, true)), { t3: true, ssh: false }, 'only what can be served');
 assert.deepEqual(plain(model.publishValues({ t3Available: false, sshAvailable: true }, true, true)), { t3: false, ssh: true });
 assert.equal(model.normalize({ published: { external: true, t3Available: true } }).published.external, true);

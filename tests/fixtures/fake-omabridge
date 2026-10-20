@@ -60,6 +60,7 @@ def remote_snapshot(state):
         "published": {"enabled": remote["published"], "active": remote["published"], "external": False, "stale": False,
                       "sshAvailable": True, "t3Available": False, "services": remote["services"]},
         "relay": {"mode": "custom", "url": relay} if relay.startswith("https://") else {"mode": relay, "url": None},
+        "gateways": remote.get("gateways", []), "gatewayZones": ["vpn.example.net"],
         "relayHost": remote.get("host") or {"enabled": False, "url": None, "running": False, "error": None,
                                             "suggested": "https://vps.example.net:3341/"},
     }
@@ -72,7 +73,7 @@ def run_remote(state, request):
     command = request.get("command") or {}
     action = command.get("action")
     remote = state["remote"]
-    if action not in ("read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve", "relay-host"):
+    if action not in ("read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve", "relay-host", "gateway-set"):
         fail("omabridge_remote_forbidden")
     if action == "rename":
         remote["name"] = command.get("name", "").strip()
@@ -89,6 +90,13 @@ def run_remote(state, request):
         if any(p["id"] == command.get("peer") and p["admin"] for p in remote["peers"]):
             fail("omabridge_peer_is_admin")
         remote["peers"] = [p for p in remote["peers"] if p["id"] != command.get("peer")]
+    elif action == "gateway-set":
+        mine = [g for g in remote.get("gateways", []) if not (g["peer"] == command.get("peer") and g["service"] == command.get("service"))]
+        if command.get("enabled"):
+            host = command.get("host") or "vps.example.net"
+            mine.append({"peer": command["peer"], "name": "test-device", "service": command["service"],
+                         "url": f"https://{host}:24601/", "running": True, "error": None})
+        remote["gateways"] = mine
     elif action == "relay-host":
         if "cert" in command or "key" in command:
             fail("omabridge_remote_forbidden")
@@ -115,10 +123,12 @@ def main():
         fail("invalid_command")
     action = request.get("action")
     extra = {}
-    if action == "invite-inspect":
+    if action == "gateway-check":
+        extra["gatewayCheck"] = {"reachable": request.get("url", "").startswith("https://"), "sameEnvironment": True}
+    elif action == "invite-inspect":
         path = request.get("path", "")
         extra["invitation"] = {"name": "admin-desk" if "manage" in path else "remote-a", "expires": int(time.time()) + 600,
-                               "manage": "manage" in path}
+                               "manage": "manage" in path, "id": "f6" * 32}
     elif action == "remote" and (request.get("command") or {}).get("action") == "read":
         extra["remote"] = run_remote(state, request)
     elif action == "sync":
@@ -143,6 +153,12 @@ def main():
                 fail("omabridge_name_invalid")
             state["device"]["name"] = name
             extra["renamed"] = {"via": "service"} if state["published"] else {"via": "direct", "reached": 0, "total": 0}
+        elif action == "grant-set":
+            match = [p for p in state["peers"] if p["id"] == request.get("peer")]
+            if not match:
+                fail("omabridge_peer_not_found")
+            match[0]["services"] = request.get("services", [])
+            match[0]["public"] = request.get("public", [])
         elif action == "admin-set":
             match = [p for p in state["peers"] if p["id"] == request.get("peer")]
             if not match or not isinstance(request.get("allowed"), bool):
