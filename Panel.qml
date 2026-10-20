@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "DisplayModel.js" as DisplayModel
 
@@ -1322,7 +1323,7 @@ Panel {
 
         Text {
           text: "󰒓"
-          color: Color.accent
+          color: Commons.Color.accent
           font.family: root.fontFamily
           font.pixelSize: Style.font.title
           anchors.verticalCenter: parent.verticalCenter
@@ -1434,7 +1435,7 @@ Panel {
           width: parent.width
           visible: root.showSuggestion
           height: suggestionRow.implicitHeight + Style.space(14)
-          color: Style.selectedFillFor(root.fg, Color.accent)
+          color: Style.selectedFillFor(root.fg, Commons.Color.accent)
           radius: Style.cornerRadius > 0 ? Style.cornerRadius : 4
 
           Row {
@@ -1848,7 +1849,7 @@ Panel {
           height: Math.min(240, Math.max(170, panel.contentWidth * 0.31))
           radius: Style.cornerRadius
           color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.035)
-          border.color: root.displayValidLayout ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.18) : Color.urgent
+          border.color: root.displayValidLayout ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.18) : Commons.Color.urgent
           border.width: 1
 
           // Commit a drag: convert canvas px to logical coords, keep the layout
@@ -1890,8 +1891,8 @@ Panel {
               width: Math.max(Style.space(70), logical.width * displayCanvas.zoom)
               height: Math.max(Style.space(44), logical.height * displayCanvas.zoom)
               radius: Style.cornerRadius
-              color: index === root.displaySelectedIndex ? Style.selectedFillFor(root.fg, Color.accent) : Style.hoverFillFor(root.fg, Color.accent)
-              border.color: index === root.displaySelectedIndex ? Color.accent : root.fg
+              color: index === root.displaySelectedIndex ? Style.selectedFillFor(root.fg, Commons.Color.accent) : Style.hoverFillFor(root.fg, Commons.Color.accent)
+              border.color: index === root.displaySelectedIndex ? Commons.Color.accent : root.fg
               border.width: index === root.displaySelectedIndex ? 2 : 1
               opacity: modelData.mirror ? 0.65 : 1
 
@@ -1927,7 +1928,7 @@ Panel {
         Text {
           visible: !root.displayValidLayout
           text: root.displayActiveCount === 0 ? root.t(root.uiLang, "displayAtLeastOne") : root.t(root.uiLang, "displayNoOverlap")
-          color: Color.urgent
+          color: Commons.Color.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
         }
@@ -2121,8 +2122,8 @@ Panel {
           Rectangle {
             id: confirmCardBg
             anchors.fill: confirmRow
-            color: Color.popups.background
-            border.color: Color.accent
+            color: Commons.Color.popups.background
+            border.color: Commons.Color.accent
             border.width: Style.space(2)
             radius: Style.cornerRadius * 2
             opacity: confirmRow.opacity
@@ -2141,7 +2142,7 @@ Panel {
             Text {
               width: parent.width
               text: root.t(root.uiLang, "keepChangesPrompt")
-              color: Color.accent
+              color: Commons.Color.accent
               font.family: root.fontFamily
               font.pixelSize: Style.font.subtitle
               font.bold: true
@@ -2153,7 +2154,7 @@ Panel {
               spacing: Style.space(16)
               Text {
                 text: root.displaySecondsRemaining + "s"
-                color: Color.accent
+                color: Commons.Color.accent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.title
                 font.bold: true
@@ -2176,7 +2177,7 @@ Panel {
               width: parent.width
               visible: root.displaySecondsRemaining <= 5
               text: root.t(root.uiLang, "displayRevertHint")
-              color: Qt.darker(Color.foreground, 1.4)
+              color: Qt.darker(Commons.Color.foreground, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap

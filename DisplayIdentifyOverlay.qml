@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 
 // Draws a colored accent border (and a big number) on physical monitors so the
 // user can tell which tile in the layout canvas maps to which real display.
@@ -44,7 +45,7 @@ Item {
       Rectangle {
         anchors.fill: parent
         color: "transparent"
-        border.color: Color.accent
+        border.color: Commons.Color.accent
         border.width: win.isSelected || root.identifyAll ? Style.space(6) : 0
         radius: Style.cornerRadius
       }
@@ -56,8 +57,8 @@ Item {
         width: Style.space(180)
         height: Style.space(130)
         radius: Style.cornerRadius * 2
-        color: Color.popups.background
-        border.color: Color.accent
+        color: Commons.Color.popups.background
+        border.color: Commons.Color.accent
         border.width: Style.normalBorderWidth
         Column {
           anchors.centerIn: parent
@@ -65,7 +66,7 @@ Item {
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: win.displayIndex >= 0 ? String(win.displayIndex + 1) : "?"
-            color: Color.foreground
+            color: Commons.Color.foreground
             font.family: Style.font.family
             font.pixelSize: Style.space(58)
             font.bold: true
@@ -73,7 +74,7 @@ Item {
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: modelData.name
-            color: Qt.darker(Color.foreground, 1.3)
+            color: Qt.darker(Commons.Color.foreground, 1.3)
             font.family: Style.font.family
             font.pixelSize: Style.font.body
           }
