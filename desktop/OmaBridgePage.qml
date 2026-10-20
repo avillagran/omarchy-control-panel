@@ -166,6 +166,14 @@ ColumnLayout {
         interval: 10000
         onTriggered: root.remoteRead()
     }
+    // A remote rename comes back as that device's announcement right after the
+    // answer; read again so its row shows the new name.
+    Timer {
+        id: peersReread
+        interval: 2000
+        onTriggered: if (!root.busy)
+            root.run(OmaBridgeModel.readRequest())
+    }
     function openInvite() {
         created = null;
         errorCode = "";
@@ -255,6 +263,8 @@ ColumnLayout {
             // A relay change is undone on that device unless it is reached again soon.
             if (changed === "relay-set")
                 remoteConfirm.restart();
+            if (changed === "rename")
+                peersReread.restart();
         } else if (done === "admin-set") {
             status = t("omabridgeAdminChanged");
         } else if (done === "rename") {
