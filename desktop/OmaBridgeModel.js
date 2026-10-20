@@ -5,7 +5,7 @@
 // and responses; OmaBridge validates everything again.
 
 var ACTIONS = ["identity-create", "invite", "invite-discard", "pair", "pair-retry",
-               "pair-discard", "approve", "revoke", "publish", "unpublish", "relay-set"]
+               "pair-discard", "approve", "revoke", "publish", "unpublish", "relay-set", "rename"]
 
 var ERROR_KEYS = {
     omabridge_missing: "omabridgeErrorMissing",
@@ -34,6 +34,7 @@ var ERROR_KEYS = {
     omabridge_request_changed: "omabridgeErrorRequestChanged",
     omabridge_command_failed: "omabridgeErrorCommandFailed",
     omabridge_relay_invalid: "omabridgeErrorRelayInvalid",
+    omabridge_name_invalid: "omabridgeErrorNameInvalid",
     timeout: "omabridgeErrorTimeout",
     failed_start: "omabridgeErrorFailedStart",
     invalid_response: "omabridgeErrorInvalidResponse"
@@ -132,6 +133,12 @@ function readRequest() {
     return { action: "read" }
 }
 
+// Exchanges names and addresses with paired devices; changes no trust, so it
+// needs no confirmation.
+function syncRequest() {
+    return { action: "sync" }
+}
+
 // `confirmed:true` is only ever added here, and the page only calls this from
 // the confirm button of a dialog the user has just seen.
 function confirmedRequest(action, values) {
@@ -185,6 +192,23 @@ function relayStatusKey(relay) {
     if (relay && relay.mode === "custom") return "omabridgeRelayCustom"
     if (relay && relay.mode === "none") return "omabridgeRelayNone"
     return "omabridgeRelayPublic"
+}
+
+// Same rule as OmaBridge: 1–80 characters, no control characters.
+function nameValid(name) {
+    var text = String(name || "").trim()
+    return text.length > 0 && text.length <= 80 && !/[\u0000-\u001f\u007f-\u009f]/.test(text)
+}
+
+function renameValues(name) {
+    return { name: String(name || "").trim() }
+}
+
+// "service": the running service tells paired devices; otherwise how many answered.
+function renamedStatus(renamed) {
+    if (renamed && renamed.via === "direct")
+        return { key: "omabridgeRenamedDirect", reached: renamed.reached || 0, total: renamed.total || 0 }
+    return { key: "omabridgeRenamedService", reached: 0, total: 0 }
 }
 
 function publishStatusKey(published) {

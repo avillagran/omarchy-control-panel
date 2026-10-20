@@ -61,7 +61,11 @@ def main():
         fail("invalid_command")
     action = request.get("action")
     extra = {}
-    if action != "read":
+    if action == "sync":
+        if not state["device"]:
+            fail("omabridge_identity_missing")
+        extra["synced"] = {"via": "service" if state["published"] else "direct", "reached": 0, "total": 0}
+    elif action != "read":
         if request.get("confirmed") is not True:
             fail("confirmation_required")
         if action == "identity-create":
@@ -71,6 +75,14 @@ def main():
             if not services:
                 fail("omabridge_nothing_to_publish")
             state["published"], state["services"] = True, services
+        elif action == "rename":
+            name = request.get("name", "").strip()
+            if not state["device"]:
+                fail("omabridge_identity_missing")
+            if not name or len(name) > 80:
+                fail("omabridge_name_invalid")
+            state["device"]["name"] = name
+            extra["renamed"] = {"via": "service"} if state["published"] else {"via": "direct", "reached": 0, "total": 0}
         elif action == "relay-set":
             relay = request.get("relay", "")
             if relay not in ("public", "none") and not (relay.startswith("https://") and len(relay) > 8):

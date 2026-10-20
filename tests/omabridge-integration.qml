@@ -183,10 +183,24 @@ ShellRoot {
             case 13:
                 test.ensure(page.relay.mode === "custom" && page.status === "omabridgeRelaySaved" && !test.shown("omabridgeRelaySave"), "relay saved");
                 test.ensure(test.control("omabridgeRelayStatus").text === "omabridgeRelayCustom · https://relay.example.net", "own relay shown");
+                test.click("omabridgeRenameButton");
+                var name = test.control("omabridgeRenameField");
+                test.ensure(name.visible && name.text === "test-device" && !test.control("omabridgeRenameSave").enabled, "rename starts from the current name");
+                name.text = "   ";
+                test.ensure(!test.control("omabridgeRenameSave").enabled, "a blank name is refused");
+                name.text = " Desk at home ";
+                test.click("omabridgeRenameSave");
+                break;
+            case 14:
+                test.ensure(page.device.name === "Desk at home" && page.status === "omabridgeRenamedService" && !test.shown("omabridgeRenameSave"), "renamed");
+                test.ensure(test.control("omabridgeDeviceName").text === "Desk at home", "new name shown");
+                test.click("omabridgeRefresh");
+                break;
+            case 15:
                 test.click("omabridgeUnpublishButton");
                 test.click("omabridgeConfirm");
                 break;
-            case 14:
+            case 16:
                 test.ensure(!page.published.enabled && page.status === "omabridgeUnpublished", "unpublished");
                 console.log("OMABRIDGE_PASS ready");
                 Qt.quit();

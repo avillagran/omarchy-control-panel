@@ -68,6 +68,16 @@ ColumnLayout {
         status = "";
         run(OmaBridgeModel.readRequest());
     }
+    // The Refresh button also asks paired devices for their current names.
+    function sync() {
+        status = "";
+        run(device ? OmaBridgeModel.syncRequest() : OmaBridgeModel.readRequest());
+    }
+    function openRename() {
+        errorCode = "";
+        renameField.text = device ? device.name : "";
+        renameDialog.open();
+    }
     // Opens the confirmation dialog; nothing is sent until Confirm.
     function ask(job, values, title, detail) {
         if (busy)
@@ -127,6 +137,7 @@ ColumnLayout {
                 inviteDialog.close();
                 publishDialog.close();
                 relayDialog.close();
+                renameDialog.close();
             } else {
                 errorCode = response.error;
                 errorAction = done;
@@ -150,6 +161,10 @@ ColumnLayout {
         } else if (done === "publish") {
             publishDialog.close();
             status = t("omabridgePublishedNow");
+        } else if (done === "rename") {
+            renameDialog.close();
+            var renamed = OmaBridgeModel.renamedStatus(response.renamed);
+            status = t(renamed.key).replace("%1", renamed.reached).replace("%2", renamed.total);
         } else if (done === "relay-set") {
             relayDialog.close();
             status = t("omabridgeRelaySaved");
@@ -173,12 +188,18 @@ ColumnLayout {
         confirmDialog.close();
         publishDialog.close();
         relayDialog.close();
+        renameDialog.close();
         inviteDialog.close();
         created = null;
     }
     readonly property bool windowShown: Window.window ? Window.window.visible : true
-    onWindowShownChanged: if (!windowShown)
-        forget()
+    // Showing the window again re-reads, so changes made elsewhere appear.
+    onWindowShownChanged: {
+        if (!windowShown)
+            forget();
+        else if (visible && !busy)
+            refresh();
+    }
     onVisibleChanged: {
         if (!visible)
             forget();
@@ -322,7 +343,7 @@ ColumnLayout {
         Action {
             objectName: "omabridgeRefresh"
             text: root.t("omabridgeRefresh")
-            onClicked: root.refresh()
+            onClicked: root.sync()
         }
     }
     Copy {
@@ -372,6 +393,13 @@ ColumnLayout {
                         wrapMode: Text.NoWrap
                         elide: Text.ElideMiddle
                     }
+                }
+                Action {
+                    objectName: "omabridgeRenameButton"
+                    visible: !!root.device
+                    enabled: !root.busy
+                    text: root.t("omabridgeRename")
+                    onClicked: root.openRename()
                 }
                 Action {
                     visible: !!root.device && typeof root.core.copyToClipboard === "function"
@@ -582,7 +610,7 @@ ColumnLayout {
     }
     ErrorLine {
         objectName: "omabridgeError"
-        visible: root.errorCode !== "" && !confirmDialog.visible && !inviteDialog.visible && !publishDialog.visible && !relayDialog.visible
+        visible: root.errorCode !== "" && !confirmDialog.visible && !inviteDialog.visible && !publishDialog.visible && !relayDialog.visible && !renameDialog.visible
     }
 
     FileDialog {
@@ -679,6 +707,58 @@ ColumnLayout {
                     enabled: !root.busy && (OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked).t3 || OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked).ssh)
                     text: root.t("omabridgePublishAction")
                     onClicked: root.confirmed("publish", OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked))
+                }
+            }
+        }
+    }
+
+    BridgeDialog {
+        id: renameDialog
+        objectName: "omabridgeRenameDialog"
+        onClosed: root.errorCode = ""
+        contentItem: ColumnLayout {
+            spacing: theme.padding
+            Heading {
+                text: root.t("omabridgeRenameTitle")
+            }
+            Copy {
+                text: root.t("omabridgeRenameDetail")
+            }
+            Controls.TextField {
+                id: renameField
+                objectName: "omabridgeRenameField"
+                Layout.fillWidth: true
+                enabled: !root.busy
+                maximumLength: 80
+                selectByMouse: true
+                color: theme.text
+                font.family: theme.fontUi
+                font.pixelSize: theme.body
+                background: Rectangle {
+                    color: theme.panelDeep
+                    radius: theme.radius
+                    border.color: renameField.activeFocus ? theme.accent : theme.border
+                }
+                onAccepted: if (renameSave.enabled)
+                    renameSave.clicked()
+            }
+            ErrorLine {}
+            RowLayout {
+                Layout.fillWidth: true
+                Item {
+                    Layout.fillWidth: true
+                }
+                Action {
+                    text: root.t("cancel")
+                    onClicked: renameDialog.close()
+                }
+                Action {
+                    id: renameSave
+                    objectName: "omabridgeRenameSave"
+                    primary: true
+                    enabled: !root.busy && OmaBridgeModel.nameValid(renameField.text) && !!root.device && renameField.text.trim() !== root.device.name
+                    text: root.t("omabridgeRelaySave")
+                    onClicked: root.confirmed("rename", OmaBridgeModel.renameValues(renameField.text))
                 }
             }
         }

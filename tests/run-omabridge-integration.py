@@ -65,11 +65,12 @@ def scenario(expect, install=True, mode="ready"):
         if expect != "ready":
             return
         for body in bodies:
-            assert ("confirmed" in body) == (body["action"] != "read"), body
+            assert ("confirmed" in body) == (body["action"] not in ("read", "sync")), body
             assert body.get("confirmed", True) is True
         actions = [body["action"] for body in bodies if body["action"] != "read"]
+        assert {"action": "rename", "name": "Desk at home", "confirmed": True} in bodies
         assert actions == ["identity-create", "publish", "invite", "invite-discard", "invite", "invite", "pair", "pair-retry",
-                           "approve", "revoke", "pair", "relay-set", "unpublish"], actions
+                           "approve", "revoke", "pair", "relay-set", "rename", "sync", "unpublish"], actions
         assert bodies[bodies.index(next(b for b in bodies if b["action"] == "invite")) + 1] == {"action": "read"}, \
             "the client output holding the invitation is replaced immediately"
         publish = next(b for b in bodies if b["action"] == "publish")

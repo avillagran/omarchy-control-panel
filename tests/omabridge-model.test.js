@@ -83,6 +83,19 @@ assert.equal(model.relayStatusKey({ mode: 'custom' }), 'omabridgeRelayCustom');
 assert.equal(model.relayStatusKey({ mode: 'none' }), 'omabridgeRelayNone');
 assert.equal(model.confirmedRequest('relay-set', { relay: 'none' }).confirmed, true);
 assert.equal(model.errorKey('omabridge_relay_invalid', true), 'omabridgeErrorRelayInvalid');
+
+// Rename and sync.
+assert.equal(model.nameValid('Desk'), true);
+assert.equal(model.nameValid('  '), false);
+assert.equal(model.nameValid('a\nb'), false);
+assert.equal(model.nameValid('x'.repeat(81)), false);
+assert.deepEqual(plain(model.renameValues('  Desk  ')), { name: 'Desk' });
+assert.equal(model.confirmedRequest('rename', { name: 'Desk' }).confirmed, true);
+assert.deepEqual(plain(model.syncRequest()), { action: 'sync' });
+assert.equal(model.confirmedRequest('sync', {}), null, 'sync is never sent as a confirmed change');
+assert.deepEqual(plain(model.renamedStatus({ via: 'direct', reached: 1, total: 2 })), { key: 'omabridgeRenamedDirect', reached: 1, total: 2 });
+assert.equal(model.renamedStatus({ via: 'service' }).key, 'omabridgeRenamedService');
+assert.equal(model.errorKey('omabridge_name_invalid', true), 'omabridgeErrorNameInvalid');
 assert.deepEqual(plain(model.publishValues({ t3Available: true, sshAvailable: false }, true, true)), { t3: true, ssh: false }, 'only what can be served');
 assert.deepEqual(plain(model.publishValues({ t3Available: false, sshAvailable: true }, true, true)), { t3: false, ssh: true });
 assert.equal(model.normalize({ published: { external: true, t3Available: true } }).published.external, true);
