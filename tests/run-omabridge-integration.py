@@ -65,12 +65,23 @@ def scenario(expect, install=True, mode="ready"):
         if expect != "ready":
             return
         for body in bodies:
-            assert ("confirmed" in body) == (body["action"] not in ("read", "sync")), body
+            unconfirmed = body["action"] in ("read", "sync", "invite-inspect") or \
+                (body["action"] == "remote" and body["command"]["action"] == "read")
+            assert ("confirmed" in body) != unconfirmed, body
             assert body.get("confirmed", True) is True
-        actions = [body["action"] for body in bodies if body["action"] != "read"]
+        actions = [body["action"] if body["action"] != "remote" else "remote:" + body["command"]["action"]
+                   for body in bodies if body["action"] not in ("read", "invite-inspect") and body.get("command", {}).get("action") != "read"]
         assert {"action": "rename", "name": "Desk at home", "confirmed": True} in bodies
         assert actions == ["identity-create", "publish", "invite", "invite-discard", "invite", "invite", "pair", "pair-retry",
-                           "approve", "revoke", "pair", "relay-set", "rename", "sync", "unpublish"], actions
+                           "remote:rename", "remote:relay-set", "remote:revoke", "admin-set", "approve", "revoke", "pair",
+                           "pair", "relay-set", "rename", "sync", "unpublish"], actions
+        pairs = [b for b in bodies if b["action"] == "pair"]
+        assert "allowManage" not in pairs[0], "plain invitations carry no consent"
+        assert pairs[-1]["allowManage"] is False, "consent is explicit and off unless ticked"
+        assert {"action": "remote", "peer": "a1" * 32, "command": {"action": "rename", "name": "Remote desk"},
+                "confirmed": True} in bodies
+        assert {"action": "admin-set", "peer": "a1" * 32, "allowed": True, "confirmed": True} in bodies
+        assert sum(1 for b in bodies if b["action"] == "invite-inspect") == 3, "every pairing reads its invitation first"
         assert bodies[bodies.index(next(b for b in bodies if b["action"] == "invite")) + 1] == {"action": "read"}, \
             "the client output holding the invitation is replaced immediately"
         publish = next(b for b in bodies if b["action"] == "publish")

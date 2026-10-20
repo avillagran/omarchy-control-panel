@@ -44,7 +44,7 @@ assert.equal(invited.created.qrImage, 'data:image/svg+xml;base64,AAA');
 assert.equal(JSON.stringify(invited.snapshot).includes('omabridge-invite'), false, 'the secret never enters the snapshot');
 assert.equal(model.parseResponse(JSON.stringify({ ...snapshot, created: { path: '/p', qrImage: 'file:///etc/passwd' } }), 0).created.qrImage, '');
 const paired = model.parseResponse(JSON.stringify({ ...snapshot, paired: { status: 'pending', name: 'desk', id: 'p9' } }), 0);
-assert.deepEqual(plain(paired.paired), { status: 'pending', name: 'desk', id: 'p9' });
+assert.deepEqual(plain(paired.paired), { status: 'pending', name: 'desk', id: 'p9', admin: false });
 
 // Requests: confirmation is added in exactly one place, for known actions only.
 assert.deepEqual(plain(model.readRequest()), { action: 'read' });
@@ -96,6 +96,31 @@ assert.equal(model.confirmedRequest('sync', {}), null, 'sync is never sent as a 
 assert.deepEqual(plain(model.renamedStatus({ via: 'direct', reached: 1, total: 2 })), { key: 'omabridgeRenamedDirect', reached: 1, total: 2 });
 assert.equal(model.renamedStatus({ via: 'service' }).key, 'omabridgeRenamedService');
 assert.equal(model.errorKey('omabridge_name_invalid', true), 'omabridgeErrorNameInvalid');
+
+// Management.
+const managed = model.normalize({ peers: [{ id: 'a', name: 'A', admin: true, managed: 'yes' }] }).peers[0];
+assert.equal(managed.admin, true);
+assert.equal(managed.managed, false, 'only a real boolean counts');
+assert.deepEqual(plain(model.pairValues('/x.json', null, true)), { path: '/x.json' }, 'no consent field unless asked');
+assert.deepEqual(plain(model.pairValues('/x.json', { manage: true }, undefined)), { path: '/x.json', allowManage: false });
+assert.deepEqual(plain(model.pairValues('/x.json', { manage: true }, true)), { path: '/x.json', allowManage: true });
+assert.deepEqual(plain(model.inspectRequest('/x.json')), { action: 'invite-inspect', path: '/x.json' });
+assert.equal(model.confirmedRequest('invite-inspect', {}), null, 'inspecting is never a confirmed change');
+assert.deepEqual(plain(model.remoteReadRequest('p')), { action: 'remote', peer: 'p', command: { action: 'read' } });
+assert.equal(model.remoteValues('p', { action: 'invite' }), null, 'only remote actions OmaBridge allows');
+assert.equal(model.remoteValues('p', { action: 'admin-set' }), null);
+assert.deepEqual(plain(model.remoteValues('p', { action: 'rename', name: 'X' })), { peer: 'p', command: { action: 'rename', name: 'X' } });
+assert.equal(model.remoteRevocable({ admin: true }), false);
+assert.equal(model.remoteRevocable({ admin: false }), true);
+assert.deepEqual(plain(model.inviteManageValues({ services: ['t3'], qr: false }, true)), { services: ['t3'], qr: false, manage: true });
+assert.deepEqual(plain(model.inviteManageValues({ services: ['t3'], qr: false }, false)), { services: ['t3'], qr: false });
+assert.equal(model.manageText({ admin: true, managed: true }, k => k), 'omabridgeManagesThis · omabridgeYouManage');
+const parsed = model.parseResponse(JSON.stringify({ available: true, renamed: { via: 'direct', reached: 1, total: 2 },
+  invitation: { name: 'A', expires: 5, manage: true, token: 'secret' }, remote: { available: true, device: { id: 'r', name: 'R' } } }), 0);
+assert.deepEqual(plain(parsed.renamed), { via: 'direct', reached: 1, total: 2 });
+assert.deepEqual(plain(parsed.invitation), { name: 'A', expires: 5, manage: true }, 'never the token');
+assert.equal(parsed.remote.device.name, 'R');
+assert.equal(model.errorKey('omabridge_manage_consent_required', true), 'omabridgeErrorConsentRequired');
 assert.deepEqual(plain(model.publishValues({ t3Available: true, sshAvailable: false }, true, true)), { t3: true, ssh: false }, 'only what can be served');
 assert.deepEqual(plain(model.publishValues({ t3Available: false, sshAvailable: true }, true, true)), { t3: false, ssh: true });
 assert.equal(model.normalize({ published: { external: true, t3Available: true } }).published.external, true);

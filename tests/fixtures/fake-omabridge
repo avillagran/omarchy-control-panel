@@ -30,6 +30,11 @@ def load():
     if STATE.exists():
         return json.loads(STATE.read_text())
     return {"mode": "ready", "device": None, "published": False, "services": [], "relay": "public",
+            # The device remote-a: it lets this one manage it once paired.
+            "remote": {"name": "remote-a", "published": True, "services": ["ssh"], "relay": "public",
+                       "pending": [{"id": "c3" * 32, "name": "remote-guest", "services": ["ssh"], "expires": 9999999999}],
+                       "peers": [{"id": "d4" * 32, "name": "remote-old", "admin": False},
+                                 {"id": "e5" * 32, "name": "remote-admin", "admin": True}]},
             "peers": [], "pending": [], "awaiting": [], "invites": []}
 
 
@@ -43,6 +48,48 @@ def snapshot(state):
         else {"mode": state.get("relay", "public"), "url": None},
         "error": "",
     }
+
+
+def remote_snapshot(state):
+    remote = state["remote"]
+    relay = remote["relay"]
+    return {
+        "available": True, "version": "0.0.0-test", "identity": True,
+        "device": {"id": PEER_A, "name": remote["name"]}, "pending": remote["pending"], "error": "",
+        "peers": [{"services": [], "remoteServices": [], "managed": False, **peer} for peer in remote["peers"]],
+        "published": {"enabled": remote["published"], "active": remote["published"], "external": False, "stale": False,
+                      "sshAvailable": True, "t3Available": False, "services": remote["services"]},
+        "relay": {"mode": "custom", "url": relay} if relay.startswith("https://") else {"mode": relay, "url": None},
+    }
+
+
+def run_remote(state, request):
+    peer = next((p for p in state["peers"] if p["id"] == request.get("peer")), None)
+    if not peer or not peer.get("managed"):
+        fail("omabridge_not_managed")
+    command = request.get("command") or {}
+    action = command.get("action")
+    remote = state["remote"]
+    if action not in ("read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve"):
+        fail("omabridge_remote_forbidden")
+    if action == "rename":
+        remote["name"] = command.get("name", "").strip()
+        peer["name"] = remote["name"]
+    elif action == "relay-set":
+        if command.get("relay") == "none":
+            fail("omabridge_remote_forbidden")
+        remote["relay"] = command.get("relay")
+    elif action == "publish":
+        remote["published"], remote["services"] = True, [n for n in ("t3", "ssh") if command.get(n) is True]
+    elif action == "unpublish":
+        remote["published"], remote["services"] = False, []
+    elif action == "revoke":
+        if any(p["id"] == command.get("peer") and p["admin"] for p in remote["peers"]):
+            fail("omabridge_peer_is_admin")
+        remote["peers"] = [p for p in remote["peers"] if p["id"] != command.get("peer")]
+    elif action == "approve":
+        remote["pending"] = [p for p in remote["pending"] if p["id"] != command.get("peer")]
+    return remote_snapshot(state)
 
 
 def main():
@@ -61,7 +108,13 @@ def main():
         fail("invalid_command")
     action = request.get("action")
     extra = {}
-    if action == "sync":
+    if action == "invite-inspect":
+        path = request.get("path", "")
+        extra["invitation"] = {"name": "admin-desk" if "manage" in path else "remote-a", "expires": int(time.time()) + 600,
+                               "manage": "manage" in path}
+    elif action == "remote" and (request.get("command") or {}).get("action") == "read":
+        extra["remote"] = run_remote(state, request)
+    elif action == "sync":
         if not state["device"]:
             fail("omabridge_identity_missing")
         extra["synced"] = {"via": "service" if state["published"] else "direct", "reached": 0, "total": 0}
@@ -83,6 +136,13 @@ def main():
                 fail("omabridge_name_invalid")
             state["device"]["name"] = name
             extra["renamed"] = {"via": "service"} if state["published"] else {"via": "direct", "reached": 0, "total": 0}
+        elif action == "admin-set":
+            match = [p for p in state["peers"] if p["id"] == request.get("peer")]
+            if not match or not isinstance(request.get("allowed"), bool):
+                fail("omabridge_peer_not_found")
+            match[0]["admin"] = request["allowed"]
+        elif action == "remote":
+            extra["remote"] = run_remote(state, request)
         elif action == "relay-set":
             relay = request.get("relay", "")
             if relay not in ("public", "none") and not (relay.startswith("https://") and len(relay) > 8):
@@ -104,12 +164,22 @@ def main():
         elif action == "pair":
             if "expired" in request.get("path", ""):
                 fail("omabridge_invite_expired")
+            if "manage" in request.get("path", ""):
+                if not isinstance(request.get("allowManage"), bool):
+                    fail("omabridge_manage_consent_required")
+                state["awaiting"].append({"id": "bbbbbbbb-2222-4222-8222-222222222222", "name": "admin-desk",
+                                          "expires": int(time.time()) + 600})
+                extra["paired"] = {"status": "pending", "name": "admin-desk", "id": "bbbbbbbb-2222-4222-8222-222222222222"}
+                STATE.write_text(json.dumps(state))
+                print(json.dumps({**snapshot(state), **extra}))
+                return
             state["awaiting"].append({"id": AWAITING, "name": "remote-a", "expires": int(time.time()) + 600})
             extra["paired"] = {"status": "pending", "name": "remote-a", "id": AWAITING}
             state["pending"].append({"id": PEER_B, "name": "remote-b", "services": ["t3"], "expires": int(time.time()) + 600})
         elif action == "pair-retry":
             state["awaiting"] = [a for a in state["awaiting"] if a["id"] != request.get("id")]
-            state["peers"].append({"id": PEER_A, "name": "remote-a", "services": [], "remoteServices": ["t3"]})
+            state["peers"].append({"id": PEER_A, "name": "remote-a", "services": [], "remoteServices": ["t3"],
+                                   "admin": False, "managed": True})
             extra["paired"] = {"status": "approved", "name": "remote-a"}
         elif action == "pair-discard":
             state["awaiting"] = [a for a in state["awaiting"] if a["id"] != request.get("id")]
@@ -118,7 +188,8 @@ def main():
             if not match:
                 fail("omabridge_peer_not_found")
             state["pending"].remove(match[0])
-            state["peers"].append({"id": match[0]["id"], "name": match[0]["name"], "services": match[0]["services"], "remoteServices": []})
+            state["peers"].append({"id": match[0]["id"], "name": match[0]["name"], "services": match[0]["services"], "remoteServices": [],
+                                   "admin": False, "managed": False})
         elif action == "revoke":
             before = len(state["peers"])
             state["peers"] = [p for p in state["peers"] if p["id"] != request.get("peer")]

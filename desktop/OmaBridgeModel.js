@@ -5,7 +5,11 @@
 // and responses; OmaBridge validates everything again.
 
 var ACTIONS = ["identity-create", "invite", "invite-discard", "pair", "pair-retry",
-               "pair-discard", "approve", "revoke", "publish", "unpublish", "relay-set", "rename"]
+               "pair-discard", "approve", "revoke", "publish", "unpublish", "relay-set", "rename",
+               "admin-set", "remote"]
+
+// What a managing device may ask a managed one; OmaBridge enforces the same list there.
+var REMOTE_ACTIONS = ["read", "rename", "relay-set", "publish", "unpublish", "revoke", "approve"]
 
 var ERROR_KEYS = {
     omabridge_missing: "omabridgeErrorMissing",
@@ -35,6 +39,13 @@ var ERROR_KEYS = {
     omabridge_command_failed: "omabridgeErrorCommandFailed",
     omabridge_relay_invalid: "omabridgeErrorRelayInvalid",
     omabridge_name_invalid: "omabridgeErrorNameInvalid",
+    omabridge_manage_consent_required: "omabridgeErrorConsentRequired",
+    omabridge_not_managed: "omabridgeErrorNotManaged",
+    omabridge_not_admin: "omabridgeErrorNotAdmin",
+    omabridge_remote_forbidden: "omabridgeErrorRemoteForbidden",
+    omabridge_peer_is_admin: "omabridgeErrorPeerIsAdmin",
+    omabridge_remote_unsupported: "omabridgeErrorRemoteUnsupported",
+    omabridge_remote_failed: "omabridgeErrorGeneric",
     timeout: "omabridgeErrorTimeout",
     failed_start: "omabridgeErrorFailedStart",
     invalid_response: "omabridgeErrorInvalidResponse"
@@ -72,7 +83,8 @@ function normalize(raw) {
         version: _text(raw.version),
         device: device ? { id: _text(device.id), name: _text(device.name) } : null,
         peers: _list(raw.peers).map(function(p) {
-            return { id: _text(p.id), name: _text(p.name), services: _list(p.services), remoteServices: _list(p.remoteServices) }
+            return { id: _text(p.id), name: _text(p.name), services: _list(p.services), remoteServices: _list(p.remoteServices),
+                     admin: p.admin === true, managed: p.managed === true }
         }),
         pending: _list(raw.pending).map(function(p) {
             return { id: _text(p.id), name: _text(p.name), services: _list(p.services), expires: p.expires }
@@ -112,9 +124,21 @@ function parseResponse(text, exitCode) {
         qrImage: /^data:image\/svg\+xml[;,]/.test(_text(raw.created.qrImage)) ? raw.created.qrImage : ""
     } : null
     var paired = raw.paired && typeof raw.paired === "object" ? {
-        status: _text(raw.paired.status), name: _text(raw.paired.name), id: _text(raw.paired.id)
+        status: _text(raw.paired.status), name: _text(raw.paired.name), id: _text(raw.paired.id), admin: raw.paired.admin === true
     } : null
-    return { ok: true, error: "", snapshot: normalize(raw), created: created, paired: paired }
+    var invitation = raw.invitation && typeof raw.invitation === "object" ? {
+        name: _text(raw.invitation.name), expires: raw.invitation.expires, manage: raw.invitation.manage === true
+    } : null
+    var outcome = function(value) {
+        return value && typeof value === "object" ? {
+            via: _text(value.via), reached: Number(value.reached) || 0, total: Number(value.total) || 0
+        } : null
+    }
+    return {
+        ok: true, error: "", snapshot: normalize(raw), created: created, paired: paired, invitation: invitation,
+        renamed: outcome(raw.renamed), synced: outcome(raw.synced),
+        remote: raw.remote && typeof raw.remote === "object" ? normalize(raw.remote) : null
+    }
 }
 
 // Page state from the last read: OmaBridge missing, too old for `manage`,
@@ -156,6 +180,49 @@ function inviteValues(published, shareT3, shareSsh, qr) {
     if (shareT3 && services.indexOf("t3") >= 0) wanted.push("t3")
     if (shareSsh && services.indexOf("ssh") >= 0) wanted.push("ssh")
     return { services: wanted, qr: qr === true }
+}
+
+// The invite dialog's "ask to manage" option.
+function inviteManageValues(values, manage) {
+    var out = {}
+    for (var key in values) out[key] = values[key]
+    if (manage === true) out.manage = true
+    return out
+}
+
+// Reading an invitation file is unconfirmed: it only shows what accepting means.
+function inspectRequest(path) {
+    return { action: "invite-inspect", path: String(path || "") }
+}
+
+// Pairing values; `allowManage` only when the invitation asked, as OmaBridge requires.
+function pairValues(path, invitation, allowManage) {
+    var values = { path: String(path || "") }
+    if (invitation && invitation.manage) values.allowManage = allowManage === true
+    return values
+}
+
+// Reading a managed device needs no confirmation; changes go through confirmedRequest.
+function remoteReadRequest(peer) {
+    return { action: "remote", peer: String(peer || ""), command: { action: "read" } }
+}
+
+function remoteValues(peer, command) {
+    if (!command || REMOTE_ACTIONS.indexOf(command.action) < 0) return null
+    return { peer: String(peer || ""), command: command }
+}
+
+// Peers a managing device may revoke: never one that manages the device.
+function remoteRevocable(peer) {
+    return !!peer && !peer.admin
+}
+
+// What the peer row says about management, both ways.
+function manageText(peer, t) {
+    var parts = []
+    if (peer && peer.admin) parts.push(t("omabridgeManagesThis"))
+    if (peer && peer.managed) parts.push(t("omabridgeYouManage"))
+    return parts.join(" · ")
 }
 
 function serviceLabel(service) {

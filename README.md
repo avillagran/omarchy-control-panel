@@ -69,6 +69,14 @@ invitations with an optional QR code, pairing from an invitation file,
 *Check again* for pairings awaiting approval, approving requests and revoking
 paired devices.
 
+A paired device can be allowed to manage this one, either when this device
+accepts an invitation that asks for it (the confirmation warns what that
+allows and the consent box starts unticked) or later with *Let it manage…*;
+*Stop management…* withdraws it at once, and only this device can change it.
+On the managing device, *Manage…* opens that device's name, publishing, relay,
+pending requests and paired devices; OmaBridge on the managed device decides
+what is allowed and records every change.
+
 *Connection between networks* chooses how this device reaches devices behind
 NAT or with private IPs, without opening ports: n0's public relays (the
 default), your own relay (for example one hosted with `omabridge relay`) or

@@ -29,6 +29,13 @@ ColumnLayout {
             url: ""
         })
     property string relayChoice: "public"
+    // The device being managed from the remote dialog and its last snapshot.
+    property var remotePeer: null
+    property var remoteSnapshot: null
+    property string remoteAction: ""
+    property string remoteRelayChoice: "public"
+    // The invitation chosen for pairing, while its contents are inspected.
+    property string inspectPath: ""
     property string errorCode: ""
     property string errorAction: ""
     property string status: ""
@@ -79,25 +86,85 @@ ColumnLayout {
         renameDialog.open();
     }
     // Opens the confirmation dialog; nothing is sent until Confirm.
-    function ask(job, values, title, detail) {
+    // `consent`, when set, adds an unchecked box whose answer becomes `allowManage`.
+    function ask(job, values, title, detail, consent) {
         if (busy)
             return;
         errorCode = "";
+        consentCheck.checked = false;
         confirmRequest = {
             action: job,
             values: values || {},
             title: title,
-            detail: detail || ""
+            detail: detail || "",
+            consent: consent || ""
         };
         confirmDialog.open();
     }
     function confirmed(job, values) {
         return run(OmaBridgeModel.confirmedRequest(job, values));
     }
+    function confirmAsked() {
+        var values = {};
+        for (var key in confirmRequest.values)
+            values[key] = confirmRequest.values[key];
+        if (confirmRequest.consent)
+            values.allowManage = consentCheck.checked;
+        confirmed(confirmRequest.action, values);
+    }
+    // Reads the invitation first: one that asks to manage this device is
+    // confirmed with a warning and an explicit, unchecked consent box.
     function pairFile(url) {
-        ask("pair", {
-            path: OmaBridgeModel.localPath(url)
-        }, t("omabridgePairConfirm"), t("omabridgePairConfirmDetail"));
+        if (busy)
+            return;
+        inspectPath = OmaBridgeModel.localPath(url);
+        run(OmaBridgeModel.inspectRequest(inspectPath));
+    }
+    function openRemote(peer) {
+        if (busy)
+            return;
+        errorCode = "";
+        remotePeer = peer;
+        remoteSnapshot = null;
+        remoteRenameField.text = "";
+        remoteDialog.open();
+        remoteRead();
+    }
+    function remoteRead() {
+        if (!remotePeer || busy)
+            return;
+        remoteAction = "read";
+        run(OmaBridgeModel.remoteReadRequest(remotePeer.id));
+    }
+    // Changes made from the remote dialog itself were chosen there; trust
+    // changes (approve, revoke, unpublish) still ask first.
+    function remote(command) {
+        var values = OmaBridgeModel.remoteValues(remotePeer ? remotePeer.id : "", command);
+        if (!values || busy)
+            return;
+        remoteAction = command.action;
+        confirmed("remote", values);
+    }
+    function askRemote(command, title, detail) {
+        var values = OmaBridgeModel.remoteValues(remotePeer ? remotePeer.id : "", command);
+        if (!values || busy)
+            return;
+        remoteAction = command.action;
+        ask("remote", values, title, detail);
+    }
+    onRemoteSnapshotChanged: {
+        if (!remoteSnapshot)
+            return;
+        var services = remoteSnapshot.published.services || [];
+        remoteT3.checked = services.indexOf("t3") >= 0;
+        remoteSsh.checked = services.indexOf("ssh") >= 0;
+        remoteRelayChoice = remoteSnapshot.relay.mode === "custom" ? "custom" : "public";
+        remoteRelayUrl.text = remoteSnapshot.relay.url;
+    }
+    Timer {
+        id: remoteConfirm
+        interval: 10000
+        onTriggered: root.remoteRead()
     }
     function openInvite() {
         created = null;
@@ -105,6 +172,7 @@ ColumnLayout {
         inviteT3.checked = true;
         inviteSsh.checked = false;
         inviteQr.checked = false;
+        inviteManage.checked = false;
         inviteDialog.open();
     }
     function openPublish() {
@@ -128,6 +196,10 @@ ColumnLayout {
         busy = false;
         action = "";
         if (!response.ok) {
+            if (done === "remote")
+                remoteAction = "";
+            if (done === "invite-inspect")
+                inspectPath = "";
             var lost = ["missing", "outdated"].indexOf(OmaBridgeModel.stateFor(response)) >= 0 && (done === "read" || response.error !== "invalid_command");
             if (done === "read" && (lost || !root.snapshot))
                 result = response;
@@ -138,6 +210,7 @@ ColumnLayout {
                 publishDialog.close();
                 relayDialog.close();
                 renameDialog.close();
+                remoteDialog.close();
             } else {
                 errorCode = response.error;
                 errorAction = done;
@@ -161,6 +234,29 @@ ColumnLayout {
         } else if (done === "publish") {
             publishDialog.close();
             status = t("omabridgePublishedNow");
+        } else if (done === "invite-inspect") {
+            var invitation = response.invitation;
+            var path = inspectPath;
+            inspectPath = "";
+            if (invitation && invitation.manage)
+                ask("pair", OmaBridgeModel.pairValues(path, invitation, false), tr("omabridgePairManageConfirm", invitation.name), tr("omabridgeManageWarning", invitation.name), tr("omabridgeManageConsent", invitation.name));
+            else
+                ask("pair", OmaBridgeModel.pairValues(path, invitation, false), t("omabridgePairConfirm"), t("omabridgePairConfirmDetail"));
+            return;
+        } else if (done === "remote") {
+            var changed = remoteAction;
+            remoteAction = "";
+            if (response.remote)
+                remoteSnapshot = response.remote;
+            if (changed !== "read") {
+                status = t("omabridgeRemoteDone");
+                remoteRenameField.text = "";
+            }
+            // A relay change is undone on that device unless it is reached again soon.
+            if (changed === "relay-set")
+                remoteConfirm.restart();
+        } else if (done === "admin-set") {
+            status = t("omabridgeAdminChanged");
         } else if (done === "rename") {
             renameDialog.close();
             var renamed = OmaBridgeModel.renamedStatus(response.renamed);
@@ -189,6 +285,7 @@ ColumnLayout {
         publishDialog.close();
         relayDialog.close();
         renameDialog.close();
+        remoteDialog.close();
         inviteDialog.close();
         created = null;
     }
@@ -583,6 +680,32 @@ ColumnLayout {
                                 return s !== "";
                             }).join(" · ")
                         }
+                        Copy {
+                            objectName: "omabridgePeerManage_" + peerCard.modelData.id
+                            visible: text !== ""
+                            text: OmaBridgeModel.manageText(peerCard.modelData, root.t)
+                            color: theme.accent
+                        }
+                    }
+                    Action {
+                        objectName: "omabridgeManage_" + peerCard.modelData.id
+                        visible: peerCard.modelData.managed
+                        primary: true
+                        enabled: !root.busy
+                        text: root.t("omabridgeManage")
+                        onClicked: root.openRemote(peerCard.modelData)
+                    }
+                    Action {
+                        objectName: "omabridgeAdmin_" + peerCard.modelData.id
+                        enabled: !root.busy
+                        text: root.t(peerCard.modelData.admin ? "omabridgeAdminRemove" : "omabridgeAdminGrant")
+                        onClicked: peerCard.modelData.admin ? root.ask("admin-set", {
+                            peer: peerCard.modelData.id,
+                            allowed: false
+                        }, root.tr("omabridgeAdminRemoveConfirm", peerCard.modelData.name), root.t("omabridgeAdminRemoveDetail")) : root.ask("admin-set", {
+                            peer: peerCard.modelData.id,
+                            allowed: true
+                        }, root.tr("omabridgeAdminGrantConfirm", peerCard.modelData.name + " · " + OmaBridgeModel.shortId(peerCard.modelData.id)), root.tr("omabridgeManageWarning", peerCard.modelData.name))
                     }
                     Action {
                         objectName: "omabridgeRevoke_" + peerCard.modelData.id
@@ -610,7 +733,7 @@ ColumnLayout {
     }
     ErrorLine {
         objectName: "omabridgeError"
-        visible: root.errorCode !== "" && !confirmDialog.visible && !inviteDialog.visible && !publishDialog.visible && !relayDialog.visible && !renameDialog.visible
+        visible: root.errorCode !== "" && !confirmDialog.visible && !inviteDialog.visible && !publishDialog.visible && !relayDialog.visible && !renameDialog.visible && !remoteDialog.visible
     }
 
     FileDialog {
@@ -636,7 +759,14 @@ ColumnLayout {
             Copy {
                 visible: text !== ""
                 text: root.confirmRequest ? root.confirmRequest.detail : ""
-                wrapMode: Text.WrapAnywhere
+                wrapMode: Text.Wrap
+            }
+            Check {
+                id: consentCheck
+                objectName: "omabridgeConsent"
+                Layout.fillWidth: true
+                visible: !!root.confirmRequest && root.confirmRequest.consent !== ""
+                text: root.confirmRequest ? root.confirmRequest.consent : ""
             }
             ErrorLine {}
             RowLayout {
@@ -653,7 +783,7 @@ ColumnLayout {
                     objectName: "omabridgeConfirm"
                     primary: true
                     text: root.t("omabridgeConfirm")
-                    onClicked: root.confirmed(root.confirmRequest.action, root.confirmRequest.values)
+                    onClicked: root.confirmAsked()
                 }
             }
         }
@@ -707,6 +837,266 @@ ColumnLayout {
                     enabled: !root.busy && (OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked).t3 || OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked).ssh)
                     text: root.t("omabridgePublishAction")
                     onClicked: root.confirmed("publish", OmaBridgeModel.publishValues(root.published, publishT3.checked, publishSsh.checked))
+                }
+            }
+        }
+    }
+
+    BridgeDialog {
+        id: remoteDialog
+        objectName: "omabridgeRemoteDialog"
+        width: Math.min(640, parent ? parent.width - 32 : 640)
+        onClosed: root.errorCode = ""
+        contentItem: Controls.ScrollView {
+            id: remoteScroll
+            clip: true
+            contentWidth: availableWidth
+            implicitHeight: Math.min(remoteColumn.implicitHeight, root.Window.window ? root.Window.window.height - 120 : 640)
+            ColumnLayout {
+                id: remoteColumn
+                width: remoteScroll.availableWidth
+                spacing: theme.padding
+                Heading {
+                    text: root.remotePeer ? root.tr("omabridgeManageTitle", root.remotePeer.name + " · " + OmaBridgeModel.shortId(root.remotePeer.id)) : ""
+                }
+                Copy {
+                    visible: !root.remoteSnapshot
+                    text: root.t(root.busy ? "omabridgeRemoteLoading" : "omabridgeRemoteUnavailable")
+                }
+                ErrorLine {}
+
+                // Name
+                Heading {
+                    visible: !!root.remoteSnapshot
+                    text: root.t("omabridgeRemoteName")
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: !!root.remoteSnapshot
+                    Controls.TextField {
+                        id: remoteRenameField
+                        objectName: "omabridgeRemoteRename"
+                        Layout.fillWidth: true
+                        enabled: !root.busy
+                        maximumLength: 80
+                        placeholderText: root.remoteSnapshot && root.remoteSnapshot.device ? root.remoteSnapshot.device.name : ""
+                        selectByMouse: true
+                        color: theme.text
+                        placeholderTextColor: theme.textMuted
+                        font.family: theme.fontUi
+                        font.pixelSize: theme.body
+                        background: Rectangle {
+                            color: theme.panelDeep
+                            radius: theme.radius
+                            border.color: remoteRenameField.activeFocus ? theme.accent : theme.border
+                        }
+                    }
+                    Action {
+                        objectName: "omabridgeRemoteRenameSave"
+                        enabled: !root.busy && OmaBridgeModel.nameValid(remoteRenameField.text)
+                        text: root.t("omabridgeRelaySave")
+                        onClicked: root.remote(OmaBridgeModel.renameValues(remoteRenameField.text).name ? {
+                            action: "rename",
+                            name: OmaBridgeModel.renameValues(remoteRenameField.text).name
+                        } : null)
+                    }
+                }
+
+                // Publishing
+                Heading {
+                    visible: !!root.remoteSnapshot
+                    text: root.t("omabridgePublish")
+                }
+                Copy {
+                    objectName: "omabridgeRemotePublishStatus"
+                    visible: !!root.remoteSnapshot
+                    text: root.remoteSnapshot ? root.t(OmaBridgeModel.publishStatusKey(root.remoteSnapshot.published)) + (root.remoteSnapshot.published.active ? " · " + OmaBridgeModel.servicesText(root.remoteSnapshot.published.services) : "") : ""
+                }
+                Flow {
+                    Layout.fillWidth: true
+                    visible: !!root.remoteSnapshot
+                    spacing: theme.gap
+                    Check {
+                        id: remoteT3
+                        objectName: "omabridgeRemoteT3"
+                        text: root.t("omabridgeShareT3")
+                        enabled: !root.busy && !!root.remoteSnapshot && root.remoteSnapshot.published.t3Available
+                    }
+                    Check {
+                        id: remoteSsh
+                        objectName: "omabridgeRemoteSsh"
+                        text: root.t("omabridgeShareSsh")
+                        enabled: !root.busy && !!root.remoteSnapshot && root.remoteSnapshot.published.sshAvailable
+                    }
+                    Action {
+                        objectName: "omabridgeRemotePublish"
+                        enabled: !root.busy && !!root.remoteSnapshot && !root.remoteSnapshot.published.external && (OmaBridgeModel.publishValues(root.remoteSnapshot.published, remoteT3.checked, remoteSsh.checked).t3 || OmaBridgeModel.publishValues(root.remoteSnapshot.published, remoteT3.checked, remoteSsh.checked).ssh)
+                        text: root.t("omabridgePublishAction")
+                        onClicked: {
+                            var values = OmaBridgeModel.publishValues(root.remoteSnapshot.published, remoteT3.checked, remoteSsh.checked);
+                            root.remote({
+                                action: "publish",
+                                t3: values.t3,
+                                ssh: values.ssh
+                            });
+                        }
+                    }
+                    Action {
+                        objectName: "omabridgeRemoteUnpublish"
+                        visible: !!root.remoteSnapshot && root.remoteSnapshot.published.enabled
+                        enabled: !root.busy
+                        text: root.t("omabridgeUnpublishAction")
+                        onClicked: root.askRemote({
+                            action: "unpublish"
+                        }, root.tr("omabridgeRemoteUnpublishConfirm", root.remotePeer.name), root.t("omabridgeRemoteUnpublishDetail"))
+                    }
+                }
+
+                // Relay
+                Heading {
+                    visible: !!root.remoteSnapshot
+                    text: root.t("omabridgeRelay")
+                }
+                Copy {
+                    visible: !!root.remoteSnapshot
+                    text: root.remoteSnapshot ? root.t(OmaBridgeModel.relayStatusKey(root.remoteSnapshot.relay)) + (root.remoteSnapshot.relay.mode === "custom" ? " · " + root.remoteSnapshot.relay.url : "") : ""
+                    wrapMode: Text.WrapAnywhere
+                }
+                Flow {
+                    Layout.fillWidth: true
+                    visible: !!root.remoteSnapshot
+                    spacing: theme.gap
+                    Repeater {
+                        model: ["public", "custom"]
+                        delegate: Controls.RadioButton {
+                            required property string modelData
+                            objectName: "omabridgeRemoteRelay_" + modelData
+                            enabled: !root.busy
+                            checked: root.remoteRelayChoice === modelData
+                            onClicked: root.remoteRelayChoice = modelData
+                            text: root.t(modelData === "public" ? "omabridgeRelayOptionPublic" : "omabridgeRelayOptionCustom")
+                            palette.highlight: theme.accent
+                            palette.windowText: theme.text
+                            font.family: theme.fontUi
+                            font.pixelSize: theme.body
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: !!root.remoteSnapshot
+                    Controls.TextField {
+                        id: remoteRelayUrl
+                        objectName: "omabridgeRemoteRelayUrl"
+                        Layout.fillWidth: true
+                        visible: root.remoteRelayChoice === "custom"
+                        enabled: !root.busy
+                        placeholderText: "https://relay.example.net"
+                        selectByMouse: true
+                        color: theme.text
+                        placeholderTextColor: theme.textMuted
+                        font.family: theme.fontUi
+                        font.pixelSize: theme.body
+                        background: Rectangle {
+                            color: theme.panelDeep
+                            radius: theme.radius
+                            border.color: remoteRelayUrl.activeFocus ? theme.accent : theme.border
+                        }
+                    }
+                    Item {
+                        Layout.fillWidth: true
+                        visible: root.remoteRelayChoice !== "custom"
+                    }
+                    Action {
+                        objectName: "omabridgeRemoteRelaySave"
+                        enabled: !root.busy && !!root.remoteSnapshot && OmaBridgeModel.relayValid(root.remoteRelayChoice, remoteRelayUrl.text) && (root.remoteRelayChoice !== root.remoteSnapshot.relay.mode || (root.remoteRelayChoice === "custom" && remoteRelayUrl.text.trim() !== root.remoteSnapshot.relay.url))
+                        text: root.t("omabridgeRelaySave")
+                        onClicked: root.remote({
+                            action: "relay-set",
+                            relay: OmaBridgeModel.relayValues(root.remoteRelayChoice, remoteRelayUrl.text).relay
+                        })
+                    }
+                }
+                Copy {
+                    visible: !!root.remoteSnapshot
+                    text: root.t("omabridgeRemoteRelayNote")
+                }
+
+                // Requests waiting on that device
+                Heading {
+                    visible: !!root.remoteSnapshot && root.remoteSnapshot.pending.length > 0
+                    text: root.t("omabridgePending")
+                }
+                Repeater {
+                    model: root.remoteSnapshot ? root.remoteSnapshot.pending : []
+                    delegate: RowLayout {
+                        id: remotePending
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Copy {
+                            Layout.fillWidth: true
+                            text: remotePending.modelData.name + " · " + OmaBridgeModel.shortId(remotePending.modelData.id) + " · " + root.t("omabridgeAsksToReach") + " " + OmaBridgeModel.servicesText(remotePending.modelData.services)
+                            color: theme.text
+                        }
+                        Action {
+                            objectName: "omabridgeRemoteApprove_" + remotePending.modelData.id
+                            enabled: !root.busy
+                            text: root.t("omabridgeApprove")
+                            onClicked: root.askRemote({
+                                action: "approve",
+                                peer: remotePending.modelData.id,
+                                expires: remotePending.modelData.expires
+                            }, root.tr("omabridgeRemoteApproveConfirm", remotePending.modelData.name), OmaBridgeModel.servicesText(remotePending.modelData.services) + " · " + remotePending.modelData.id)
+                        }
+                    }
+                }
+
+                // Its paired devices
+                Heading {
+                    visible: !!root.remoteSnapshot && root.remoteSnapshot.peers.length > 0
+                    text: root.t("omabridgePeers")
+                }
+                Repeater {
+                    model: root.remoteSnapshot ? root.remoteSnapshot.peers : []
+                    delegate: RowLayout {
+                        id: remotePeerRow
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Copy {
+                            Layout.fillWidth: true
+                            text: remotePeerRow.modelData.name + " · " + OmaBridgeModel.shortId(remotePeerRow.modelData.id) + (remotePeerRow.modelData.admin ? " · " + root.t("omabridgeRemoteAdminPeer") : "")
+                            color: theme.text
+                        }
+                        Action {
+                            objectName: "omabridgeRemoteRevoke_" + remotePeerRow.modelData.id
+                            visible: OmaBridgeModel.remoteRevocable(remotePeerRow.modelData)
+                            enabled: !root.busy
+                            text: root.t("omabridgeRevoke")
+                            onClicked: root.askRemote({
+                                action: "revoke",
+                                peer: remotePeerRow.modelData.id
+                            }, root.tr("omabridgeRemoteRevokeConfirm", remotePeerRow.modelData.name), root.t("omabridgeRemoteRevokeDetail"))
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Item {
+                        Layout.fillWidth: true
+                    }
+                    Action {
+                        objectName: "omabridgeRemoteRefresh"
+                        enabled: !root.busy
+                        text: root.t("omabridgeRefresh")
+                        onClicked: root.remoteRead()
+                    }
+                    Action {
+                        objectName: "omabridgeRemoteClose"
+                        primary: true
+                        text: root.t("omabridgeDone")
+                        onClicked: remoteDialog.close()
+                    }
                 }
             }
         }
@@ -876,6 +1266,16 @@ ColumnLayout {
                 visible: !root.created
                 text: root.t("omabridgeShowQr")
             }
+            Check {
+                id: inviteManage
+                objectName: "omabridgeInviteManage"
+                visible: !root.created
+                text: root.t("omabridgeInviteManage")
+            }
+            Copy {
+                visible: !root.created && inviteManage.checked
+                text: root.t("omabridgeInviteManageDetail")
+            }
             Image {
                 objectName: "omabridgeInviteQrImage"
                 Layout.alignment: Qt.AlignHCenter
@@ -938,7 +1338,7 @@ ColumnLayout {
                     primary: true
                     enabled: !root.busy && OmaBridgeModel.inviteValues(root.published, inviteT3.checked && inviteT3.visible, inviteSsh.checked && inviteSsh.visible, false).services.length > 0
                     text: root.t("omabridgeInviteCreate")
-                    onClicked: root.confirmed("invite", OmaBridgeModel.inviteValues(root.published, inviteT3.checked && inviteT3.visible, inviteSsh.checked && inviteSsh.visible, inviteQr.checked))
+                    onClicked: root.confirmed("invite", OmaBridgeModel.inviteManageValues(OmaBridgeModel.inviteValues(root.published, inviteT3.checked && inviteT3.visible, inviteSsh.checked && inviteSsh.visible, inviteQr.checked), inviteManage.checked))
                 }
             }
         }
