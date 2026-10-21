@@ -529,11 +529,17 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
-        Text {
-            text: "󰌘"
-            color: theme.text
-            font.family: theme.fontUi
-            font.pixelSize: theme.body + 4
+        // The OmaBridge mark: two square links crossed on the diagonal, cut where they
+        // cross while this device publishes nothing and has no paired devices.
+        Image {
+            objectName: "omabridgeLogo"
+            readonly property bool linked: !!root.published.active || (root.snapshot && root.snapshot.peers || []).length > 0
+            readonly property string paths: linked ? "M11.4 14.8H14.8V2.4H2.4V14.8H7M17 9.2H21.6V21.6H9.2V9.2H12.6" : "M11.4 14.8H14.8V11.4M14.8 7V2.4H2.4V14.8H7M17 9.2H21.6V21.6H9.2V17M9.2 12.6V9.2H12.6"
+            Layout.preferredWidth: theme.body + 4
+            Layout.preferredHeight: theme.body + 4
+            sourceSize.width: width * 2
+            sourceSize.height: height * 2
+            source: "data:image/svg+xml," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='" + (linked ? theme.accent : theme.textMuted) + "' stroke-width='2.25' stroke-linecap='butt' stroke-linejoin='miter'><path d='" + paths + "'/></svg>")
         }
         Text {
             Layout.fillWidth: true

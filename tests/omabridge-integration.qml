@@ -287,6 +287,7 @@ ShellRoot {
                 test.click("omabridgeRefresh");
                 break;
             case 28:
+                test.ensure(test.control("omabridgeLogo").linked, "the logo is drawn linked while publishing or paired");
                 test.click("omabridgeUnpublishButton");
                 test.click("omabridgeConfirm");
                 break;
