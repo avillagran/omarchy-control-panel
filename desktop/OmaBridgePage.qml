@@ -798,6 +798,13 @@ ColumnLayout {
                         }
                     }
                     Action {
+                        objectName: "omabridgeCopySsh_" + peerCard.modelData.id
+                        readonly property string command: OmaBridgeModel.sshCommand(peerCard.modelData, root.snapshot ? root.snapshot.peers : [], root.snapshot ? root.snapshot.features : [])
+                        visible: command !== "" && typeof root.core.copyToClipboard === "function"
+                        text: root.t("omabridgeCopySsh")
+                        onClicked: root.core.copyToClipboard(command)
+                    }
+                    Action {
                         objectName: "omabridgeManage_" + peerCard.modelData.id
                         visible: peerCard.modelData.managed
                         primary: true

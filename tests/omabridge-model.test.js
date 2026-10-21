@@ -160,6 +160,17 @@ assert.equal(model.gatewayCheckKey({ reachable: true, sameEnvironment: true }), 
 assert.equal(model.gatewayCheckKey({ reachable: true, sameEnvironment: false }), 'omabridgeGatewayOtherT3');
 assert.equal(model.gatewayCheckKey({ reachable: false }), 'omabridgeGatewayUnreachable');
 assert.equal(model.confirmedRequest('gateway-check', {}), null, 'checking is never a confirmed change');
+// SSH through `omabridge connect`.
+const sshPeers = [{ id: 'ab12', name: 'server', remoteServices: ['ssh'] }, { id: 'cd34', name: 'Twin', remoteServices: ['ssh'] },
+                  { id: 'ef56', name: 'twin', remoteServices: ['ssh'] }, { id: 'aa00', name: "it's mine", remoteServices: ['ssh'] }];
+const connectable = ['connect-stdio'];
+assert.equal(model.sshCommand(sshPeers[0], sshPeers, connectable), "ssh -o ProxyCommand='omabridge connect --peer server --service ssh' server");
+assert.equal(model.sshCommand(sshPeers[1], sshPeers, connectable), "ssh -o ProxyCommand='omabridge connect --peer cd34 --service ssh' cd34", 'a shared name: the ID');
+assert.equal(model.sshCommand(sshPeers[3], sshPeers, connectable), "ssh -o ProxyCommand='omabridge connect --peer aa00 --service ssh' aa00", 'never a name a shell would split');
+assert.equal(model.sshCommand(sshPeers[0], sshPeers, []), '', 'an OmaBridge without connect');
+assert.equal(model.sshCommand({ id: 'ab12', name: 'server', remoteServices: ['t3'] }, sshPeers, connectable), '', 'ssh not granted');
+assert.deepEqual(plain(model.normalize({ features: ['connect-stdio'] }).features), ['connect-stdio']);
+assert.deepEqual(plain(model.normalize({}).features), []);
 assert.deepEqual(plain(model.publishValues({ t3Available: true, sshAvailable: false }, true, true)), { t3: true, ssh: false }, 'only what can be served');
 assert.deepEqual(plain(model.publishValues({ t3Available: false, sshAvailable: true }, true, true)), { t3: false, ssh: true });
 assert.equal(model.normalize({ published: { external: true, t3Available: true } }).published.external, true);

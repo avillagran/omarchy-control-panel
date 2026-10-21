@@ -82,6 +82,11 @@ for the devices paired with it: OmaBridge suggests a URL from that device's own
 certificate, and *Use on my devices…* then moves the devices you manage, and
 this one last, to that relay.
 
+A paired device that shares SSH shows *Copy SSH command*: an `ssh` command
+that reaches it through OmaBridge (`omabridge connect` as its ProxyCommand),
+with no port open on that device. It needs an OmaBridge that supports
+`connect`.
+
 *Connection between networks* chooses how this device reaches devices behind
 NAT or with private IPs, without opening ports: n0's public relays (the
 default), your own relay (for example one hosted with `omabridge relay`) or

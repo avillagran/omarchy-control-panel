@@ -87,6 +87,7 @@ function normalize(raw) {
     return {
         available: raw.available === true,
         version: _text(raw.version),
+        features: _list(raw.features).map(_text),
         device: device ? { id: _text(device.id), name: _text(device.name) } : null,
         peers: _list(raw.peers).map(function(p) {
             return { id: _text(p.id), name: _text(p.name), services: _list(p.services), remoteServices: _list(p.remoteServices),
@@ -326,6 +327,24 @@ function relayEverywhereRequests(url, peers) {
 // A DNS label from a device name: "MBP M2" becomes "mbp-m2".
 function hostLabel(name) {
     return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63)
+}
+
+// The SSH command that reaches a paired device granting ssh through
+// `omabridge connect`: by its name when no other paired device has it and it
+// is safe to paste in a shell, otherwise by its ID. Empty when this device's
+// OmaBridge cannot connect over stdio.
+function sshCommand(peer, peers, features) {
+    if (!peer || _list(features).indexOf("connect-stdio") < 0 || _list(peer.remoteServices).indexOf("ssh") < 0)
+        return ""
+    var name = _text(peer.name)
+    var unique = _list(peers).filter(function(p) {
+        return _text(p.name).toLowerCase() === name.toLowerCase()
+    }).length === 1
+    var safe = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+    var target = unique && safe.test(name) ? name : _text(peer.id)
+    if (!safe.test(target))
+        return ""
+    return "ssh -o ProxyCommand='omabridge connect --peer " + target + " --service ssh' " + target
 }
 
 // The public name proposed for a device: its own subdomain when the gateway
