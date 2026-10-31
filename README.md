@@ -23,6 +23,10 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **Keyboard & Language**: physical layout, system language
 - **Night light**, and more
 
+## Development: unified tooltips
+
+[Omarchy PR #15694](https://github.com/omacom/omarchy/pull/15694) adds shared themed hints and optional interactive cards. This Control Panel integration adds live appearance settings at the end of Windows, translated into all 19 UI languages, and includes the trial in the combined installer below.
+
 ## What's new in 0.5
 
 - **Crash-safe scroll inertia**: the always-running bar widget now restores the
@@ -119,51 +123,36 @@ the touchpad setting and is never written for stock Hyprland.
 
 ### One-line installer
 
-You don't have to wait for the merge — and you don't depend on this repo's
-fork either. The patch ships as a git series in [`patches/hyprland/`](patches/hyprland);
-the one-liner fetches **upstream** `hyprwm/Hyprland` at a pinned commit, applies
-the series, and builds it as a reversible **shadow binary** (`~/.local/bin/Hyprland`,
-which takes precedence over `/usr/bin` via PATH — no pacman conflicts):
+Install the Control Panel, the scroll inertia trial and [Omarchy's unified tooltip PR #15694](https://github.com/omacom/omarchy/pull/15694) together:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.5/bin/install-hyprland-scroll-patch.sh | bash
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/25aa630efde26e7b3c1699590b0b839ef1c59e20/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=25aa630efde26e7b3c1699590b0b839ef1c59e20 bash
 ```
 
-The installer (Arch/Omarchy) does everything in one pass:
+The script, plugin checkout and fallback scroll patches use the same immutable Control Panel commit (`25aa630efde26e7b3c1699590b0b839ef1c59e20`). The tooltip bootstrap verifies Omarchy commit `9cefb2fe88a56b76a64d0c206cbfa10455acbff7` from the official Omarchy repository. No moving `main` branch or retagged release is downloaded.
 
-1. Installs the **omarchy-control-panel** plugin and enables its bar widget on
-   the **right** side (`omarchy plugin enable … --section right`).
-2. Enables **Dev mode** in the plugin prefs, which exposes the *Scroll feel*
-   card in the Trackpad tab.
-3. Installs build deps with pacman (skipped when already present, so reruns
-   need no sudo), fetches upstream Hyprland at the pinned commit, applies
-   `patches/hyprland/` and builds it (~5–15 min).
-4. Adds a PATH hook and appends a **gated** block to `~/.config/hypr/input.lua`
-   that only applies the new options when the running compositor is the shadow
-   binary — stock Hyprland never sees unknown config keys.
+The installer (Arch/Omarchy) performs these steps:
 
-Then log out and back in: the widget is in the top-right of the bar, Dev mode
-is already on, and the Scroll feel card is live.
+1. Installs the pinned Control Panel and enables its bar widget on the right. An existing clean checkout or non-Git plugin directory is preserved in a durable backup; tracked edits are refused. Dev mode exposes the Scroll feel card.
+2. Builds the pinned Quickshell 0.3.1 compatibility runtime and packages the standalone Omarchy tooltip style. It keeps the previous package and selects a tooltip-only copy of the currently installed Omarchy tree, preserving the installed release's other APIs. It requires the official Quickshell 0.3.1 archive and refuses incompatible versions.
+3. Builds the existing scroll patch series from pinned upstream Hyprland as a reversible shadow binary at `~/.local/bin/Hyprland`.
+4. Adds the existing gated scroll configuration and panel persistence hook. Stock Hyprland never receives unsupported scroll keys.
 
-**Maintaining the patch series.** `HYPRLAND_PIN` in
-[`bin/install-hyprland-scroll-patch.sh`](bin/install-hyprland-scroll-patch.sh)
-is the upstream commit the series applies to (`v0.56.0-190-g1b85c7aa` at the
-time of writing). When upstream drifts, rebase the branch in your Hyprland
-fork, then regenerate the series and bump the pin together:
+Save your work and reboot to activate both trials. The installer does not restart the compositor or reboot automatically. Source builds need development packages, disk space and terminal sudo; both CPU architectures use the same implementation. A previously installed tooltip trial is retained rather than claimed as owned by this installer. Legacy inertia installation state must be removed with its original pinned installer before upgrading; the combined installer refuses to guess its ownership or discard its backups.
+
+**Tooltip preferences:** open **Windows**, then scroll to its final section, **Tooltip appearance**. Choose **Theme / Square / Rounded** and **Theme / Transparent / Custom** border color. Custom colors use validated `#RRGGBB` input. After the initial activation, edits apply live to open tooltip hosts without rewriting themes or Hyprland configuration. Theme restores the active theme's geometry, border colors and gradients. The shared file is `~/.config/omarchy/tooltips.json` (or under `XDG_CONFIG_HOME`).
+
+The tooltip integration covers Omarchy and Qt Quick Controls applications. GTK, Qt Widgets, browser content and application-specific tooltip renderers retain their own policies. The runtime compatibility patch is carried by the Omarchy PR; no Hyprland or Quickshell PR is required for tooltips.
+
+**Maintaining the scroll series:** update `HYPRLAND_PIN` and regenerate `patches/hyprland/` together. The installer verifies the series with `git apply --check` and builds only its exact pinned source. The tooltip runtime also requires a reviewed refresh before changing the supported Quickshell version.
+
+To restore the previous configuration and packages installed by this combined trial, then reboot:
 
 ```bash
-git format-patch --output-directory patches/hyprland <merge-base>..HEAD
-# update HYPRLAND_PIN and PATCH_TAG in bin/install-hyprland-scroll-patch.sh
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/25aa630efde26e7b3c1699590b0b839ef1c59e20/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=25aa630efde26e7b3c1699590b0b839ef1c59e20 bash -s -- --uninstall
 ```
 
-The installer verifies with `git apply --check` and fails with a clear message
-if the pin and the series no longer match.
-
-To go back to stock Hyprland:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.5/bin/install-hyprland-scroll-patch.sh | bash -s -- --uninstall
-```
+Rollback restores the original plugin directory and any previous shadow binary, and removes the tooltip trial only if this installer created it. It refuses modified replacement files or an unrelated later Omarchy selection. Personal tooltip preferences are retained.
 
 ## Internationalization
 
