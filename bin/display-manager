@@ -36,12 +36,26 @@ monitors() { hyprctl -j monitors all; }
 # flag from the active monitor list instead, which is correct on every build.
 active_monitors() { hyprctl -j monitors 2>/dev/null | jq -c 'map(.name)'; }
 
-state_prog='def fp: (.name // "unknown") as $n | [(.make // ""), (.model // ""), (.serial // "")] | map(select(length > 0)) | if length > 0 then join("|") else $n end; [ .[] | { name, description, make, model, serial, fingerprint: fp, disabled: (.name as $mon | if ($active | length) > 0 then (($active | index($mon)) == null) else (.disabled == true) end), focused: (.focused == true), mode: ((.width|tostring) + "x" + (.height|tostring) + "@" + ((.refreshRate // 60)|tostring)), width, height, refresh: (.refreshRate // 60), x, y, scale: (.scale // 1), transform: (.transform // 0), mirror: (if (.mirrorOf // "none") == "none" then "" else .mirrorOf end), modes: (.availableModes // []) } ]'
+# Connector names the kernel exposes (eDP-1, HDMI-A-1, ...). A headless or
+# nested output another program creates (a remote screen) has no DRM
+# connector; the panel leaves such outputs to their owner. When sysfs is not
+# readable the list is empty and the consumers fall back to a name heuristic.
+drm_connectors() {
+  local path name
+  for path in /sys/class/drm/card*-*; do
+    [ -e "$path" ] || continue
+    name=${path##*/}; name=${name#card*-}
+    printf '%s\n' "$name"
+  done | jq -Rsc 'split("\n") | map(select(length > 0))'
+}
+
+state_prog='def fp: (.name // "unknown") as $n | [(.make // ""), (.model // ""), (.serial // "")] | map(select(length > 0)) | if length > 0 then join("|") else $n end; def physical_name: (.name // "") | test("^(eDP|DP|HDMI-[AB]|DVI-[ID]|LVDS|DSI|VGA|Virtual|DisplayPort|Composite|SVIDEO|TV|DPI|Writeback)-[0-9]+$"); def virtual: (.name // "unknown") as $n | (fp == $n) and (if ($drm | length) > 0 then (($drm | index($n)) == null) else (physical_name | not) end); [ .[] | { name, description, make, model, serial, fingerprint: fp, virtual: virtual, disabled: (.name as $mon | if ($active | length) > 0 then (($active | index($mon)) == null) else (.disabled == true) end), focused: (.focused == true), mode: ((.width|tostring) + "x" + (.height|tostring) + "@" + ((.refreshRate // 60)|tostring)), width, height, refresh: (.refreshRate // 60), x, y, scale: (.scale // 1), transform: (.transform // 0), mirror: (if (.mirrorOf // "none") == "none" then "" else .mirrorOf end), modes: (.availableModes // []) } ]'
 
 state() {
-  local active
+  local active drm
   active=$(active_monitors) || active="[]"
-  monitors | jq -c --argjson active "${active:-[]}" "$state_prog"
+  drm=$(drm_connectors) || drm="[]"
+  monitors | jq -c --argjson active "${active:-[]}" --argjson drm "${drm:-[]}" "$state_prog"
 }
 
 topology() {

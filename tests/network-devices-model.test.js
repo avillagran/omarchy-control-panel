@@ -136,8 +136,8 @@ fs.writeFileSync(path.join(fixtureRoot, 'Quickshell/Io/StdioCollector.qml'), 'im
 fs.writeFileSync(path.join(fixtureRoot, 'Quickshell/Io/FileView.qml'), 'import QtQuick\nQtObject { property string path: ""; property bool blockLoading: false; property bool watchChanges: false; property bool printErrors: false; signal loaded(); signal fileChanged(); function text() { return "" } function reload() {} }\n');
 const screenshot = path.join(os.tmpdir(), 'network-devices-timecapsule.png');
 fs.rmSync(screenshot, { force: true });
-fs.writeFileSync(path.join(fixtureRoot, 'capture.qml'), `import QtQuick
-import QtQuick.Window
+fs.writeFileSync(path.join(fixtureRoot, 'capture.qml'), `import QtQuick 6.11
+import QtQuick.Window 6.11
 import QtQuick.Controls
 import "desktop"
 Window {

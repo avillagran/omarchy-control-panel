@@ -5,9 +5,27 @@ function clampCount(value, fallback) {
   return isFinite(n) ? Math.max(1, Math.min(10, n)) : fallback
 }
 
+// A headless or nested output another program creates (a remote screen such
+// as Gliff) belongs to that program: it gets no workspaces and no persisted
+// rule, because rewriting the Lua file reloads Hyprland and undoes that
+// program's own monitor rule. display-manager decides from the kernel's DRM
+// connectors (`virtual`); rows without the flag fall back to "no EDID identity
+// and not a physical connector name". A built-in panel such as an Apple eDP-1
+// reports no make/model/serial yet is physical.
+var PHYSICAL_CONNECTOR = /^(eDP|DP|HDMI-[AB]|DVI-[ID]|LVDS|DSI|VGA|Virtual|DisplayPort|Composite|SVIDEO|TV|DPI|Writeback)-\d+$/
+
+function isVirtualDisplay(d) {
+  if (!d) return false
+  if (typeof d.virtual === "boolean") return d.virtual
+  if (!("make" in d || "model" in d || "serial" in d)) return false
+  if (String(d.make || "").trim() || String(d.model || "").trim()
+      || String(d.serial || "").trim()) return false
+  return !PHYSICAL_CONNECTOR.test(String(d.name || ""))
+}
+
 function activeMonitors(displays) {
   var monitors = (displays || []).filter(function(d) {
-    return d && d.name && !d.disabled && !d.mirror
+    return d && d.name && !d.disabled && !d.mirror && !isVirtualDisplay(d)
   })
   if (monitors.length < 2) return monitors
 

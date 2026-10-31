@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Control Panel · híbrido r4</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;color:var(--foreground,#cdd6f4);font:13px/1.45 system-ui,sans-serif}
+.wrap{max-width:980px;margin:auto}
+.intro{margin:0 0 12px}.intro h1{font-size:18px;margin:0 0 4px}.intro p{margin:0;color:var(--light-foreground,#a6adc8);font-size:12px}
+.sim{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:12px}
+.sim .label{color:var(--light-foreground,#a6adc8)}
+.sim button{font:inherit;color:inherit;background:transparent;border:1px solid var(--muted,#585b70);padding:6px 9px;border-radius:var(--radius,0);cursor:pointer}
+.sim button[aria-pressed="true"]{border-color:var(--accent,#89b4fa);color:var(--accent,#89b4fa)}
+.note{margin:0 0 12px;font-size:11px;color:var(--light-foreground,#a6adc8)}
+
+/* ---- Panel. Colors are Omarchy semantic roles; --radius mirrors Style.cornerRadius (Hyprland rounding). */
+.panel{
+  --background:#1e1e2e;--darker-background:#101019;--lighter-background:#313244;--selection:#45475a;--muted:#585b70;
+  --foreground:#cdd6f4;--light-foreground:#bac2de;--accent:#89b4fa;--red:#f38ba8;
+  /* Style state tokens: normal / hover-cursor / selected, all foreground-based alphas like shell.toml. */
+  --hover-fill:color-mix(in srgb,var(--foreground) 8%,transparent);
+  --selected-fill:color-mix(in srgb,var(--foreground) 14%,transparent);
+  --rule:color-mix(in srgb,var(--foreground) 12%,transparent);
+  position:relative;color:var(--foreground);font-family:monospace;font-size:12px;
+  display:grid;grid-template-columns:180px minmax(0,1fr);grid-template-rows:50px 725px;overflow:hidden;
+  border:1px solid var(--muted);border-radius:var(--radius);background:var(--background);
+}
+.top{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--muted);padding:0 17px}
+.identity{display:flex;align-items:center;gap:9px;font-weight:700}
+.glyph{width:22px;height:22px;display:grid;place-items:center;border:1px solid var(--accent);color:var(--accent);border-radius:var(--radius);font-size:14px}
+.identity .slash{color:var(--light-foreground);opacity:.6}
+.top .right{display:flex;align-items:center;gap:14px;color:var(--light-foreground);font-size:10px}
+.top .right b{color:var(--foreground);font-weight:500}
+.close{display:grid;place-items:center;width:23px;height:23px;border:1px solid var(--muted);border-radius:var(--radius);font-size:16px;color:var(--foreground)}
+.sidebar{display:flex;flex-direction:column;border-right:1px solid var(--muted);background:var(--darker-background);min-width:0;padding-top:12px}
+.nav{display:grid;gap:2px;margin:0 7px}
+.nav button{position:relative;width:100%;border:0;border-radius:var(--radius);text-align:left;padding:9px 7px 9px 11px;background:transparent;color:var(--light-foreground);font:inherit;font-size:10px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;cursor:pointer}
+.nav button:hover{background:var(--hover-fill);color:var(--foreground)}
+.nav button.active{background:var(--selected-fill);color:var(--foreground);font-weight:700;box-shadow:inset 2px 0 var(--accent)}
+.nav button.dev{padding-right:26px}.nav button.dev:after{content:'DEV';position:absolute;right:6px;top:11px;font-size:7px;color:var(--light-foreground);opacity:.7}
+.main{overflow:auto;scrollbar-width:thin;scrollbar-color:var(--muted) transparent;padding:22px 26px 30px;background:var(--background);min-width:0}
+.headline{margin-bottom:18px}
+.headline h2{font-size:20px;line-height:1.2;margin:0 0 3px}
+.headline p{margin:0;color:var(--light-foreground);font-size:10px}
+.group{margin-top:18px}.group:first-child{margin-top:0}
+.group-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px}
+.group-title b{color:var(--accent);font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+.group-title small{color:var(--light-foreground);font-size:9px}
+.rule{height:1px;background:var(--rule)}
+
+/* Rows: every row is a keyboard-cursor target (tabindex). The cursor is a ring drawn outside the row, like ToggleSwitch.cursorRing. */
+.row{position:relative;padding:10px 0;border-top:1px solid var(--rule);outline:0}
+.row:first-of-type{border-top:0}
+.row:focus-visible:before,.row.cursor:before{content:'';position:absolute;inset:3px -8px;border:1px solid var(--accent);border-radius:var(--radius);pointer-events:none}
+.item{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.item small{display:block;margin-top:2px;color:var(--light-foreground);font-size:9px}
+.hint{font-size:9px;line-height:1.45;color:var(--light-foreground);margin:9px 0 0}
+
+/* Slider with an editable number field (NumberField). Knob follows --radius. */
+.slider .numbers{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.numfield{display:inline-flex;align-items:center;border:1px solid var(--muted);border-radius:var(--radius);background:var(--background);height:22px}
+.numfield input{width:46px;border:0;background:transparent;color:var(--accent);font:inherit;font-size:10px;text-align:right;padding:0 6px;outline:0}
+.numfield input:focus{color:var(--foreground)}
+.numfield span{color:var(--light-foreground);font-size:9px;padding-right:6px}
+.numfield button{border:0;border-left:1px solid var(--muted);background:transparent;color:var(--light-foreground);font:inherit;font-size:10px;width:18px;height:100%;cursor:pointer;padding:0}
+.numfield button:hover{background:var(--hover-fill);color:var(--foreground)}
+.track{height:3px;background:var(--muted);position:relative;margin-top:10px;cursor:pointer}
+.track:before{content:'';display:block;background:var(--accent);width:var(--pct);height:100%}
+.track:after{content:'';position:absolute;left:var(--pct);top:50%;width:12px;height:12px;background:var(--foreground);border:2px solid var(--accent);border-radius:var(--radius);transform:translate(-50%,-50%)}
+
+/* Native Omarchy switch: rectangular track, square knob; rounding follows --radius. */
+.switch{width:38px;height:22px;border:1px solid var(--muted);border-radius:var(--radius);padding:3px;background:var(--selection);cursor:pointer;flex:none;display:block}
+.switch:after{content:'';display:block;width:14px;height:14px;border-radius:calc(var(--radius) * .6);background:var(--foreground);transform:translateX(16px);transition:transform .12s ease-out,background .12s}
+.switch.off{background:var(--background)}.switch.off:after{background:var(--light-foreground);transform:translateX(0)}
+.switch:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+
+/* Contextual depth (from 03): a tone step and a border, never a shadow. */
+.card{background:color-mix(in srgb,var(--lighter-background) 52%,var(--background));border:1px solid var(--muted);border-radius:var(--radius);padding:14px;margin-top:18px}
+.card .group-title b{color:var(--foreground);text-transform:none;letter-spacing:0;font-size:11px}
+.selector-label{font-size:10px;margin:11px 0 5px}
+.choices{display:flex;gap:3px;border:1px solid var(--muted);border-radius:var(--radius);padding:2px;background:var(--background)}
+.choices button{flex:1;border:0;background:none;color:var(--light-foreground);font:inherit;font-size:9px;border-radius:calc(var(--radius) * .6);padding:6px 4px;cursor:pointer}
+.choices button:hover{background:var(--hover-fill);color:var(--foreground)}
+.choices button.selected{background:var(--accent);color:var(--background);font-weight:700}
+.preview{margin-top:12px;min-height:64px;border:1px solid var(--rule);border-radius:var(--radius);background:color-mix(in srgb,var(--darker-background) 70%,var(--background));display:grid;place-items:center;overflow:hidden}
+.bubble{border:1px solid var(--accent);background:var(--lighter-background);color:var(--foreground);border-radius:var(--radius);padding:7px 11px;font-size:10px;transition:border-radius .16s,border-color .16s}
+.bubble.square{border-radius:0}.bubble.rounded{border-radius:12px}.bubble.transparent{border-color:transparent}
+.custom-color{display:none;align-items:center;gap:7px;margin-top:8px;font-size:9px;color:var(--light-foreground)}
+.custom-color.visible{display:flex}
+.custom-color input{height:22px;width:35px;padding:0;border:1px solid var(--muted);background:var(--background);cursor:pointer}
+
+/* Trackpad test area: reacts to real wheel input, honours natural scroll and inertia. */
+.testpad{position:relative;height:96px;cursor:grab;user-select:none}
+.testpad .lines{position:absolute;inset:0;background:repeating-linear-gradient(to bottom,transparent 0 23px,var(--rule) 23px 24px);background-position-y:var(--y,0px)}
+.testpad .label{position:absolute;left:10px;top:8px;font-size:9px;color:var(--light-foreground)}
+.testpad .readout{position:absolute;right:10px;bottom:7px;font-size:9px;color:var(--accent)}
+
+.page{display:none}.page.visible{display:block}
+.toast{position:absolute;right:18px;bottom:18px;padding:8px 11px;border-radius:var(--radius);background:var(--accent);color:var(--background);font-size:10px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+.profiles{display:grid;gap:8px}
+.profiles .row{display:flex;align-items:center;justify-content:space-between}
+.profiles .row .meta{color:var(--light-foreground);font-size:9px;margin-top:2px}
+.ghost{background:transparent;color:var(--foreground);border:1px solid var(--muted);border-radius:var(--radius);padding:5px 9px;font:inherit;font-size:9px;cursor:pointer}
+.ghost:hover{background:var(--hover-fill)}.ghost.primary{color:var(--accent);border-color:var(--accent)}
+@media(max-width:610px){.panel{grid-template-columns:118px minmax(0,1fr);grid-template-rows:47px 685px}.top{padding:0 8px}.identity{font-size:10px}.top .right{gap:5px}.nav{margin:0 3px}.nav button{font-size:8px;padding:8px 5px}.nav button.dev:after{display:none}.main{padding:13px}.headline h2{font-size:17px}.card{padding:9px}}
+</style></head><body><div class="wrap">
+<div class="intro"><h1>Control Panel · híbrido, ronda 4</h1><p>Cambios respecto a la ronda 3: un solo radio para todo (sigue el rounding de Hyprland), sin sombras, menos títulos, perfil en un solo sitio, vistas previas que muestran el resultado real, cursor de teclado en todas las filas.</p></div>
+<div class="sim"><span class="label">Tema:</span><button type="button" data-theme="active" aria-pressed="true">Actual</button><button type="button" data-theme="gruvbox" aria-pressed="false">Gruvbox</button><button type="button" data-theme="flexoki" aria-pressed="false">Flexoki Light</button>
+<span class="label" style="margin-left:10px">Rounding de Hyprland:</span><button type="button" data-radius="0" aria-pressed="true">0</button><button type="button" data-radius="6" aria-pressed="false">6</button><button type="button" data-radius="12" aria-pressed="false">12</button></div>
+<p class="note">Solo simulación. En la app real tema y radio llegan de Omarchy. Teclado: ↑↓ o j/k mueven el cursor entre filas, Espacio/Enter activa, ←→ ajusta sliders.</p>
+
+<div class="panel" id="panel" style="--radius:0px">
+<header class="top"><div class="identity"><span class="glyph">⌘</span>Omarchy<span class="slash">/</span>Control Panel</div><div class="right"><span>Perfil <b id="profile-name">Personal</b></span><span class="close">×</span></div></header>
+<aside class="sidebar"><nav class="nav" aria-label="Secciones">
+<button type="button" data-page="trackpad" class="active">Trackpad</button>
+<button type="button" data-page="windows">Ventanas</button>
+<button type="button">Pantallas</button>
+<button type="button">Teclado e idioma</button>
+<button type="button">Dispositivos</button>
+<button type="button" class="dev">Dispositivos de red</button>
+<button type="button" class="dev">Backup</button>
+<button type="button" data-page="profiles">Perfiles</button>
+</nav></aside>
+<main class="main">
+
+<div class="page visible" data-page-id="trackpad">
+<div class="headline"><h2>Trackpad</h2><p>apple-mtp-multi-touch · los cambios se aplican al instante</p></div>
+<section class="group">
+<div class="row slider" tabindex="0" data-slider><div class="numbers"><span>Sensibilidad global</span><span class="numfield"><input type="text" inputmode="decimal" value="0,80" aria-label="Sensibilidad global"><button type="button" data-step="-1" aria-label="Menos">−</button><button type="button" data-step="1" aria-label="Más">+</button></span></div><div class="track" style="--pct:80%"></div></div>
+<div class="row item" tabindex="0" data-toggle><span>Desplazamiento natural</span><button type="button" class="switch" id="sw-natural" aria-label="Desplazamiento natural" tabindex="-1"></button></div>
+<div class="row item" tabindex="0" data-toggle><span>Tocar para hacer clic</span><button type="button" class="switch" aria-label="Tocar para hacer clic" tabindex="-1"></button></div>
+<div class="row item" tabindex="0" data-toggle><span>Inercia al desplazarse<small>Continúa el movimiento al soltar</small></span><button type="button" class="switch off" id="sw-inertia" aria-label="Inercia al desplazarse" tabindex="-1"></button></div>
+</section>
+<section class="card"><div class="group-title"><b>Zona de prueba</b><small>Usa la rueda o arrastra aquí</small></div>
+<div class="preview testpad" id="testpad"><div class="lines"></div><span class="label">Desplazamiento · inercia</span><span class="readout" id="readout">0 px</span></div>
+<p class="hint">Responde a tu entrada real con los ajustes de arriba: dirección natural e inercia.</p></section>
+</div>
+
+<div class="page" data-page-id="windows">
+<div class="headline"><h2>Ventanas</h2><p>Espacio, comportamiento y detalles de la interfaz · se aplica al instante</p></div>
+<section class="group"><div class="group-title"><b>Distribución</b></div><div class="rule"></div>
+<div class="row slider" tabindex="0" data-slider><div class="numbers"><span>Separación interna</span><span class="numfield"><input type="text" inputmode="numeric" value="6" aria-label="Separación interna"><span>px</span><button type="button" data-step="-1">−</button><button type="button" data-step="1">+</button></span></div><div class="track" style="--pct:30%"></div></div>
+<div class="row slider" tabindex="0" data-slider><div class="numbers"><span>Separación externa</span><span class="numfield"><input type="text" inputmode="numeric" value="10" aria-label="Separación externa"><span>px</span><button type="button" data-step="-1">−</button><button type="button" data-step="1">+</button></span></div><div class="track" style="--pct:50%"></div></div>
+<div class="row item" tabindex="0"><span>Tamaño base de fuente<small>Ventanas y aplicaciones compatibles</small></span><span class="numfield"><input type="text" inputmode="numeric" value="12" aria-label="Tamaño base"><span>px</span><button type="button" data-step="-1">−</button><button type="button" data-step="1">+</button></span></div>
+</section>
+<section class="group"><div class="group-title"><b>Espacios de trabajo</b><small>10 por monitor</small></div><div class="rule"></div>
+<div class="row item" tabindex="0"><span>Monitores y espacios<small>Distribución automática</small></span><button type="button" class="ghost" tabindex="-1">Configurar</button></div>
+<div class="row item" tabindex="0" data-toggle><span>Luz nocturna</span><button type="button" class="switch off" aria-label="Luz nocturna" tabindex="-1"></button></div>
+</section>
+<section class="card"><div class="group-title"><b>Ayudas emergentes</b><small>Vista previa</small></div>
+<div class="selector-label">Forma</div><div class="choices shape"><button type="button" data-shape="theme" class="selected">Tema</button><button type="button" data-shape="square">Cuadrado</button><button type="button" data-shape="rounded">Redondeado</button></div>
+<div class="selector-label">Color del borde</div><div class="choices border-mode"><button type="button" data-border="theme" class="selected">Tema</button><button type="button" data-border="transparent">Transparente</button><button type="button" data-border="custom">Personalizado</button></div>
+<label class="custom-color">Color personalizado <input type="color" value="#aaaaaa" aria-label="Color personalizado"></label>
+<div class="preview"><span class="bubble">Ayuda emergente · Vista previa</span></div>
+<p class="hint">«Tema» sigue el estilo y los colores actuales de Omarchy.</p></section>
+</div>
+
+<div class="page" data-page-id="profiles">
+<div class="headline"><h2>Perfiles</h2><p>Guarda el estado actual con un nombre y vuelve a él cuando quieras.</p></div>
+<section class="group profiles">
+<div class="row" tabindex="0"><span><b>Personal</b> <span class="meta">· activo</span><div class="meta">Trackpad 0,80 · gaps 6/10 · 2 monitores</div></span><button type="button" class="ghost primary" tabindex="-1">Guardar cambios</button></div>
+<div class="row" tabindex="0"><span><b>Oficina</b><div class="meta">Trackpad 0,65 · gaps 4/8 · 3 monitores</div></span><button type="button" class="ghost" tabindex="-1">Activar</button></div>
+<div class="row" tabindex="0"><span><b>Portátil solo</b><div class="meta">Trackpad 0,90 · gaps 6/10 · 1 monitor</div></span><button type="button" class="ghost" tabindex="-1">Activar</button></div>
+</section>
+<p class="hint">Guardar en un perfil es una acción aparte: los ajustes de cada página ya aplican al instante.</p>
+</div>
+
+</main><div class="toast">Maqueta: no se guardó nada</div></div></div>
+<script>
+const themes={
+  active:{background:'#1e1e2e',darker_background:'#101019',lighter_background:'#313244',selection:'#45475a',muted:'#585b70',foreground:'#cdd6f4',light_foreground:'#bac2de',accent:'#89b4fa',red:'#f38ba8'},
+  gruvbox:{background:'#282828',darker_background:'#161616',lighter_background:'#3c3836',selection:'#504945',muted:'#665c54',foreground:'#d4be98',light_foreground:'#bdae93',accent:'#7daea3',red:'#ea6962'},
+  flexoki:{background:'#FFFCF0',darker_background:'#e5e2d8',lighter_background:'#E6E4D9',selection:'#CECDC3',muted:'#B7B5AC',foreground:'#100F0F',light_foreground:'#403E3C',accent:'#205EA6',red:'#D14D41'}
+};
+const panel=document.querySelector('#panel'),wrap=document.querySelector('.wrap');
+function setTheme(name){for(const[r,v]of Object.entries(themes[name])){panel.style.setProperty('--'+r.replaceAll('_','-'),v);wrap.style.setProperty('--'+r.replaceAll('_','-'),v)}document.querySelectorAll('[data-theme]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.theme===name)))}
+function setRadius(px){panel.style.setProperty('--radius',px+'px');wrap.style.setProperty('--radius',px+'px');document.querySelectorAll('[data-radius]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.radius===String(px))))}
+setTheme('active');setRadius(0);
+function toast(t){const el=document.querySelector('.toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800)}
+function showPage(id){document.querySelectorAll('[data-page]').forEach(x=>x.classList.toggle('active',x.dataset.page===id));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('visible',p.dataset.pageId===id));document.querySelector('.main').scrollTop=0}
+function flip(sw){sw.classList.toggle('off');sw.setAttribute('aria-checked',String(!sw.classList.contains('off')))}
+// Slider model: value 0..1 shown as text in the field; px fields step by 1.
+function sliderStep(row,dir){const inp=row.querySelector('input'),track=row.querySelector('.track');const dec=inp.value.includes(',');let v=parseFloat(inp.value.replace(',','.'));if(dec){v=Math.min(1,Math.max(0.1,+(v+dir*0.05).toFixed(2)));inp.value=v.toFixed(2).replace('.',',');track.style.setProperty('--pct',(v*100)+'%')}else{v=Math.min(40,Math.max(0,v+dir));inp.value=v;track&&track.style.setProperty('--pct',(v/20*100)+'%')}}
+document.addEventListener('click',e=>{let b;
+  if(b=e.target.closest('[data-theme]'))return setTheme(b.dataset.theme);
+  if(b=e.target.closest('[data-radius]'))return setRadius(+b.dataset.radius);
+  if(b=e.target.closest('[data-page]'))return showPage(b.dataset.page);
+  if(b=e.target.closest('.nav button'))return toast('Esta sección aún no está maquetada');
+  if(b=e.target.closest('[data-step]')){e.stopPropagation();return sliderStep(b.closest('.row'),+b.dataset.step)}
+  if(b=e.target.closest('.switch'))return flip(b);
+  if(b=e.target.closest('.row[data-toggle]'))return flip(b.querySelector('.switch'));
+  if(b=e.target.closest('.track')){const r=b.getBoundingClientRect(),p=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));const row=b.closest('.row'),inp=row.querySelector('input');if(inp.value.includes(',')){const v=Math.max(0.1,+(p).toFixed(2));inp.value=v.toFixed(2).replace('.',',');b.style.setProperty('--pct',(v*100)+'%')}else{const v=Math.round(p*20);inp.value=v;b.style.setProperty('--pct',(v/20*100)+'%')}return}
+  if(b=e.target.closest('[data-shape]')){document.querySelectorAll('[data-shape]').forEach(x=>x.classList.toggle('selected',x===b));const bub=document.querySelector('.bubble');bub.classList.remove('square','rounded');if(b.dataset.shape!=='theme')bub.classList.add(b.dataset.shape);return}
+  if(b=e.target.closest('[data-border]')){document.querySelectorAll('[data-border]').forEach(x=>x.classList.toggle('selected',x===b));const bub=document.querySelector('.bubble');bub.classList.toggle('transparent',b.dataset.border==='transparent');document.querySelector('.custom-color').classList.toggle('visible',b.dataset.border==='custom');bub.style.borderColor=b.dataset.border==='custom'?document.querySelector('input[type=color]').value:'';return}
+  if(e.target.closest('.ghost'))toast('Maqueta: no se guardó nada');
+});
+document.querySelector('input[type=color]').addEventListener('input',e=>document.querySelector('.bubble').style.borderColor=e.target.value);
+document.querySelectorAll('.switch').forEach(s=>{s.setAttribute('role','switch');s.setAttribute('aria-checked',String(!s.classList.contains('off')))});
+// Keyboard cursor over rows, like the panel cursor in Omarchy shells.
+document.querySelector('.main').addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;const rows=[...document.querySelectorAll('.page.visible .row')];const i=rows.indexOf(document.activeElement);
+  if(e.key==='ArrowDown'||e.key==='j'){e.preventDefault();(rows[Math.min(rows.length-1,i+1)]||rows[0]).focus()}
+  else if(e.key==='ArrowUp'||e.key==='k'){e.preventDefault();(rows[Math.max(0,i-1)]||rows[0]).focus()}
+  else if(i>=0&&(e.key===' '||e.key==='Enter')){e.preventDefault();const sw=rows[i].querySelector('.switch');if(sw)flip(sw)}
+  else if(i>=0&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){if(rows[i].querySelector('.track')){e.preventDefault();sliderStep(rows[i],e.key==='ArrowRight'?1:-1)}}
+});
+// Test pad: real wheel input through natural-scroll and inertia settings.
+const pad=document.querySelector('#testpad'),lines=pad.querySelector('.lines'),readout=document.querySelector('#readout');
+let y=0,vel=0,raf=null;
+function render(){lines.style.setProperty('--y',y+'px');readout.textContent=Math.round(y)+' px'}
+function tick(){if(Math.abs(vel)<0.05){vel=0;raf=null;return}y+=vel;vel*=0.93;render();raf=requestAnimationFrame(tick)}
+function push(delta){const natural=!document.querySelector('#sw-natural').classList.contains('off');const inertia=!document.querySelector('#sw-inertia').classList.contains('off');const d=natural?-delta:delta;if(inertia){vel+=d*0.35;if(!raf)raf=requestAnimationFrame(tick)}else{y+=d;render()}}
+pad.addEventListener('wheel',e=>{e.preventDefault();push(e.deltaY)},{passive:false});
+let drag=null;pad.addEventListener('pointerdown',e=>{drag={y:e.clientY,t:performance.now(),v:0};pad.setPointerCapture(e.pointerId)});
+pad.addEventListener('pointermove',e=>{if(!drag)return;const dy=e.clientY-drag.y,now=performance.now();drag.v=dy/Math.max(1,now-drag.t)*16;drag.y=e.clientY;drag.t=now;y+=dy;render()});
+pad.addEventListener('pointerup',()=>{if(drag&&!document.querySelector('#sw-inertia').classList.contains('off')){vel=drag.v;if(!raf)raf=requestAnimationFrame(tick)}drag=null});
+console.log('Hybrid r4 ready: single radius, no shadows, keyboard cursor, live trackpad test pad.');
+</script></body></html>

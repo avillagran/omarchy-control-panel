@@ -16,11 +16,13 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   - Inertial scrolling
   - 3-finger swipe to switch workspaces
 - **Animations**: system animations, workspace transition, flat pointer acceleration, speed/sensitivity
-- **Windows**: inner/outer gaps, font size, animations and workspace distribution
+- **Windows**: inner/outer gaps, font size, Omarchy's square single-window and no-gaps toggles, animations and workspace distribution
 - **Displays**: layout, resolution/refresh/orientation/scale, a color per monitor, and square/rounded/circle/none workspace indicators in the bar. Profiles remember a separate layout for each physical monitor combination using EDID identity rather than connector names.
 - **Devices**: keyboard backlight, APFS (macOS disks)
 - **QuickView (development)**: native Control Panel overview with live window cards and workspace activation, available from Dev mode.
 - **Keyboard & Language**: physical layout, system language
+- **Task Manager (bundled)**: [omarchy-task-manager](https://github.com/avillagran/omarchy-task-manager) pauses memory-hungry apps before the desktop freezes. It stays its own plugin and repo, but the panel ships it **on by default**: Control Panel > Task Manager shows Omi, live CPU/RAM and the activity graph, and its switch turns the whole thing off (watchdog stopped, paused apps thawed, bar icon removed) or back on.
+- **OmaBridge**: private links between your devices ([details](#omabridge))
 - **Night light**, and more
 
 ## Development: unified tooltips
@@ -28,6 +30,14 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 [Omarchy PR #15694](https://github.com/omacom/omarchy/pull/15694) adds shared themed hints and optional interactive cards. This Control Panel integration adds live appearance settings at the end of Windows, translated into all 19 UI languages, and includes the trial in the combined installer below.
 
 ## What's new in 0.5
+
+- **Monitor hotplug without the panel open**: the always-running bar widget
+  now resyncs displays when a monitor is connected or disconnected, and once
+  at shell start. It restores the active profile's layout for that exact
+  monitor combination, places an unsaved monitor flush to the right instead
+  of overlapping, redistributes workspace ranges, and keeps
+  `control-panel.lua` and the bar's workspace colors in sync. Disconnected
+  monitors no longer keep workspace rules for an absent output.
 
 - **Crash-safe scroll inertia**: the always-running bar widget now restores the
   persisted touchpad and physical mouse scroll settings when Quickshell starts.
@@ -63,6 +73,52 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   coasting, without changing touchpad behavior.
 - **Safe installer reruns**: running the one-liner again updates an existing
   plugin checkout instead of leaving an older installed revision in place.
+
+## OmaBridge
+
+The OmaBridge page manages private links between your devices: this device's
+identity, publishing it (off by default; T3 Code and/or SSH), one-use
+invitations with an optional QR code, pairing from an invitation file,
+*Check again* for pairings awaiting approval, approving requests and revoking
+paired devices.
+
+A paired device can be allowed to manage this one, either when this device
+accepts an invitation that asks for it (the confirmation warns what that
+allows and the consent box starts unticked) or later with *Let it manage…*;
+*Stop management…* withdraws it at once, and only this device can change it.
+On the managing device, *Manage…* opens that device's name, publishing, relay,
+pending requests and paired devices; OmaBridge on the managed device decides
+what is allowed and records every change.
+
+From *Manage…*, a device with a public address can also host a private relay
+for the devices paired with it: OmaBridge suggests a URL from that device's own
+certificate, and *Use on my devices…* then moves the devices you manage, and
+this one last, to that relay.
+
+A paired device that shares SSH shows *Copy SSH command*: an `ssh` command
+that reaches it through OmaBridge (`omabridge connect` as its ProxyCommand),
+with no port open on that device. It needs an OmaBridge that supports
+`connect`.
+
+*Connection between networks* chooses how this device reaches devices behind
+NAT or with private IPs, without opening ports: n0's public relays (the
+default), your own relay (for example one hosted with `omabridge relay`) or
+direct connections only. Devices that already connect to this one must pair
+again after the relay changes.
+
+OmaBridge is independent of this panel and of Omarchy T3 Code: each is just a
+front end. The page talks only to `omabridge manage` through
+`bin/omabridge-client`, one JSON request on stdin per action, so validation,
+secrets and the single `omabridge-serve.service` unit stay in OmaBridge. The
+helper uses `omabridge` from `PATH`, `~/.local/bin` or the copy bundled with
+Omarchy T3 Code, skipping releases that predate `manage`. Every change of trust
+asks for confirmation first. An invitation's path and QR are shown once and
+forgotten when their dialog closes or the page is left; *Delete invitation
+file* removes the file. Nothing from OmaBridge is logged or saved in the
+panel's preferences.
+
+When OmaBridge is missing, or too old to provide `omabridge manage`, the page
+asks you to install or update it and changes nothing.
 
 ## Backup and recovery (development)
 
@@ -134,9 +190,10 @@ The script, plugin checkout and fallback scroll patches use the same immutable C
 The installer (Arch/Omarchy) performs these steps:
 
 1. Installs the pinned Control Panel and enables its bar widget on the right. An existing clean checkout or non-Git plugin directory is preserved in a durable backup; tracked edits are refused. Dev mode exposes the Scroll feel card.
-2. Builds the pinned Quickshell 0.3.1 compatibility runtime and packages the standalone Omarchy tooltip style. It keeps the previous package and selects a tooltip-only copy of the currently installed Omarchy tree, preserving the installed release's other APIs. It requires the official Quickshell 0.3.1 archive and refuses incompatible versions.
-3. Builds the existing scroll patch series from pinned upstream Hyprland as a reversible shadow binary at `~/.local/bin/Hyprland`.
-4. Adds the existing gated scroll configuration and panel persistence hook. Stock Hyprland never receives unsupported scroll keys.
+2. Installs the bundled Task Manager (skip with `--no-task-manager`).
+3. Builds the pinned Quickshell 0.3.1 compatibility runtime and packages the standalone Omarchy tooltip style. It keeps the previous package and selects a tooltip-only copy of the currently installed Omarchy tree, preserving the installed release's other APIs. It requires the official Quickshell 0.3.1 archive and refuses incompatible versions.
+4. Builds the existing scroll patch series from pinned upstream Hyprland as a reversible shadow binary at `~/.local/bin/Hyprland`.
+5. Adds the existing gated scroll configuration and panel persistence hook. Stock Hyprland never receives unsupported scroll keys.
 
 Save your work and reboot to activate both trials. The installer does not restart the compositor or reboot automatically. Source builds need development packages, disk space and terminal sudo; both CPU architectures use the same implementation. A previously installed tooltip trial is retained rather than claimed as owned by this installer. Legacy inertia installation state must be removed with its original pinned installer before upgrading; the combined installer refuses to guess its ownership or discard its backups.
 
@@ -176,6 +233,10 @@ Rollback restores the original plugin directory and any previous shadow binary, 
 omarchy plugin add https://github.com/avillagran/omarchy-control-panel
 ```
 
+The first time the panel runs it also installs the bundled
+[Task Manager](https://github.com/avillagran/omarchy-task-manager) once. Turn
+it off in Control Panel > Task Manager and it stays off.
+
 Update an existing git-managed installation to the latest release with:
 
 ```bash
@@ -183,6 +244,15 @@ omarchy plugin update io.github.avillagran.omarchy-control-panel --yes
 ```
 
 Or clone manually into `~/.config/omarchy/plugins/io.github.avillagran.omarchy-control-panel/` and enable it.
+
+## Development note: `import QtQuick 6.11`
+
+Every QML file imports `QtQuick 6.11` (and `QtQuick.Window 6.11`), never the
+unversioned module. Qt 6.12 added a `QtQuick` `Color` singleton that shadows
+`Color` from Omarchy's `qs.Commons`, leaving theme colors `undefined`
+(white surfaces, black text, `Cannot read property 'background' of
+undefined`). An unversioned `import QtQuick.Window` re-imports the latest
+QtQuick and brings the problem back. New files must use the pinned import.
 
 ## Structure
 

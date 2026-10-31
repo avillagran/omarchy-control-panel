@@ -1,5 +1,5 @@
-import QtQuick
-import QtQuick.Window
+import QtQuick 6.11
+import QtQuick.Window 6.11
 import QtQuick.Controls
 import "desktop"
 

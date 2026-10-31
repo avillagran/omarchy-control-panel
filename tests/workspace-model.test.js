@@ -61,3 +61,20 @@ const vertical = context.workspaceVisualMap(stacked, 10, 5, {})
 assert.strictEqual(vertical["1"].monitor, "HDMI-A-1", "the top display owns the first range")
 assert.strictEqual(vertical["6"].monitor, "eDP-1", "the bottom display owns the final range")
 console.log("WorkspaceModel tests passed")
+// An output without EDID identity (a remote or headless screen another
+// program owns) gets no workspaces; rows without identity fields at all, such
+// as saved profile entries, still count.
+const withRemote = [
+  { name: "eDP-1", make: "Apple", model: "Retina", serial: "", x: 0, y: 0 },
+  { name: "gliff-4242", make: "", model: "", serial: "", x: 1728, y: 0 }
+]
+assert.strictEqual(context.isVirtualDisplay(withRemote[0]), false)
+assert.strictEqual(context.isVirtualDisplay(withRemote[1]), true)
+assert.strictEqual(context.isVirtualDisplay({ name: "HDMI-A-1", x: 0, y: 0 }), false)
+// A built-in panel without EDID identity (Apple eDP-1 under Asahi) is still
+// physical: the connector name decides, or display-manager's `virtual` flag.
+assert.strictEqual(context.isVirtualDisplay({ name: "eDP-1", make: "", model: "", serial: "" }), false)
+assert.strictEqual(context.isVirtualDisplay({ name: "HEADLESS-1", make: "", model: "", serial: "" }), true)
+assert.strictEqual(context.isVirtualDisplay({ name: "eDP-1", make: "", model: "", serial: "", virtual: true }), true)
+assert.strictEqual(context.isVirtualDisplay({ name: "gliff-7", make: "", model: "", serial: "", virtual: false }), false)
+assert.deepStrictEqual(Array.from(context.activeMonitors(withRemote), function(d) { return d.name }), ["eDP-1"])

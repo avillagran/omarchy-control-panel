@@ -11,6 +11,9 @@
 #   1. Installs the omarchy-control-panel plugin (omarchy plugin add) and
 #      enables its bar widget on the RIGHT side (omarchy plugin enable
 #      --section right).
+#   1b. Installs the bundled Task Manager (omarchy-task-manager, its own
+#      plugin and repo). It is on by default and can be turned off from
+#      Control Panel > Task Manager. Skip it with --no-task-manager.
 #   2. Enables Dev mode in the plugin prefs, which exposes the "Scroll feel"
 #      card in Trackpad (presets + live sliders for the patch options).
 #      Without Dev mode the plugin is unchanged for regular users.
@@ -46,6 +49,7 @@ PANEL_REPO="https://github.com/avillagran/omarchy-control-panel.git"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 RELEASE_TAG=${OMARCHY_PANEL_REF:-0.5}
 [[ $RELEASE_TAG =~ ^([0-9a-fA-F]{40}|[a-zA-Z0-9][a-zA-Z0-9._-]*)$ ]] || { echo "Invalid OMARCHY_PANEL_REF" >&2; exit 2; }
+TASK_MANAGER_INSTALL="https://raw.githubusercontent.com/avillagran/omarchy-task-manager/main/install.sh"
 HYPRLAND_REPO="https://github.com/hyprwm/Hyprland.git"
 # Upstream commit the patch series was authored against (v0.56.0-190-g1b85c7aa).
 # The patches apply cleanly to exactly this tree; refresh both together.
@@ -83,6 +87,30 @@ log() { printf '\033[1;36m[scroll-patch]\033[0m %s\n' "$*"; }
 die() { log "ERROR: $*"; exit 1; }
 
 # ---------------------------------------------------------------- preferences
+# set_pref <key> <json-value>: merges one key into the plugin prefs JSON
+# atomically.
+set_pref() {
+  python3 - "$PREFS" "$1" "$2" <<'PY'
+import json, os, sys, tempfile
+path, key, value = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+d = {}
+if os.path.exists(path):
+    try:
+        with open(path) as f:
+            d = json.load(f)
+        if not isinstance(d, dict):
+            d = {}
+    except Exception:
+        d = {}
+d[key] = value
+os.makedirs(os.path.dirname(path), exist_ok=True)
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path))
+with os.fdopen(fd, "w") as f:
+    json.dump(d, f)
+os.replace(tmp, path)
+PY
+}
+
 # set_devmode <true|false|unset-prev>: merges devMode into the plugin prefs
 # JSON atomically; prints "prev=<json>" of the previous value (or null).
 set_devmode() {
@@ -214,6 +242,13 @@ PY
 
 [ "${1:-}" = "--uninstall" ] && uninstall
 
+WITH_TASK_MANAGER=true
+for arg in "$@"; do
+  case "$arg" in
+    --no-task-manager) WITH_TASK_MANAGER=false ;;
+  esac
+done
+
 command -v omarchy >/dev/null 2>&1 || die "the 'omarchy' CLI was not found — this installer is for Omarchy."
 command -v python3 >/dev/null 2>&1 || die "python3 is required."
 
@@ -324,6 +359,18 @@ with os.fdopen(fd, 'w') as out:
     json.dump(state, out)
 os.replace(tmp, path)
 PY
+fi
+
+# ---- 1b. bundled Task Manager (separate plugin, on by default) --------------
+# The panel remembers the choice through taskManagerOffered: with the flag set
+# it never auto-installs the Task Manager on its first run.
+set_pref taskManagerOffered true
+if [ "$WITH_TASK_MANAGER" = true ]; then
+  log "Installing the bundled Task Manager plugin ..."
+  curl -fsSL "$TASK_MANAGER_INSTALL" | bash \
+    || log "Task Manager install failed; turn it on later from Control Panel > Task Manager"
+else
+  log "Skipping the Task Manager (--no-task-manager)."
 fi
 
 # ---- 2. build dependencies -------------------------------------------------
