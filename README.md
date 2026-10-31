@@ -22,6 +22,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **QuickView (development)**: native Control Panel overview with live window cards and workspace activation, available from Dev mode.
 - **Keyboard & Language**: physical layout, system language
 - **Task Manager (bundled)**: [omarchy-task-manager](https://github.com/avillagran/omarchy-task-manager) pauses memory-hungry apps before the desktop freezes. It stays its own plugin and repo, but the panel ships it **on by default**: Control Panel > Task Manager shows Omi, live CPU/RAM and the activity graph, and its switch turns the whole thing off (watchdog stopped, paused apps thawed, bar icon removed) or back on.
+- **OmaBridge**: private links between your devices ([details](#omabridge))
 - **Night light**, and more
 
 ## Development: unified tooltips
@@ -72,6 +73,52 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   coasting, without changing touchpad behavior.
 - **Safe installer reruns**: running the one-liner again updates an existing
   plugin checkout instead of leaving an older installed revision in place.
+
+## OmaBridge
+
+The OmaBridge page manages private links between your devices: this device's
+identity, publishing it (off by default; T3 Code and/or SSH), one-use
+invitations with an optional QR code, pairing from an invitation file,
+*Check again* for pairings awaiting approval, approving requests and revoking
+paired devices.
+
+A paired device can be allowed to manage this one, either when this device
+accepts an invitation that asks for it (the confirmation warns what that
+allows and the consent box starts unticked) or later with *Let it manage…*;
+*Stop management…* withdraws it at once, and only this device can change it.
+On the managing device, *Manage…* opens that device's name, publishing, relay,
+pending requests and paired devices; OmaBridge on the managed device decides
+what is allowed and records every change.
+
+From *Manage…*, a device with a public address can also host a private relay
+for the devices paired with it: OmaBridge suggests a URL from that device's own
+certificate, and *Use on my devices…* then moves the devices you manage, and
+this one last, to that relay.
+
+A paired device that shares SSH shows *Copy SSH command*: an `ssh` command
+that reaches it through OmaBridge (`omabridge connect` as its ProxyCommand),
+with no port open on that device. It needs an OmaBridge that supports
+`connect`.
+
+*Connection between networks* chooses how this device reaches devices behind
+NAT or with private IPs, without opening ports: n0's public relays (the
+default), your own relay (for example one hosted with `omabridge relay`) or
+direct connections only. Devices that already connect to this one must pair
+again after the relay changes.
+
+OmaBridge is independent of this panel and of Omarchy T3 Code: each is just a
+front end. The page talks only to `omabridge manage` through
+`bin/omabridge-client`, one JSON request on stdin per action, so validation,
+secrets and the single `omabridge-serve.service` unit stay in OmaBridge. The
+helper uses `omabridge` from `PATH`, `~/.local/bin` or the copy bundled with
+Omarchy T3 Code, skipping releases that predate `manage`. Every change of trust
+asks for confirmation first. An invitation's path and QR are shown once and
+forgotten when their dialog closes or the page is left; *Delete invitation
+file* removes the file. Nothing from OmaBridge is logged or saved in the
+panel's preferences.
+
+When OmaBridge is missing, or too old to provide `omabridge manage`, the page
+asks you to install or update it and changes nothing.
 
 ## Backup and recovery (development)
 

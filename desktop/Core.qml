@@ -93,13 +93,14 @@ Item {
     { title: t(uiLang, "kblang"), page: 3, devOnly: false },
     { title: t(uiLang, "devices"), page: 4, devOnly: false },
     { title: t(uiLang, "taskManager"), page: 8, devOnly: false },
+    { title: t(uiLang, "omabridge"), page: 9, devOnly: false },
     { title: t(uiLang, "networkDevices"), page: 5, devOnly: true },
     { title: t(uiLang, "backup"), page: 6, devOnly: true },
     { title: t(uiLang, "profiles"), page: 7, devOnly: false }
   ]
-  property int currentTab: 0
-  // Tab ids are stable `page` numbers, not positions in `tabs`.
+  // Pages are numbered independently of their order in the navigation.
   readonly property int profilesPage: 7
+  property int currentTab: 0
   property bool devMode: false
   // Set once the bundled Task Manager has been offered (auto-installed), so
   // turning it off in the panel sticks.
@@ -3897,6 +3898,13 @@ Item {
         Layout.fillWidth: true
         visible: root.currentTab === 8
         active: root.opened && root.currentTab === 8
+        core: root
+      }
+
+      // ---------- OmaBridge (managed through Omarchy T3 Code) ----------
+      OmaBridgePage {
+        Layout.fillWidth: true
+        visible: root.currentTab === 9
         core: root
       }
 
