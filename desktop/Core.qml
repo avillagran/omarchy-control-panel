@@ -206,6 +206,79 @@ Item {
   property string pluginDir: Qt.resolvedUrl(".").toString().replace("file://", "")
   readonly property string binDir: Quickshell.shellDir + "/../bin"
 
+  // Tooltip appearance is shared with the Omarchy shell, never with Hyprland.
+  property bool tooltipAvailable: false
+  property bool tooltipLoaded: false
+  property bool tooltipBusy: false
+  property string tooltipShape: "theme"
+  property string tooltipBorderMode: "theme"
+  property string tooltipBorderColor: "#ffffff"
+  property string tooltipError: ""
+  readonly property string tooltipHelperPath: root.binDir + "/tooltip-settings"
+
+  function tooltipErrorKey(code) {
+    if (code === "unavailable") return "tooltipUnavailable"
+    if (code === "invalid_borderColor") return "tooltipInvalidColor"
+    if (code === "invalid_file") return "tooltipInvalidFile"
+    return "tooltipWriteFailed"
+  }
+
+  function readTooltips() {
+    if (tooltipBusy || tooltipReadProc.running) return
+    tooltipReadProc.command = ["python3", root.tooltipHelperPath, "get"]
+    tooltipReadProc.running = true
+  }
+
+  function setTooltip(field, value) {
+    if (!tooltipLoaded || !tooltipAvailable || tooltipBusy || tooltipReadProc.running) return
+    if (field === "borderColor" && !/^#[0-9a-fA-F]{6}$/.test(value)) {
+      tooltipError = "tooltipInvalidColor"
+      return
+    }
+    tooltipBusy = true
+    tooltipError = ""
+    tooltipWriteProc.command = ["python3", root.tooltipHelperPath, "set", field, value]
+    tooltipWriteProc.running = true
+  }
+
+  function acceptTooltipResult(output, exitCode) {
+    var result
+    try { result = JSON.parse(output) }
+    catch (e) { tooltipError = "tooltipWriteFailed"; return }
+    if (exitCode !== 0 || !result.ok) {
+      tooltipError = tooltipErrorKey(result.error)
+      if (result.error === "unavailable") tooltipAvailable = false
+      return
+    }
+    tooltipAvailable = result.available === true
+    tooltipShape = result.settings.shape
+    tooltipBorderMode = result.settings.borderMode
+    tooltipBorderColor = result.settings.borderColor
+    tooltipColorInput.text = tooltipBorderColor
+    tooltipLoaded = true
+    tooltipError = ""
+  }
+
+  Process {
+    id: tooltipReadProc
+    stdout: StdioCollector { id: tooltipReadOutput; waitForEnd: true }
+    onExited: function(exitCode) { root.acceptTooltipResult(tooltipReadOutput.text, exitCode) }
+    onRunningChanged: if (!running && !root.tooltipLoaded && !root.tooltipError) root.tooltipError = "tooltipWriteFailed"
+  }
+  Process {
+    id: tooltipWriteProc
+    stdout: StdioCollector { id: tooltipWriteOutput; waitForEnd: true }
+    onExited: function(exitCode) {
+      root.acceptTooltipResult(tooltipWriteOutput.text, exitCode)
+      root.tooltipBusy = false
+    }
+    onRunningChanged: if (!running && root.tooltipBusy) {
+      root.tooltipBusy = false
+      if (!root.tooltipError) root.tooltipError = "tooltipWriteFailed"
+    }
+  }
+  onCurrentTabChanged: if (currentTab === 1) readTooltips()
+
   // APFS (Extras): driver presence + detected partitions.
   property bool apfsInstalled: false
   property var apfsList: []
@@ -2630,6 +2703,7 @@ Item {
   }
 
   Component.onCompleted: {
+    root.readTooltips()
     if (!i18nLoader.running) i18nLoader.running = true
     if (!localeListProc.running) localeListProc.running = true
     if (!layoutListProc.running) layoutListProc.running = true
@@ -4654,6 +4728,128 @@ Item {
           checked: root.browserCloseTabOn
           onClicked: { root.setBrowserCloseTab(!root.browserCloseTabOn) }
         }
+        PanelSeparator { foreground: root.fg }
+
+        Text {
+          width: parent.width
+          text: root.t(root.uiLang, "tooltipAppearance")
+          color: root.fg
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+        Text {
+          width: parent.width
+          visible: root.tooltipLoaded && !root.tooltipAvailable
+          text: root.t(root.uiLang, "tooltipUnavailable")
+          color: Color.urgent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+        }
+        Text {
+          width: parent.width
+          visible: root.tooltipError !== ""
+          text: root.t(root.uiLang, root.tooltipError)
+          color: Color.urgent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+        }
+        Text {
+          text: root.t(root.uiLang, "tooltipShape")
+          color: root.fg
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+        }
+        RowLayout {
+          width: parent.width
+          spacing: Style.space(6)
+          Repeater {
+            model: ["theme", "square", "rounded"]
+            Button {
+              required property string modelData
+              Layout.fillWidth: true
+              text: root.t(root.uiLang, "tooltipShape" + modelData.charAt(0).toUpperCase() + modelData.slice(1))
+              selected: root.tooltipShape === modelData
+              bordered: true
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              enabled: root.tooltipAvailable && root.tooltipLoaded && !root.tooltipBusy
+              onClicked: root.setTooltip("shape", modelData)
+            }
+          }
+        }
+        Text {
+          text: root.t(root.uiLang, "tooltipBorder")
+          color: root.fg
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+        }
+        RowLayout {
+          width: parent.width
+          spacing: Style.space(6)
+          Repeater {
+            model: ["theme", "transparent", "custom"]
+            Button {
+              required property string modelData
+              Layout.fillWidth: true
+              text: root.t(root.uiLang, "tooltipBorder" + modelData.charAt(0).toUpperCase() + modelData.slice(1))
+              selected: root.tooltipBorderMode === modelData
+              bordered: true
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              enabled: root.tooltipAvailable && root.tooltipLoaded && !root.tooltipBusy
+              onClicked: root.setTooltip("borderMode", modelData)
+            }
+          }
+        }
+        RowLayout {
+          width: parent.width
+          visible: root.tooltipBorderMode === "custom" && root.tooltipAvailable
+          spacing: Style.space(8)
+          Rectangle {
+            Layout.preferredWidth: Style.space(28)
+            Layout.preferredHeight: Style.space(28)
+            radius: Style.cornerRadius
+            color: root.tooltipBorderColor
+            border.color: root.fg
+            border.width: 1
+            Accessible.name: root.t(root.uiLang, "tooltipBorderColor") + ": " + root.tooltipBorderColor
+          }
+          TextField {
+            id: tooltipColorInput
+            Layout.fillWidth: true
+            text: root.tooltipBorderColor
+            placeholderText: "#RRGGBB"
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            color: root.fg
+            selectByMouse: true
+            maximumLength: 7
+            enabled: !root.tooltipBusy
+            Accessible.name: root.t(root.uiLang, "tooltipBorderColor")
+            onAccepted: root.setTooltip("borderColor", text)
+          }
+          Button {
+            text: root.t(root.uiLang, "tooltipDefine")
+            selected: true
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            enabled: root.tooltipLoaded && !root.tooltipBusy
+            onClicked: root.setTooltip("borderColor", tooltipColorInput.text)
+          }
+        }
+        Text {
+          width: parent.width
+          text: root.t(root.uiLang, "tooltipThemeHint")
+          color: root.fg
+          opacity: 0.7
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+        }
+
       }
 
       Text {
