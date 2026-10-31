@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Re-assert the per-device input rules (hl.device lines) persisted in
+# control-panel.lua: trackpad speed, acceleration profile, natural scroll and
+# scroll factor. Hyprland rebuilds device settings on every config reload, and
+# in practice the trackpad can come back with defaults. The always-running bar
+# widget runs this after `configreloaded` and at shell start. Device lines are
+# the only ones replayed: global hl.config values were verified to survive a
+# reload, and re-issuing hl.device only reconfigures libinput for that device.
+set -euo pipefail
+
+lua="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/control-panel.lua"
+[[ -f $lua && ! -L $lua ]] || exit 0
+
+runtime_dir=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
+exec 9>"$runtime_dir/omarchy-control-panel-device-rules.lock"
+flock -n 9 || exit 0
+
+statements=$(timeout 5 head -c 65536 "$lua" | grep -E '^hl\.device\(\{ name = "[^"]+"' || true)
+[[ -n $statements ]] || exit 0
+
+# Hyprland may still be settling right after a reload; retry briefly.
+lua_expr=$(printf '%s\n' "$statements" | paste -sd';' -)
+last_error=""
+for _attempt in $(seq 1 10); do
+  if output=$(hyprctl eval "$lua_expr" 2>&1) && [[ $output == *ok* ]]; then
+    exit 0
+  fi
+  last_error=$output
+  sleep 0.3
+done
+printf 'Could not restore per-device input rules: %s\n' "$last_error" >&2
+exit 1

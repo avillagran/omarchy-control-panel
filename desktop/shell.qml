@@ -1,5 +1,5 @@
 pragma ComponentBehavior: Bound
-import QtQuick
+import QtQuick 6.11
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
@@ -20,7 +20,6 @@ ShellRoot {
     visible: true
     color: theme.app
 
-    readonly property int pad: theme.padding
     readonly property bool narrow: width < Math.max(720, theme.body * 34)
     property real fontScale: Style.fontScale
     property var navigationTabs: core.tabs.filter(function(tab) {
@@ -42,9 +41,9 @@ ShellRoot {
     function doResize() {
       if (!core) return
       var targetW = theme.windowWidth(win.screen ? win.screen.width : 1640)
-      var chromeH = header.implicitHeight + win.pad * 4 + theme.gap * 2
-      if (win.narrow) chromeH += sidebar.implicitHeight + theme.gap
-      if (footer.visible) chromeH += footer.implicitHeight + theme.gap
+      var chromeH = header.implicitHeight + 3 + win.contentPadY * 2
+      if (win.narrow) chromeH += sidebar.implicitHeight
+      if (footer.visible) chromeH += footer.implicitHeight
       var targetH = theme.windowHeight(win.screen ? win.screen.height : 900, core.implicitHeight + chromeH)
       if (Math.round(win.implicitWidth) !== targetW) win.implicitWidth = targetW
       if (Math.round(win.implicitHeight) !== targetH) win.implicitHeight = targetH
@@ -68,13 +67,13 @@ ShellRoot {
     Shortcut { sequence: "Ctrl+Tab"; onActivated: win.selectTab((win.navigationIndexForPage(core.currentTab) + 1) % win.navigationTabs.length) }
     Shortcut { sequence: "Ctrl+Shift+Tab"; onActivated: win.selectTab((win.navigationIndexForPage(core.currentTab) + win.navigationTabs.length - 1) % win.navigationTabs.length) }
 
-    // Shared native control semantics with an explicit Omareel surface.
+    // Header icon button: square, bordered, follows the theme radius.
     component ActionButton: AbstractButton {
       id: action
       property bool primary: false
-      implicitWidth: Math.max(36, actionLabel.implicitWidth + 24)
-      implicitHeight: Math.max(theme.controlHeight, actionLabel.implicitHeight + 16)
-      padding: 8
+      implicitWidth: Math.max(theme.controlHeight * 0.66, actionLabel.implicitWidth + 16)
+      implicitHeight: Math.max(theme.controlHeight * 0.66, actionLabel.implicitHeight + 8)
+      padding: 4
       hoverEnabled: true
       focusPolicy: Qt.StrongFocus
       Accessible.name: text
@@ -91,29 +90,54 @@ ShellRoot {
       }
       background: Rectangle {
         radius: theme.radius
-        color: action.primary ? theme.accent : (action.hovered || action.down ? theme.panelAlt : theme.panel)
-        border.width: action.activeFocus ? 2 : 1
-        border.color: action.activeFocus ? theme.accent : theme.border
+        color: action.primary ? theme.accent : (action.hovered || action.down ? theme.hoverFill : theme.transparent)
+        border.width: 1
+        border.color: action.visualFocus ? theme.accent : theme.border
       }
     }
+
+    readonly property int contentPadX: Math.round(theme.padding * 2.1)
+    readonly property int contentPadY: Math.round(theme.padding * 1.8)
+    readonly property string activeProfileName: {
+      for (var i = 0; i < core.profiles.length; i++) {
+        var profile = core.profiles[i]
+        if (profile.id === core.activeProfileId)
+          return profile.builtin ? core.t(core.uiLang, profile.name) : profile.name
+      }
+      return core.t(core.uiLang, "noActiveProfile")
+    }
+
+    // Pointer in window coordinates, for Omi's eyes in the header.
+    property real pointerX: 0
+    property real pointerY: 0
+    property bool pointerInside: false
 
     Rectangle {
       anchors.fill: parent
       color: theme.app
       radius: theme.radius
+
+      HoverHandler {
+        onPointChanged: {
+          var p = parent.mapToItem(null, point.position.x, point.position.y)
+          win.pointerX = p.x
+          win.pointerY = p.y
+        }
+        onHoveredChanged: win.pointerInside = hovered
+      }
       border.color: theme.border
       border.width: 1
       clip: true
 
       ColumnLayout {
         anchors.fill: parent
-        anchors.margins: win.pad
-        spacing: theme.gap
+        anchors.margins: 1
+        spacing: 0
 
         Item {
           id: header
           Layout.fillWidth: true
-          implicitHeight: Math.max(headerContent.implicitHeight, theme.controlHeight)
+          implicitHeight: Math.max(headerContent.implicitHeight + theme.padding, theme.controlHeight + 12)
 
           MouseArea {
             anchors.fill: parent
@@ -124,18 +148,71 @@ ShellRoot {
 
           RowLayout {
             id: headerContent
-            anchors.fill: parent
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: theme.padding + 4
+            anchors.rightMargin: theme.padding + 4
             spacing: theme.gap
+
+            // Brand mark: Omi from the bundled Task Manager (blinks, eyes follow
+            // the pointer anywhere in the window). The gear stays as the
+            // fallback while the Task Manager is not installed.
+            Item {
+              implicitWidth: Math.max(22, theme.body + 10)
+              implicitHeight: implicitWidth
+
+              Loader {
+                id: omiLoader
+                anchors.fill: parent
+                source: core.taskManagerDir + "/OmiFace.qml"
+                onLoaded: {
+                  item.tint = Qt.binding(function() { return theme.accent })
+                  item.cursorX = Qt.binding(function() { return win.pointerX })
+                  item.cursorY = Qt.binding(function() { return win.pointerY })
+                  item.cursorValid = Qt.binding(function() { return win.pointerInside })
+                }
+              }
+
+              Rectangle {
+                anchors.fill: parent
+                visible: omiLoader.status !== Loader.Ready
+                radius: theme.radius
+                color: theme.transparent
+                border.color: theme.accent
+                border.width: 1
+                Text {
+                  anchors.centerIn: parent
+                  text: "󰒓"
+                  color: theme.accent
+                  font.family: theme.fontUi
+                  font.pixelSize: theme.body + 2
+                }
+              }
+            }
+
             Text {
               Layout.fillWidth: true
               Layout.minimumWidth: 0
-              text: core.t(core.uiLang, "controlPanelTitle")
+              textFormat: Text.StyledText
+              text: "<b>Omarchy</b> <font color=\"" + theme.textMuted + "\">/</font> <b>"
+                + core.t(core.uiLang, "controlPanelTitle") + "</b>"
               color: theme.text
               font.family: theme.fontUi
               font.pixelSize: theme.body
-              font.bold: true
               elide: Text.ElideRight
             }
+
+            Text {
+              visible: !win.narrow
+              textFormat: Text.StyledText
+              text: core.t(core.uiLang, "profileLabel") + " <font color=\"" + theme.text + "\">"
+                + win.activeProfileName + "</font>"
+              color: theme.textMuted
+              font.family: theme.fontUi
+              font.pixelSize: theme.caption
+            }
+
             ActionButton {
               id: closeButton
               text: "×"
@@ -154,160 +231,174 @@ ShellRoot {
           Layout.fillHeight: true
           Layout.minimumHeight: 0
           columns: win.narrow ? 1 : 2
-          columnSpacing: theme.gap
-          rowSpacing: theme.gap
+          columnSpacing: 0
+          rowSpacing: 0
 
           Rectangle {
             id: sidebar
             Layout.fillWidth: win.narrow
-            Layout.preferredWidth: win.narrow ? -1 : 194
-            Layout.minimumWidth: win.narrow ? 0 : 194
-            Layout.maximumWidth: win.narrow ? Infinity : 194
+            Layout.preferredWidth: win.narrow ? -1 : 188
+            Layout.minimumWidth: win.narrow ? 0 : 188
+            Layout.maximumWidth: win.narrow ? Infinity : 188
             Layout.fillHeight: !win.narrow
             Layout.minimumHeight: 0
-            implicitHeight: theme.controlHeight + 16
+            implicitHeight: theme.controlHeight + 14
             Layout.preferredHeight: win.narrow ? implicitHeight : -1
-            radius: theme.radius
             color: theme.panelDeep
-            border.color: theme.border
 
-            ColumnLayout {
+            // Hairline toward the content: right edge when vertical, bottom
+            // edge when the navigation folds into a top strip.
+            Rectangle {
+              visible: !win.narrow
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.bottom: parent.bottom
+              width: 1
+              color: theme.border
+            }
+            Rectangle {
+              visible: win.narrow
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.bottom: parent.bottom
+              height: 1
+              color: theme.border
+            }
+
+            ListView {
+              id: navigation
               anchors.fill: parent
-              anchors.margins: 8
-              spacing: theme.gap
-              ColumnLayout {
-                visible: !win.narrow
-                Layout.fillWidth: true
-                spacing: 4
-                Text {
-                  Layout.fillWidth: true
-                  text: core.t(core.uiLang, "currentProfile")
-                  color: theme.textMuted
-                  font.family: theme.fontUi
-                  font.pixelSize: theme.caption
-                  wrapMode: Text.Wrap
+              anchors.leftMargin: 7
+              anchors.rightMargin: 8
+              anchors.topMargin: win.narrow ? 7 : 12
+              anchors.bottomMargin: 7
+              clip: true
+              model: win.navigationTabs
+              currentIndex: win.navigationIndexForPage(core.currentTab)
+              orientation: win.narrow ? ListView.Horizontal : ListView.Vertical
+              spacing: 2
+              boundsBehavior: Flickable.StopAtBounds
+              keyNavigationEnabled: false
+              ScrollBar.vertical: ScrollBar { policy: win.narrow ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded }
+              ScrollBar.horizontal: ScrollBar { policy: win.narrow ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
+              onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+              delegate: AbstractButton {
+                id: navButton
+                required property var modelData
+                required property int index
+                readonly property bool current: core.currentTab === modelData.page
+                width: win.narrow ? Math.max(96, navLabel.implicitWidth + leftPadding + rightPadding) : navigation.width
+                height: Math.max(theme.controlHeight - 4, navLabel.implicitHeight + 16)
+                padding: 8
+                leftPadding: 12
+                rightPadding: modelData.devOnly ? 12 + devBadge.implicitWidth + 6 : 10
+                hoverEnabled: true
+                focusPolicy: Qt.StrongFocus
+                Accessible.role: Accessible.PageTab
+                Accessible.name: modelData.title
+                Accessible.selected: current
+                onClicked: win.selectTab(index)
+                onActiveFocusChanged: if (activeFocus) navigation.positionViewAtIndex(index, ListView.Contain)
+                Keys.onUpPressed: event => { win.selectTab(Math.max(0, index - 1)); event.accepted = true }
+                Keys.onDownPressed: event => { win.selectTab(Math.min(win.navigationTabs.length - 1, index + 1)); event.accepted = true }
+                Keys.onLeftPressed: event => { win.selectTab(Math.max(0, index - 1)); event.accepted = true }
+                Keys.onRightPressed: event => { win.selectTab(Math.min(win.navigationTabs.length - 1, index + 1)); event.accepted = true }
+                Keys.onPressed: event => {
+                  if (event.key === Qt.Key_Home) { win.selectTab(0); event.accepted = true }
+                  else if (event.key === Qt.Key_End) { win.selectTab(win.navigationTabs.length - 1); event.accepted = true }
                 }
-                Text {
-                  Layout.fillWidth: true
-                  text: {
-                    for (var i = 0; i < core.profiles.length; i++) {
-                      var profile = core.profiles[i]
-                      if (profile.id === core.activeProfileId)
-                        return profile.builtin ? core.t(core.uiLang, profile.name) : profile.name
-                    }
-                    return core.t(core.uiLang, "noActiveProfile")
-                  }
-                  color: theme.text
+                contentItem: Text {
+                  id: navLabel
+                  text: navButton.modelData.title
+                  color: navButton.current || navButton.hovered ? theme.text : theme.textMuted
                   font.family: theme.fontUi
                   font.pixelSize: theme.body
+                  font.bold: navButton.current
+                  verticalAlignment: Text.AlignVCenter
                   elide: Text.ElideRight
+                  wrapMode: Text.NoWrap
                 }
-                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.border }
-              }
+                background: Rectangle {
+                  radius: theme.radius
+                  color: navButton.current ? theme.selectedFill
+                    : (navButton.hovered ? theme.hoverFill : theme.transparent)
+                  border.width: navButton.visualFocus ? 1 : 0
+                  border.color: theme.accent
 
-              ListView {
-                id: navigation
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.minimumHeight: 0
-                clip: true
-                model: win.navigationTabs
-                currentIndex: win.navigationIndexForPage(core.currentTab)
-                orientation: win.narrow ? ListView.Horizontal : ListView.Vertical
-                spacing: 4
-                boundsBehavior: Flickable.StopAtBounds
-                keyNavigationEnabled: false
-                ScrollBar.vertical: ScrollBar { policy: win.narrow ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded }
-                ScrollBar.horizontal: ScrollBar { policy: win.narrow ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
-                onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
-                delegate: AbstractButton {
-                  id: navButton
-                  required property var modelData
-                  required property int index
-                  width: win.narrow ? Math.max(112, navLabel.implicitWidth + 28) : navigation.width
-                  height: Math.max(theme.controlHeight, navLabel.implicitHeight + 16)
-                  padding: 8
-                  leftPadding: 12
-                  rightPadding: 12
-                  hoverEnabled: true
-                  focusPolicy: Qt.StrongFocus
-                  Accessible.role: Accessible.PageTab
-                  Accessible.name: modelData.title
-                  Accessible.selected: core.currentTab === modelData.page
-                  onClicked: win.selectTab(index)
-                  onActiveFocusChanged: if (activeFocus) navigation.positionViewAtIndex(index, ListView.Contain)
-                  Keys.onUpPressed: event => { win.selectTab(Math.max(0, index - 1)); event.accepted = true }
-                  Keys.onDownPressed: event => { win.selectTab(Math.min(win.navigationTabs.length - 1, index + 1)); event.accepted = true }
-                  Keys.onLeftPressed: event => { win.selectTab(Math.max(0, index - 1)); event.accepted = true }
-                  Keys.onRightPressed: event => { win.selectTab(Math.min(win.navigationTabs.length - 1, index + 1)); event.accepted = true }
-                  Keys.onPressed: event => {
-                    if (event.key === Qt.Key_Home) { win.selectTab(0); event.accepted = true }
-                    else if (event.key === Qt.Key_End) { win.selectTab(win.navigationTabs.length - 1); event.accepted = true }
+                  // Current-page marker: an accent edge, left when vertical,
+                  // bottom when the navigation is a horizontal strip.
+                  Rectangle {
+                    visible: navButton.current
+                    color: theme.accent
+                    x: 0
+                    y: win.narrow ? parent.height - height : 0
+                    width: win.narrow ? parent.width : 2
+                    height: win.narrow ? 2 : parent.height
                   }
-                  contentItem: Text {
-                    id: navLabel
-                    text: navButton.modelData.title
-                    color: navButton.modelData.devOnly ? theme.urgent
-                      : (core.currentTab === navButton.modelData.page ? theme.accent : theme.text)
+
+                  // Development features carry a quiet marker instead of
+                  // the urgent color: they are optional, not alarming.
+                  Text {
+                    id: devBadge
+                    visible: navButton.modelData.devOnly
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "DEV"
+                    color: theme.textMuted
+                    opacity: 0.75
                     font.family: theme.fontUi
-                    font.pixelSize: theme.body
-                    font.bold: core.currentTab === navButton.modelData.page
-                    verticalAlignment: Text.AlignVCenter
-                    wrapMode: win.narrow ? Text.NoWrap : Text.Wrap
-                  }
-                  background: Rectangle {
-                    radius: theme.radius
-                    color: core.currentTab === navButton.modelData.page
-                      ? (navButton.modelData.devOnly ? Qt.alpha(theme.urgent, 0.14) : theme.accentSoft)
-                      : (navButton.hovered ? theme.panelAlt : theme.transparent)
-                    border.width: navButton.activeFocus ? 2 : 1
-                    border.color: navButton.modelData.devOnly ? theme.urgent
-                      : (navButton.activeFocus ? theme.accent : (core.currentTab === navButton.modelData.page ? theme.border : theme.transparent))
+                    font.pixelSize: Math.max(8, theme.caption - 2)
+                    font.letterSpacing: 0.5
                   }
                 }
               }
             }
           }
 
-          ColumnLayout {
+          Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumWidth: 0
             Layout.minimumHeight: 0
-            spacing: theme.gap
-            Rectangle {
-              Layout.fillWidth: true
-              Layout.fillHeight: true
-              Layout.minimumWidth: 0
-              Layout.minimumHeight: 0
-              radius: theme.radius
-              color: theme.panel
-              border.color: theme.border
+
+            Flickable {
+              id: contentFlick
+              anchors.fill: parent
+              contentWidth: width
+              contentHeight: core.implicitHeight + win.contentPadY * 2
               clip: true
-              Flickable {
-                id: contentFlick
-                anchors.fill: parent
-                anchors.margins: theme.padding
-                contentWidth: width
-                contentHeight: core.implicitHeight
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                // Match native kinetic-scroll feel: small content movement per
-                // wheel tick and a short, springy flick deceleration.
-                maximumFlickVelocity: 1400
-                flickDeceleration: 2600
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                Core {
-                  id: core
-                  anchors.left: parent.left
-                  anchors.right: parent.right
-                  externalNavigation: true
-                  onCloseRequested: win.visible = false
-                  onImplicitHeightChanged: win.scheduleResize()
-                  onImplicitWidthChanged: win.scheduleResize()
-                  onCurrentTabChanged: contentFlick.contentY = 0
-                  Component.onCompleted: win.scheduleResize()
-                }
+              boundsBehavior: Flickable.StopAtBounds
+              // Match native kinetic-scroll feel: small content movement per
+              // wheel tick and a short, springy flick deceleration.
+              maximumFlickVelocity: 1400
+              flickDeceleration: 2600
+              ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+              // Keep the keyboard cursor in view as it moves between rows.
+              readonly property Item focusedItem: Window.activeFocusItem
+              onFocusedItemChanged: ensureVisible(focusedItem)
+              function ensureVisible(item) {
+                var probe = item
+                while (probe && probe !== core) probe = probe.parent
+                if (!probe || !item.visible) return
+                var top = item.mapToItem(contentFlick.contentItem, 0, 0).y - theme.padding
+                var bottom = top + item.height + theme.padding * 2
+                if (top < contentY) contentY = Math.max(0, top)
+                else if (bottom > contentY + height) contentY = Math.min(Math.max(0, contentHeight - height), bottom - height)
+              }
+
+              Core {
+                id: core
+                x: win.contentPadX
+                y: win.contentPadY
+                width: contentFlick.width - win.contentPadX * 2
+                externalNavigation: true
+                onCloseRequested: win.visible = false
+                onImplicitHeightChanged: win.scheduleResize()
+                onImplicitWidthChanged: win.scheduleResize()
+                onCurrentTabChanged: contentFlick.contentY = 0
+                Component.onCompleted: win.scheduleResize()
               }
             }
           }
@@ -318,23 +409,25 @@ ShellRoot {
           id: footer
           Layout.fillWidth: true
           visible: core.displayAwaitingConfirmation
-          implicitHeight: footerContent.implicitHeight + 16
-          radius: theme.radius
-          color: theme.accentSoft
-          border.color: theme.border
+          implicitHeight: footerContent.implicitHeight + theme.padding * 2
+          color: theme.selectedFill
           onVisibleChanged: {
             win.scheduleResize()
             if (visible) Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.window.center())"])
           }
+          Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 1; color: theme.border }
           ColumnLayout {
             id: footerContent
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.margins: 8
+            anchors.margins: theme.padding
+            anchors.leftMargin: win.contentPadX
+            anchors.rightMargin: win.contentPadX
             spacing: theme.gap
             RowLayout {
               Layout.fillWidth: true
+              spacing: theme.gap
               Text {
                 Layout.fillWidth: true
                 text: core.t(core.uiLang, "displayConfirmPrompt") + " · " + core.displaySecondsRemaining
@@ -343,20 +436,12 @@ ShellRoot {
                 font.pixelSize: theme.body
                 wrapMode: Text.Wrap
               }
-            }
-            RowLayout {
-              Layout.fillWidth: true
-              spacing: theme.gap
               ActionButton {
-                Layout.fillWidth: true
-                Layout.minimumWidth: 0
                 primary: true
                 text: core.t(core.uiLang, "keep")
                 onClicked: core.displayKeep()
               }
               ActionButton {
-                Layout.fillWidth: true
-                Layout.minimumWidth: 0
                 text: core.t(core.uiLang, "revert")
                 onClicked: core.displayRevert()
               }

@@ -1,4 +1,4 @@
-import QtQuick
+import QtQuick 6.11
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -26,7 +26,14 @@ QtObject {
   readonly property color urgent: Color.urgent
   readonly property color accentSoft: paletteColor("selection", Qt.tint(app, Qt.alpha(accent, 0.14)))
   readonly property color transparent: Qt.rgba(0, 0, 0, 0)
-  readonly property int radius: 6
+  // Interactive state fills follow the shell's state tokens (shell.toml can
+  // override their alphas), applied to the theme's own foreground.
+  readonly property color hoverFill: Qt.alpha(text, Style.hoverFillAlpha)
+  readonly property color selectedFill: Qt.alpha(text, Style.selectedFillAlpha * 0.75)
+  readonly property color rule: Qt.alpha(text, 0.12)
+  // One radius for every surface and control: Hyprland's decoration:rounding,
+  // mirrored by Style.cornerRadius. Sharp themes stay sharp, rounded stay round.
+  readonly property int radius: Style.cornerRadius
   readonly property int gap: 8
   readonly property int padding: 12
   readonly property string fontUi: Style.font.family

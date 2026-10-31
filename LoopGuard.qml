@@ -1,6 +1,6 @@
 // LoopGuard.qml — previene loops infinitos detectando llamadas repetidas
 // Persiste estado en archivo para sobrevivir recargas del plugin
-import QtQuick
+import QtQuick 6.11
 
 QtObject {
   id: root

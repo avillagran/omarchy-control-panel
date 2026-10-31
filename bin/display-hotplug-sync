@@ -1,19 +1,83 @@
 #!/usr/bin/env python3
-"""Reapply the active profile's display map after monitor hotplug."""
+"""Keep displays, workspace ranges and the persisted Lua in sync with the
+connected monitors, whether or not the Control Panel window is open.
+
+Invoked by the always-running bar widgets at shell start and after every
+output hotplug. Each step is idempotent: when nothing changed, nothing is
+applied and no file is rewritten (a rewrite of control-panel.lua makes
+Hyprland reload its config, so identical content must never be written).
+
+  1. Restore the active profile's layout for this exact monitor combination
+     (EDID identity). With --startup this only happens when the combination
+     differs from the one synced last, so a shell restart never reverts a
+     layout the user changed elsewhere.
+  2. Move a monitor without saved geometry that overlaps the others flush to
+     the right of the layout.
+  3. Rewrite the display and workspace sections of control-panel.lua from the
+     live monitors: absent monitors lose their rules, new ones gain theirs.
+  4. Refresh workspaceVisuals in the prefs so the bar shows each monitor's
+     workspaces with its color.
+"""
 
 import fcntl
 import json
+import math
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
+import tempfile
+import time
+
+MONITOR_PALETTE = [
+    "accent", "green", "yellow", "magenta", "red",
+    "cyan", "orange", "blue", "bright_green", "bright_blue",
+]
+EXTRA_ROLES = ["bright_red", "bright_yellow", "bright_magenta", "bright_cyan", "foreground", "muted"]
+LEGACY_ROLES = {
+    "#7aa2f7": "accent", "#9ece6a": "green", "#e0af68": "yellow",
+    "#bb9af7": "magenta", "#f7768e": "red", "#7dcfff": "cyan",
+    "#ff9e64": "orange", "#73daca": "cyan", "#c0caf5": "foreground",
+    "#b4f9f8": "bright_cyan",
+}
+FILE_LIMIT = 262144
+DISPLAY_MARKER = "-- Display layout"
+WORKSPACE_MARKER = "-- Workspace distribution by monitor topology"
 
 
 def load_json(path):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        if path.is_symlink() or path.stat().st_size > FILE_LIMIT:
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return {}
+    return data if isinstance(data, dict) else {}
+
+
+PHYSICAL_CONNECTOR = re.compile(
+    r"^(eDP|DP|HDMI-[AB]|DVI-[ID]|LVDS|DSI|VGA|Virtual|DisplayPort|Composite|SVIDEO|TV|DPI|Writeback)-\d+$")
+
+
+def is_virtual(display):
+    """A headless or nested output that another program (a screen sharer, a
+    remote display such as Gliff) creates and owns. Persisting it, or
+    reloading Hyprland over it, would undo that program's own monitor rule,
+    so the layout and the Lua file leave it alone.
+
+    display-manager decides from the kernel's DRM connectors and reports it
+    as `virtual`. Rows without that flag fall back to a heuristic: no EDID
+    identity *and* a name that is not a physical connector. Built-in panels
+    such as an Apple eDP-1 report no make/model/serial yet are physical."""
+    if isinstance(display.get("virtual"), bool):
+        return display["virtual"]
+    keys = ("make", "model", "serial")
+    if not any(key in display for key in keys):
+        return False
+    if any(str(display.get(key) or "").strip() for key in keys):
+        return False
+    return not PHYSICAL_CONNECTOR.match(str(display.get("name") or ""))
 
 
 def display_topology(current):
@@ -36,14 +100,19 @@ def active_display_map(profiles, current=None):
     return {}
 
 
+def saved_entry(saved, display):
+    wanted = saved.get(display.get("fingerprint")) or saved.get(display.get("name"))
+    return wanted if isinstance(wanted, dict) else None
+
+
 def merge_layout(current, active_names, saved):
     result = []
     for display in current:
         name = display.get("name")
         if name not in active_names:
             continue
-        wanted = saved.get(display.get("fingerprint")) or saved.get(name)
-        if not isinstance(wanted, dict):
+        wanted = saved_entry(saved, display)
+        if wanted is None:
             result.append(display)
             continue
         merged = dict(display)
@@ -55,56 +124,291 @@ def merge_layout(current, active_names, saved):
     return result
 
 
+def number(value, fallback=0.0):
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return result if math.isfinite(result) else fallback
+
+
+def logical_rect(display):
+    mode = str(display.get("mode") or "")
+    try:
+        width, height = (int(part) for part in mode.split("@", 1)[0].split("x", 1))
+    except ValueError:
+        width, height = int(number(display.get("width"))), int(number(display.get("height")))
+    scale = number(display.get("scale"), 1.0) or 1.0
+    if int(number(display.get("transform"))) % 2 == 1:
+        width, height = height, width
+    x, y = int(number(display.get("x"))), int(number(display.get("y")))
+    return x, y, int(round(width / scale)), int(round(height / scale))
+
+
+def overlaps(first, second):
+    ax, ay, aw, ah = logical_rect(first)
+    bx, by, bw, bh = logical_rect(second)
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
+
+
+def place_unsaved(layout, saved):
+    """Move monitors without saved geometry out of any overlap, to the right."""
+    placed = [dict(row) for row in layout]
+    visible = [row for row in placed if not row.get("disabled") and not row.get("mirror")]
+    fixed = [row for row in visible if saved_entry(saved, row) is not None]
+    floating = [row for row in visible if saved_entry(saved, row) is None]
+    if not fixed:
+        fixed, floating = floating[:1], floating[1:]
+    for row in floating:
+        others = [other for other in fixed if other is not row]
+        if others and any(overlaps(row, other) for other in others):
+            right = max(logical_rect(other)[0] + logical_rect(other)[2] for other in others)
+            top = min(logical_rect(other)[1] for other in others)
+            row["x"], row["y"] = right, top
+        fixed.append(row)
+    return placed
+
+
+def active_monitors(displays):
+    monitors = [row for row in displays
+                if row.get("name") and not row.get("disabled") and not row.get("mirror")]
+    if len(monitors) < 2:
+        return monitors
+    xs = [number(row.get("x")) for row in monitors]
+    ys = [number(row.get("y")) for row in monitors]
+    horizontal = (max(xs) - min(xs)) >= (max(ys) - min(ys))
+
+    def key(row):
+        x, y = number(row.get("x")), number(row.get("y"))
+        return (x, y, str(row.get("name"))) if horizontal else (y, x, str(row.get("name")))
+
+    return sorted(monitors, key=key)
+
+
+def clamp_count(value, fallback):
+    try:
+        count = round(float(value))
+    except (TypeError, ValueError):
+        return fallback
+    return max(1, min(10, int(count))) if math.isfinite(count) else fallback
+
+
+def workspace_assignments(displays, single_count, per_monitor_count):
+    """Same plan as WorkspaceModel.assignments() in the panel."""
+    monitors = active_monitors(displays)
+    if not monitors:
+        return []
+    count = clamp_count(single_count, 10) if len(monitors) == 1 else clamp_count(per_monitor_count, 5)
+    plan = []
+    workspace = 1
+    for monitor in monitors:
+        for index in range(count):
+            plan.append({"workspace": workspace, "monitor": monitor["name"], "default": index == 0})
+            workspace += 1
+    return plan
+
+
+def color_role(name, displays, colors):
+    value = (colors or {}).get(name)
+    if value in MONITOR_PALETTE or value in EXTRA_ROLES:
+        return value
+    legacy = LEGACY_ROLES.get(str(value or "").lower())
+    if legacy:
+        return legacy
+    for index, monitor in enumerate(active_monitors(displays)):
+        if monitor.get("name") == name:
+            return MONITOR_PALETTE[index % len(MONITOR_PALETTE)]
+    return MONITOR_PALETTE[0]
+
+
+def workspace_visuals(displays, prefs):
+    plan = workspace_assignments(displays, prefs.get("singleMonitorWorkspaces"),
+                                 prefs.get("multiMonitorWorkspaces"))
+    colors = prefs.get("monitorColors") if isinstance(prefs.get("monitorColors"), dict) else {}
+    return {str(rule["workspace"]): {"monitor": rule["monitor"],
+                                     "colorRole": color_role(rule["monitor"], displays, colors)}
+            for rule in plan}
+
+
+def lua_number(value):
+    value = number(value, 1.0)
+    return str(int(value)) if value.is_integer() else repr(value)
+
+
+def monitor_lines(displays):
+    """Same statements as Core.qml writeLua() emits for the display layout."""
+    lines = []
+    for row in displays:
+        name = row.get("name")
+        if not name:
+            continue
+        output = json.dumps(name)
+        if row.get("disabled"):
+            lines.append(f"hl.monitor({{ output = {output}, disabled = true }})")
+            continue
+        mode = json.dumps(str(row.get("mode") or "preferred").removesuffix("Hz"))
+        position = json.dumps(f"{round(number(row.get('x')))}x{round(number(row.get('y')))}")
+        mirror = f", mirror = {json.dumps(row['mirror'])}" if row.get("mirror") else ""
+        lines.append(f"hl.monitor({{ output = {output}, mode = {mode}, position = {position}, "
+                     f"scale = {lua_number(row.get('scale'))}, "
+                     f"transform = {int(number(row.get('transform')))}{mirror} }})")
+    return lines
+
+
+def workspace_lines(plan):
+    return [f'hl.workspace_rule({{ workspace = "{rule["workspace"]}", monitor = "{rule["monitor"]}", '
+            f'default = {"true" if rule["default"] else "false"}, persistent = true }})'
+            for rule in plan]
+
+
+def rewrite_lua(text, displays, plan):
+    """Replace the generated display/workspace sections, keep everything else."""
+    kept = []
+    insert_at = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if (stripped in (DISPLAY_MARKER, WORKSPACE_MARKER)
+                or stripped.startswith("hl.monitor(") or stripped.startswith("hl.workspace_rule(")):
+            if insert_at is None:
+                insert_at = len(kept)
+            continue
+        kept.append(line)
+    if insert_at is None:
+        insert_at = next((i for i, line in enumerate(kept)
+                          if line.startswith('hl.unbind("SUPER + SHIFT + up")')), len(kept))
+    block = []
+    monitors = monitor_lines(displays)
+    if monitors:
+        block += [DISPLAY_MARKER] + monitors
+    rules = workspace_lines(plan)
+    if rules:
+        block += [WORKSPACE_MARKER] + rules
+    return "\n".join(kept[:insert_at] + block + kept[insert_at:]) + "\n"
+
+
+def atomic_write(path, content, mode=0o644):
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), mode)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def read_text(path):
+    try:
+        if path.is_symlink() or path.stat().st_size > FILE_LIMIT:
+            return None
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+
+
 def run_json(command):
     completed = subprocess.run(command, text=True, capture_output=True, timeout=20, check=True)
     return json.loads(completed.stdout)
 
 
-def main():
-    home = Path.home()
-    profiles_path = Path(os.environ.get(
-        "OMARCHY_CONTROL_PANEL_PROFILES",
-        home / ".local/state/omarchy/control-panel-profiles.json",
-    ))
-    display_manager = Path(__file__).resolve().with_name("display-manager")
-    lock_path = home / ".local/state/omarchy/control-panel-display-hotplug.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
+def comparable(rows):
+    keys = ("name", "scale", "mode", "x", "y", "transform", "mirror", "disabled")
+    return [{key: row.get(key) for key in keys} for row in rows]
 
+
+def acquire(lock):
+    """Serialize concurrent callers (one bar per monitor) instead of dropping
+    them: a later caller must still see the settled topology."""
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except BlockingIOError:
+            if time.monotonic() > deadline:
+                return False
+            time.sleep(0.2)
+
+
+def physical_state(display_manager):
+    """The display-manager rows, active names and connected rows, without
+    virtual outputs: a remote screen coming or going changes nothing here."""
+    current = [row for row in run_json([str(display_manager), "state"]) if not is_virtual(row)]
+    names = {row.get("name") for row in current}
+    active = run_json(["hyprctl", "-j", "monitors"])
+    active_names = {row.get("name") for row in active if row.get("name") in names}
+    connected = [row for row in current if row.get("name") in active_names]
+    return current, active_names, connected
+
+
+def sync(startup, paths, display_manager):
+    report = {"ok": True, "layoutChanged": False, "luaChanged": False, "prefsChanged": False}
+    current, active_names, connected = physical_state(display_manager)
+    if not connected:
+        report["reason"] = "no active displays"
+        return report
+    topology = display_topology(connected)
+    last_topology = (read_text(paths["topology"]) or "").strip()
+    restore = not startup or topology != last_topology
+
+    saved = active_display_map(load_json(paths["profiles"]), connected) if restore else {}
+    wanted = place_unsaved(merge_layout(current, active_names, saved), saved) if restore else connected
+    if comparable(wanted) != comparable(connected):
+        subprocess.run([str(display_manager), "apply", json.dumps(wanted, separators=(",", ":"))],
+                       text=True, capture_output=True, timeout=45, check=True)
+        report["layoutChanged"] = True
+        current, active_names, connected = physical_state(display_manager)
+
+    prefs = load_json(paths["prefs"])
+    plan = workspace_assignments(connected, prefs.get("singleMonitorWorkspaces"),
+                                 prefs.get("multiMonitorWorkspaces"))
+
+    lua_text = read_text(paths["lua"])
+    if lua_text is not None:
+        updated = rewrite_lua(lua_text, connected, plan)
+        if updated != lua_text:
+            atomic_write(paths["lua"], updated)
+            report["luaChanged"] = True
+
+    if prefs:
+        visuals = workspace_visuals(connected, prefs)
+        if prefs.get("workspaceVisuals") != visuals:
+            prefs["workspaceVisuals"] = visuals
+            atomic_write(paths["prefs"], json.dumps(prefs, separators=(",", ":")) + "\n", 0o600)
+            report["prefsChanged"] = True
+
+    if topology != last_topology:
+        atomic_write(paths["topology"], topology + "\n")
+    report["monitors"] = sorted(active_names)
+    return report
+
+
+def main():
+    startup = "--startup" in sys.argv[1:]
+    home = Path.home()
+    state = home / ".local/state/omarchy"
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config")
+    paths = {
+        "profiles": Path(os.environ.get("OMARCHY_CONTROL_PANEL_PROFILES", state / "control-panel-profiles.json")),
+        "prefs": Path(os.environ.get("OMARCHY_CONTROL_PANEL_PREFS", state / "control-panel-prefs.json")),
+        "lua": Path(os.environ.get("OMARCHY_CONTROL_PANEL_LUA", config_home / "hypr/control-panel.lua")),
+        "topology": state / "control-panel-display-topology",
+    }
+    display_manager = Path(__file__).resolve().with_name("display-manager")
+    lock_path = state / "control-panel-display-hotplug.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with lock_path.open("w", encoding="utf-8") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            current = run_json([str(display_manager), "state"])
-            saved = active_display_map(load_json(profiles_path), current)
-            if not saved:
-                print(json.dumps({"ok": True, "changed": False, "reason": "no active profile display map"}))
+            if not acquire(lock):
+                print(json.dumps({"ok": True, "changed": False, "reason": "busy"}))
                 return 0
-
-            active = run_json(["hyprctl", "-j", "monitors"])
-            active_names = {row.get("name") for row in active if row.get("name")}
-            wanted = merge_layout(current, active_names, saved)
-            if not wanted:
-                print(json.dumps({"ok": True, "changed": False, "reason": "no active displays"}))
-                return 0
-
-            comparable = ("name", "scale", "mode", "x", "y", "transform", "mirror", "disabled")
-            before = [{key: row.get(key) for key in comparable} for row in current if row.get("name") in active_names]
-            after = [{key: row.get(key) for key in comparable} for row in wanted]
-            if before == after:
-                print(json.dumps({"ok": True, "changed": False}))
-                return 0
-
-            subprocess.run(
-                [str(display_manager), "apply", json.dumps(wanted, separators=(",", ":"))],
-                text=True,
-                capture_output=True,
-                timeout=45,
-                check=True,
-            )
-            print(json.dumps({"ok": True, "changed": True, "monitors": sorted(active_names)}))
+            print(json.dumps(sync(startup, paths, display_manager)))
             return 0
-    except BlockingIOError:
-        print(json.dumps({"ok": True, "changed": False, "reason": "already running"}))
-        return 0
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(json.dumps({"ok": False, "error": str(error)}), file=sys.stderr)
         return 1

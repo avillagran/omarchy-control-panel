@@ -1,4 +1,4 @@
-import QtQuick
+import QtQuick 6.11
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
@@ -92,19 +92,27 @@ Item {
     { title: t(uiLang, "displays"), page: 2, devOnly: false },
     { title: t(uiLang, "kblang"), page: 3, devOnly: false },
     { title: t(uiLang, "devices"), page: 4, devOnly: false },
+    { title: t(uiLang, "taskManager"), page: 8, devOnly: false },
     { title: t(uiLang, "networkDevices"), page: 5, devOnly: true },
     { title: t(uiLang, "backup"), page: 6, devOnly: true },
     { title: t(uiLang, "profiles"), page: 7, devOnly: false }
   ]
   property int currentTab: 0
+  // Tab ids are stable `page` numbers, not positions in `tabs`.
+  readonly property int profilesPage: 7
   property bool devMode: false
+  // Set once the bundled Task Manager has been offered (auto-installed), so
+  // turning it off in the panel sticks.
+  property bool taskManagerOffered: false
+  readonly property string taskManagerId: "io.github.avillagran.omarchy-task-manager"
+  readonly property string taskManagerDir: "file://" + Quickshell.env("HOME") + "/.config/omarchy/plugins/" + taskManagerId
   property var networkDevices: []
   property var selectedNetworkDevice: null
 
   function setDevMode(on) {
     root.devMode = on
     if (!on && (root.currentTab === 5 || root.currentTab === 6))
-      root.currentTab = 7
+      root.currentTab = root.profilesPage
     root.savePrefs()
   }
 
@@ -119,6 +127,9 @@ Item {
   property int workspaceIndicatorPadding: 4
   property string workspaceNumeralStyle: "arabic"
   property bool nightLightOn: false
+  // Omarchy's permanent Hyprland flags (~/.local/state/omarchy/toggles/hypr).
+  property bool squareSingleWindowOn: false
+  property bool noGapsOn: false
   property real cursorSensitivity: 0
   property real trackpadSensitivity: 0
   property real trackpadScrollFactor: 1
@@ -772,7 +783,7 @@ Item {
       L.push("-- Display layout")
       for (var di = 0; di < persistedDisplays.length; di++) {
         var d = persistedDisplays[di]
-        if (!d || !d.name) continue
+        if (!d || !d.name || WorkspaceModel.isVirtualDisplay(d)) continue
         var output = JSON.stringify(d.name)
         if (d.disabled) {
           L.push("hl.monitor({ output = " + output + ", disabled = true })")
@@ -900,6 +911,14 @@ Item {
   // This Hyprland build parses hyprlang/Lua config, so runtime changes go
   // through `hyprctl eval` with an hl.config() expression instead of the
   // legacy `hyprctl keyword`.
+  // Flip one of Omarchy's own Hyprland flags, so SUPER+CTRL+BACKSPACE and
+  // friends stay in sync with the panel.
+  function setHyprFlag(flag, on) {
+    if (flag === "single-window-aspect-ratio") root.squareSingleWindowOn = on
+    else if (flag === "window-no-gaps") root.noGapsOn = on
+    root.run("omarchy-hyprland-toggle " + flag + " " + (on ? "on" : "off"))
+  }
+
   function hyprSet(section, key, valueLiteral) {
     Quickshell.execDetached([
       "hyprctl", "eval",
@@ -1473,7 +1492,7 @@ Item {
     var list = root.displays && root.displays.length ? root.displays : root.saved.displays
     for (var i = 0; i < list.length; i++) {
       var d = list[i]
-      if (!d || !d.name) continue
+      if (!d || !d.name || WorkspaceModel.isVirtualDisplay(d)) continue
       var identity = String(d.fingerprint || d.name)
       map[identity] = {
         name: d.name,
@@ -1492,7 +1511,7 @@ Item {
 
   function currentDisplayTopology() {
     var list = root.displays && root.displays.length ? root.displays : root.saved.displays
-    return list.filter(function(d) { return d && !d.disabled })
+    return list.filter(function(d) { return d && !d.disabled && !WorkspaceModel.isVirtualDisplay(d) })
       .map(function(d) { return String(d.fingerprint || d.name || "") })
       .filter(function(identity) { return identity !== "" })
       .sort().join("::")
@@ -1756,7 +1775,7 @@ Item {
     // through displayApplyPreview (Keep/Revert) because a bad mode can blank
     // the screen.
     root.displayApplyInstant()
-    if (root.displayAwaitingConfirmation) root.currentTab = root.tabs.length - 1
+    if (root.displayAwaitingConfirmation) root.currentTab = root.profilesPage
   }
 
   function applyDisplayScaleInstant(scale) {
@@ -1892,6 +1911,7 @@ Item {
       workspaceNumeralStyle = WorkspaceModel.normalizeNumeralStyle(d.workspaceNumeralStyle)
       missionControlEnabled = d.missionControlEnabled === true
       devMode = d.devMode === true
+      taskManagerOffered = d.taskManagerOffered === true
       trackpadFeelConfigured = d.trackpadFeelConfigured === true
       saved.trackpadFeelConfigured = trackpadFeelConfigured
       scrollFeelConfigured = d.scrollFeelConfigured === true
@@ -1970,6 +1990,7 @@ Item {
       workspaceNumeralStyle: workspaceNumeralStyle,
       missionControlEnabled: missionControlEnabled,
       devMode: devMode,
+      taskManagerOffered: taskManagerOffered,
       trackpadFeelConfigured: trackpadFeelConfigured,
       scrollFeelConfigured: scrollFeelConfigured,
       scrollIgnoreMode: scrollIgnoreMode,
@@ -2064,6 +2085,8 @@ Item {
       "echo ACCEL=$(hyprctl getoption input:accel_profile -j | jq -r .str); " +
       "echo KB=$(hyprctl getoption input:kb_layout -j | jq -r .str); " +
       "echo NL=$(omarchy-toggle-nightlight --status 2>/dev/null | jq -r .enabled); " +
+      "echo SQW=$(omarchy-hyprland-toggle-enabled single-window-aspect-ratio && echo yes || echo no); " +
+      "echo NOGAPS=$(omarchy-hyprland-toggle-enabled window-no-gaps && echo yes || echo no); " +
       "echo WSA=$(hyprctl animations 2>/dev/null | awk '/^[[:space:]]*name: workspaces$/{f=1;next} f&&/enabled:/{print $2; exit}'); " +
       "echo LOCL=$(localectl status | sed -n 's/.*LANG=//p' | head -1); " +
       "echo TPG=$(test -f ~/.config/omarchy/plugins/user.trackpad-gestures/apply-gestures.sh && echo yes || echo no); " +
@@ -2091,6 +2114,8 @@ Item {
           else if (k === "ACCEL") { root.flatAccel = v.indexOf("flat") === 0 }
           else if (k === "KB") { root.kbLayout = v || "us" }
           else if (k === "NL") root.nightLightOn = v === "true"
+          else if (k === "SQW") root.squareSingleWindowOn = v === "yes"
+          else if (k === "NOGAPS") root.noGapsOn = v === "yes"
           else if (k === "WSA") { var n = parseInt(v); if (n === 0 || n === 1) { root.wsAnimationOn = n >= 1 } }
           else if (k === "LOCL" && v !== "") root.currentLocale = v
           else if (k === "TPG") root.trackpadGesturesInstalled = v === "yes"
@@ -2367,8 +2392,12 @@ Item {
           // by Hyprland (often overlapping the others). Snap it flush against the
           // existing layout (which does not move) and apply, so a freshly
           // connected monitor never lands overlapped (which would error and restart).
+          // Virtual outputs come and go with the program that owns them;
+          // they never count as a topology change here.
           var currentNames = []
-          for (var ci = 0; ci < parsed.length; ci++) currentNames.push(parsed[ci].name)
+          for (var ci = 0; ci < parsed.length; ci++) {
+            if (!WorkspaceModel.isVirtualDisplay(parsed[ci])) currentNames.push(parsed[ci].name)
+          }
           // Only act when the monitor TOPOLOGY actually changed (a name appeared
           // or disappeared). Comparing against displayKnownNames avoids re-applying
           // on every periodic refresh, which would loop: displayApplyInstant() ->
@@ -2392,7 +2421,7 @@ Item {
                 byName[parsed[bi].name] = parsed[bi]
                 byIdentity[String(parsed[bi].fingerprint || parsed[bi].name)] = parsed[bi]
               }
-              var physicalTopology = parsed.filter(function(d) { return d && !d.disabled })
+              var physicalTopology = parsed.filter(function(d) { return d && !d.disabled && !WorkspaceModel.isVirtualDisplay(d) })
                 .map(function(d) { return String(d.fingerprint || d.name || "") })
                 .filter(function(identity) { return identity !== "" })
                 .sort().join("::")
@@ -2427,7 +2456,8 @@ Item {
             var arranged = parsed
             var changed = false
             for (var ni = 0; ni < parsed.length; ni++) {
-              if (root.displayKnownNames.indexOf(parsed[ni].name) < 0) {
+              if (root.displayKnownNames.indexOf(parsed[ni].name) < 0
+                  && !WorkspaceModel.isVirtualDisplay(parsed[ni])) {
                 var before = JSON.stringify(arranged[ni])
                 arranged = DisplayModel.snapDraggedFlush(arranged, ni)
                 if (JSON.stringify(arranged[ni]) !== before) changed = true
@@ -2438,6 +2468,11 @@ Item {
               root.saved.displays = DisplayModel.clone(arranged)
               root.displayApplyInstant()
             }
+            // The persisted layout must follow the connected set even when no
+            // geometry changed. Otherwise an unplugged monitor stays in
+            // saved.displays and the next writeLua() keeps its hl.monitor and
+            // workspace rules, binding workspaces to an absent output.
+            root.saved.displays = DisplayModel.clone(arranged)
           }
           root.displayKnownNames = currentNames
           var workspaceTopologyKey = currentNames.slice().sort().join("|")
@@ -2548,7 +2583,7 @@ Item {
         root.displaySecondsRemaining = 15
         root.displayStatusMessage = "Confirm display settings?"
         // Make sure the user lands on the Profiles tab to see the dialog.
-        root.currentTab = root.tabs.length - 1
+        root.currentTab = root.profilesPage
         console.warn("[CP] pending restored, awaiting=true")
       } else {
         root.continueOpen()
@@ -2628,6 +2663,38 @@ Item {
     }
   }
 
+  // Keyboard cursor: Down/j and Up/k move between the setting rows of the
+  // visible page, like the panel cursor in Omarchy's own panels. Rows are the
+  // focusable controls (ToggleRow, SliderRow, dropdowns); hidden pages drop
+  // out of Qt's focus chain on their own.
+  function isWithin(item) {
+    for (var p = item; p; p = p.parent)
+      if (p === root) return true
+    return false
+  }
+
+  function moveCursor(forward) {
+    var start = Window.activeFocusItem
+    var item = start
+    for (var i = 0; i < 400; i++) {
+      item = item ? item.nextItemInFocusChain(forward) : root.nextItemInFocusChain(forward)
+      if (!item || item === start) return
+      if (item !== keyCatcher && root.isWithin(item)) {
+        item.forceActiveFocus(Qt.TabFocusReason)
+        return
+      }
+    }
+  }
+
+  Keys.onPressed: function(event) {
+    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+    var forward = event.key === Qt.Key_Down || event.key === Qt.Key_J
+    var back = event.key === Qt.Key_Up || event.key === Qt.Key_K
+    if (!forward && !back) return
+    root.moveCursor(forward)
+    event.accepted = true
+  }
+
   implicitWidth: Style.space(620)
   implicitHeight: contentColumn.implicitHeight
   Item { id: buttonPlaceholder; anchors.fill: parent }
@@ -2640,9 +2707,16 @@ Item {
       id: keyCatcher
       Layout.fillWidth: true
       Layout.preferredHeight: 0
+      // The desktop window owns Escape and Ctrl+Tab and keeps Tab as plain
+      // focus movement; rows use the cursor below.
+      blocked: root.externalNavigation
+      onMoveRequested: function(dx, dy) { if (dy !== 0) root.moveCursor(dy > 0) }
       onCloseRequested: root.close()
       onTabRequested: function(direction) {
-        root.currentTab = (root.currentTab + direction + root.tabs.length) % root.tabs.length
+        var pages = root.tabs.filter(function(tab) { return !tab.devOnly || root.devMode })
+          .map(function(tab) { return tab.page })
+        var at = Math.max(0, pages.indexOf(root.currentTab))
+        root.currentTab = pages[(at + direction + pages.length) % pages.length]
       }
     }
 
@@ -2684,18 +2758,18 @@ Item {
         spacing: Style.space(4)
 
         Repeater {
-          model: root.tabs
+          model: root.tabs.filter(function(tab) { return !tab.devOnly || root.devMode })
 
           Button {
             required property var modelData
             required property int index
             text: modelData.title
-            selected: root.currentTab === index
+            selected: root.currentTab === modelData.page
             fontSize: Style.font.caption
             horizontalPadding: Style.space(6)
             verticalPadding: Style.space(3)
             foreground: root.fg
-            onClicked: root.currentTab = index
+            onClicked: root.currentTab = modelData.page
           }
         }
       }
@@ -2708,7 +2782,9 @@ Item {
         id: topConfirmRow
         width: parent.width
         spacing: Style.space(16)
-        visible: root.displayAwaitingConfirmation
+        // The desktop window shows the same prompt in a footer outside the
+        // scroller; here it serves the bar popup only.
+        visible: root.displayAwaitingConfirmation && !root.externalNavigation
         opacity: visible ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 160 } }
 
@@ -2763,20 +2839,19 @@ Item {
         visible: root.currentTab === 3
         spacing: Style.space(8)
 
-        RowLayout {
-          width: parent.width
-          Text { text: "󰌌"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title }
-          Text { Layout.fillWidth: true; text: root.t(root.uiLang, "kblang"); color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true }
-          Button { text: root.t(root.uiLang, "profileSave"); foreground: root.fg; bordered: true; enabled: root.activeProfileId !== "default" && root.activeProfileId !== "retina"; onClicked: root.saveCurrentToActiveProfile() }
+        PageHeader {
+          title: root.t(root.uiLang, "kblang")
+          subtitle: root.t(root.uiLang, "kblangSubtitle")
+          foreground: root.fg
+          fontFamily: root.fontFamily
         }
 
-        Text {
-          width: parent.width
-          text: root.t(root.uiLang, "sysLanguage") + " — " + (root.currentLocale || "?")
-          color: root.fg
-          opacity: 0.7
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
+        GroupHeader {
+          topGap: Style.space(4)
+          title: root.t(root.uiLang, "sysLanguage")
+          note: root.currentLocale || "?"
+          foreground: root.fg
+          fontFamily: root.fontFamily
         }
 
         SearchableDropdown {
@@ -2878,13 +2953,12 @@ Item {
           }
         }
 
-        Text {
-          width: parent.width
-          text: root.t(root.uiLang, "physKeyboard") + " — " + root.t(root.uiLang, "curLayout").toLowerCase() + ": " + root.kbLayout
-          color: root.fg
-          opacity: 0.7
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
+        GroupHeader {
+          topGap: Style.space(12)
+          title: root.t(root.uiLang, "physKeyboard")
+          note: root.t(root.uiLang, "curLayout") + " · " + root.kbLayout
+          foreground: root.fg
+          fontFamily: root.fontFamily
         }
 
         SearchableDropdown {
@@ -2896,26 +2970,17 @@ Item {
           onChanged: function(v) { root.applyKbLayout(v) }
         }
 
-        Column {
-          width: parent.width
+        SliderRow {
           visible: root.hasKbBacklight
-          spacing: Style.space(8)
-
-          Text {
-            text: root.t(root.uiLang, "kbdBacklight") + ": " + root.kbBacklightPct + "%"
-            color: root.fg
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-          }
-
-          Slider {
-            width: parent.width
-            from: 0
-            to: 100
-            stepSize: 1
-            value: root.kbBacklightPct
-            onMoved: root.setKbBacklight(value)
-          }
+          label: root.t(root.uiLang, "kbdBacklight")
+          suffix: "%"
+          from: 0
+          to: 100
+          stepSize: 1
+          value: root.kbBacklightPct
+          foreground: root.fg
+          fontFamily: root.fontFamily
+          onMoved: root.setKbBacklight(value)
         }
       }
 
@@ -2923,58 +2988,64 @@ Item {
       Column {
         Layout.fillWidth: true
         visible: root.currentTab === 0
-        spacing: Style.space(10)
+        spacing: 0
 
-        RowLayout {
-          width: parent.width - Style.space(12)
-          spacing: Style.space(12)
-          Text {
-            text: "󰍽"
-            color: root.fg
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.display
-          }
-          Text {
-            Layout.fillWidth: true
-            text: root.t(root.uiLang, "trackpad")
-            color: root.fg
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.title
-            font.bold: true
-          }
-          Button {
-            text: root.t(root.uiLang, "profileSave")
-            foreground: root.fg
-            fontFamily: root.fontFamily
-            bordered: true
-            enabled: root.activeProfileId !== "default" && root.activeProfileId !== "retina"
-            onClicked: root.saveCurrentToActiveProfile()
-          }
+        PageHeader {
+          title: root.t(root.uiLang, "trackpad")
+          subtitle: (root.trackpadNames.length ? root.trackpadNames[0] + " · " : "")
+            + root.t(root.uiLang, "appliesInstantly")
+          foreground: root.fg
+          fontFamily: root.fontFamily
         }
 
-        Text {
-          text: root.t(root.uiLang, "globalPointerSensitivity") + ": " + Number(root.cursorSensitivity).toFixed(2)
-          color: root.fg
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
+        GroupHeader {
+          topGap: Style.space(10)
+          title: root.t(root.uiLang, "groupPointer")
+          foreground: root.fg
+          fontFamily: root.fontFamily
         }
 
-        Slider {
-          width: parent.width
+        SliderRow {
+          separator: false
+          label: root.t(root.uiLang, "globalPointerSensitivity")
+          decimals: 2
           from: -1
           to: 1
           stepSize: 0.05
           value: root.cursorSensitivity
+          foreground: root.fg
+          fontFamily: root.fontFamily
           onMoved: root.applySensitivity(value)
         }
+
+        SliderRow {
+          label: root.t(root.uiLang, "cursorSize")
+          suffix: "px"
+          from: 8
+          to: 64
+          stepSize: 1
+          value: root.cursorSize
+          foreground: root.fg
+          fontFamily: root.fontFamily
+          onMoved: root.applyCursorSize(value)
+        }
+
+        ToggleRow {
+          label: root.t(root.uiLang, "globalFlatAccel")
+          checked: root.flatAccel
+          onClicked: { root.flatAccel = !root.flatAccel; root.hyprSet("input", "accel_profile", root.flatAccel ? '"flat"' : '"adaptive"'); root.writeLua() }
+        }
+
+        Item { width: 1; height: Style.space(14) }
 
         Rectangle {
           id: pointerFeelCard
           width: parent.width
           height: pointerFeelContent.implicitHeight + Style.space(24)
           radius: Style.cornerRadius
-          color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.035)
-          border.color: root.pointerFeelDirty ? Color.accent : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.16)
+          // Contextual depth: one tone step and a border, never a shadow.
+          color: Qt.alpha(root.fg, 0.035)
+          border.color: root.pointerFeelDirty ? Color.accent : Qt.alpha(root.fg, 0.16)
           border.width: 1
           enabled: root.pointerFeelReady
           opacity: root.pointerFeelReady ? 1 : 0.55
@@ -3001,8 +3072,11 @@ Item {
                   font.pixelSize: Style.font.body
                   font.bold: true
                 }
+                // The page subtitle already names the device; only its
+                // absence needs saying here.
                 Text {
                   width: parent.width
+                  visible: root.trackpadNames.length === 0
                   elide: Text.ElideRight
                   text: (root.trackpadNames.length ? "●  " + root.trackpadNames[0] : "○  " + root.t(root.uiLang, "pointerFeelNoDevice"))
                   color: root.fg
@@ -3045,39 +3119,30 @@ Item {
               font.pixelSize: Style.font.caption
             }
 
-            Text {
-              text: root.t(root.uiLang, "pointerFeelPointer") + " · "
-                + root.t(root.uiLang, PointerFeelModel.pointerLabel(root.trackpadSensitivity))
-                + "  " + Number(root.trackpadSensitivity).toFixed(2)
-              color: root.fg
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-            }
-
-            Slider {
-              width: parent.width
+            SliderRow {
+              label: root.t(root.uiLang, "pointerFeelPointer")
+              note: root.t(root.uiLang, PointerFeelModel.pointerLabel(root.trackpadSensitivity))
+              decimals: 2
               from: -1
               to: 1
               stepSize: 0.05
               value: root.trackpadSensitivity
+              foreground: root.fg
+              fontFamily: root.fontFamily
               onMoved: root.userChangePointerFeel(value, root.trackpadScrollFactor, root.trackpadAccelProfile)
             }
 
-            Text {
-              text: root.t(root.uiLang, "pointerFeelScroll") + " · "
-                + root.t(root.uiLang, PointerFeelModel.scrollLabel(root.trackpadScrollFactor))
-                + "  " + Number(root.trackpadScrollFactor).toFixed(2) + "×"
-              color: root.fg
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-            }
-
-            Slider {
-              width: parent.width
+            SliderRow {
+              label: root.t(root.uiLang, "pointerFeelScroll")
+              note: root.t(root.uiLang, PointerFeelModel.scrollLabel(root.trackpadScrollFactor))
+              decimals: 2
+              suffix: "×"
               from: 0.1
               to: 2
               stepSize: 0.05
               value: root.trackpadScrollFactor
+              foreground: root.fg
+              fontFamily: root.fontFamily
               onMoved: root.userChangePointerFeel(root.trackpadSensitivity, value, root.trackpadAccelProfile)
             }
 
@@ -3134,6 +3199,139 @@ Item {
           }
         }
 
+        GroupHeader {
+          title: root.t(root.uiLang, "groupGestures")
+          foreground: root.fg
+          fontFamily: root.fontFamily
+        }
+
+        ToggleRow {
+          separator: false
+          label: root.t(root.uiLang, "tapClick")
+          checked: root.tapToClick
+          onClicked: { root.setTapToClick(!root.tapToClick) }
+        }
+
+        ToggleRow {
+          label: root.t(root.uiLang, "swipe3")
+          checked: root.swipe3On
+          onClicked: { root.setSwipe3(!root.swipe3On) }
+        }
+
+        ToggleRow {
+          label: root.t(root.uiLang, "middleButtonScreenshotOff")
+          checked: root.middleBtnOff
+          onClicked: { root.setMiddleBtnOff(!root.middleBtnOff) }
+        }
+
+        GroupHeader {
+          title: root.t(root.uiLang, "groupScrolling")
+          foreground: root.fg
+          fontFamily: root.fontFamily
+        }
+
+        ToggleRow {
+          separator: false
+          label: root.t(root.uiLang, "invScroll")
+          checked: root.naturalScroll
+          onClicked: { root.setNaturalScroll(!root.naturalScroll, false) }
+        }
+
+        ToggleRow {
+          label: root.t(root.uiLang, "inertia")
+          description: "Terminal · " + (root.defaultTerm !== "" ? root.defaultTerm : "?")
+          checked: root.inertiaOn
+          onClicked: { root.setInertia(!root.inertiaOn) }
+        }
+
+        Item {
+          width: 1
+          height: Style.space(6)
+          visible: root.inertiaOn && (!root.kittyInstalled || root.defaultTerm !== "kitty")
+        }
+
+        Button {
+          width: parent.width
+          visible: root.inertiaOn && !root.kittyInstalled
+          leftAlign: true
+          fontFamily: root.fontFamily
+          iconText: "󰣀"
+          text: root.t(root.uiLang, "kittyInstall")
+          selected: true
+          foreground: root.fg
+          onClicked: root.switchToKitty()
+        }
+
+        Button {
+          width: parent.width
+          visible: root.inertiaOn && root.kittyInstalled && root.defaultTerm !== "kitty"
+          leftAlign: true
+          iconText: "󰆍"
+          text: root.t(root.uiLang, "useKitty")
+          selected: true
+          foreground: root.fg
+          onClicked: root.switchToKitty()
+        }
+
+        Item { width: 1; height: Style.space(14) }
+
+        // Real input, after Hyprland applied direction, travel and coasting.
+        Rectangle {
+          width: parent.width
+          height: scrollTestContent.implicitHeight + Style.space(24)
+          radius: Style.cornerRadius
+          color: Qt.alpha(root.fg, 0.035)
+          border.color: Qt.alpha(root.fg, 0.16)
+          border.width: 1
+
+          Column {
+            id: scrollTestContent
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: Style.space(12)
+            spacing: Style.space(8)
+
+            Row {
+              width: parent.width
+              Text {
+                width: parent.width - scrollTestNote.implicitWidth
+                text: root.t(root.uiLang, "scrollTestTitle")
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.bold: true
+                elide: Text.ElideRight
+              }
+              Text {
+                id: scrollTestNote
+                text: root.t(root.uiLang, "scrollTestNote")
+                color: Qt.alpha(root.fg, 0.62)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                anchors.verticalCenter: parent.verticalCenter
+              }
+            }
+
+            ScrollTestPad {
+              width: parent.width
+              foreground: root.fg
+              fontFamily: root.fontFamily
+            }
+
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              text: root.t(root.uiLang, "scrollTestHint")
+              color: Qt.alpha(root.fg, 0.62)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+          }
+        }
+
+        Item { width: 1; height: Style.space(14) }
+
         Text {
           width: parent.width
           visible: !root.devMode
@@ -3143,6 +3341,8 @@ Item {
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
         }
+
+        Item { width: 1; height: Style.space(8); visible: !root.devMode }
 
         Button {
           width: parent.width
@@ -3164,7 +3364,7 @@ Item {
           visible: root.devMode
           height: visible ? scrollFeelContent.implicitHeight + Style.space(24) : 0
           radius: Style.cornerRadius
-          color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.035)
+          color: Qt.alpha(root.fg, 0.035)
           border.color: Color.urgent
           border.width: 1
           enabled: root.scrollPatchSupported
@@ -3325,19 +3525,14 @@ Item {
               font.pixelSize: Style.font.caption
             }
 
-            Text {
+            SliderRow {
               visible: root.scrollAccelProfile > 0
-              text: root.t(root.uiLang, "scrollFeelSpeed") + " · "
-                + root.t(root.uiLang, ScrollFeelModel.speedLabel(root.scrollAccelSpeed))
-                + "  " + Number(root.scrollAccelSpeed).toFixed(2) + "×"
-              color: root.fg
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-            }
-
-            Slider {
-              width: parent.width
-              visible: root.scrollAccelProfile > 0
+              label: root.t(root.uiLang, "scrollFeelSpeed")
+              note: root.t(root.uiLang, ScrollFeelModel.speedLabel(root.scrollAccelSpeed))
+              decimals: 2
+              suffix: "×"
+              foreground: root.fg
+              fontFamily: root.fontFamily
               from: 0.2
               to: 3.0
               stepSize: 0.05
@@ -3346,19 +3541,14 @@ Item {
                 root.scrollAccelMax, root.scrollDecel, true)
             }
 
-            Text {
+            SliderRow {
               visible: root.scrollAccelProfile > 0
-              text: root.t(root.uiLang, "scrollFeelMax") + " · "
-                + root.t(root.uiLang, ScrollFeelModel.maxLabel(root.scrollAccelMax))
-                + "  " + Number(root.scrollAccelMax).toFixed(2) + "×"
-              color: root.fg
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-            }
-
-            Slider {
-              width: parent.width
-              visible: root.scrollAccelProfile > 0
+              label: root.t(root.uiLang, "scrollFeelMax")
+              note: root.t(root.uiLang, ScrollFeelModel.maxLabel(root.scrollAccelMax))
+              decimals: 2
+              suffix: "×"
+              foreground: root.fg
+              fontFamily: root.fontFamily
               from: 1.0
               to: 10.0
               stepSize: 0.25
@@ -3367,18 +3557,12 @@ Item {
                 root.scrollAccelSpeed, value, root.scrollDecel, true)
             }
 
-            Text {
-              text: root.t(root.uiLang, "scrollFeelCoast") + " · "
-                + (root.scrollDecel === 0
-                  ? root.t(root.uiLang, "scrollFeelCoastOff")
-                  : root.scrollDecel + " ms")
-              color: root.fg
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-            }
-
-            Slider {
-              width: parent.width
+            SliderRow {
+              label: root.t(root.uiLang, "scrollFeelCoast")
+              note: root.scrollDecel === 0 ? root.t(root.uiLang, "scrollFeelCoastOff") : ""
+              suffix: "ms"
+              foreground: root.fg
+              fontFamily: root.fontFamily
               from: 0
               to: 3000
               stepSize: 50
@@ -3389,234 +3573,124 @@ Item {
           }
         }
 
-        Text {
-          text: root.t(root.uiLang, "cursorSize") + ": " + root.cursorSize
-          color: root.fg
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-
-        Slider {
-          width: parent.width
-          from: 8
-          to: 64
-          stepSize: 1
-          value: root.cursorSize
-          onMoved: root.applyCursorSize(value)
-        }
-
-        ToggleRow {
-          label: root.t(root.uiLang, "invScroll")
-          checked: root.naturalScroll
-          onClicked: { root.setNaturalScroll(!root.naturalScroll, false) }
-        }
-
-        ToggleRow {
-          label: root.t(root.uiLang, "globalFlatAccel")
-          checked: root.flatAccel
-          onClicked: { root.flatAccel = !root.flatAccel; root.hyprSet("input", "accel_profile", root.flatAccel ? '"flat"' : '"adaptive"'); root.writeLua() }
-        }
-
-        ToggleRow {
-          label: root.t(root.uiLang, "tapClick")
-          checked: root.tapToClick
-          onClicked: { root.setTapToClick(!root.tapToClick) }
-        }
-
-        ToggleRow {
-          label: root.t(root.uiLang, "swipe3")
-          checked: root.swipe3On
-          onClicked: { root.setSwipe3(!root.swipe3On) }
-        }
-
-        ToggleRow {
-          label: root.t(root.uiLang, "middleButtonScreenshotOff")
-          checked: root.middleBtnOff
-          onClicked: { root.setMiddleBtnOff(!root.middleBtnOff) }
-        }
-
-        PanelSeparator { foreground: root.fg }
-
-        ToggleRow {
-          label: root.t(root.uiLang, "inertia")
-          checked: root.inertiaOn
-          onClicked: { root.setInertia(!root.inertiaOn) }
-        }
-
-        Text {
-          width: parent.width
-          text: "Terminal · " + (root.defaultTerm !== "" ? root.defaultTerm : "?")
-          color: root.fg
-          opacity: 0.7
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
-        Button {
-          width: parent.width
-          visible: root.inertiaOn && !root.kittyInstalled
-          leftAlign: true
-          fontFamily: root.fontFamily
-          iconText: "󰣀"
-          text: root.t(root.uiLang, "kittyInstall")
-          selected: true
-          foreground: root.fg
-          onClicked: root.switchToKitty()
-        }
-
-        Button {
-          width: parent.width
-          visible: root.inertiaOn && root.kittyInstalled && root.defaultTerm !== "kitty"
-          leftAlign: true
-          iconText: "󰆍"
-          text: root.t(root.uiLang, "useKitty")
-          selected: true
-          foreground: root.fg
-          onClicked: root.switchToKitty()
-        }
       }
 
       // ---------- Windows ----------
       Column {
         Layout.fillWidth: true
         visible: root.currentTab === 1
-        spacing: Style.space(10)
+        spacing: 0
 
-        RowLayout {
-          width: parent.width
-          Text { text: "󰖯"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title }
-          Text { Layout.fillWidth: true; text: root.t(root.uiLang, "windows"); color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true }
-          Button { text: root.t(root.uiLang, "profileSave"); foreground: root.fg; bordered: true; enabled: root.activeProfileId !== "default" && root.activeProfileId !== "retina"; onClicked: root.saveCurrentToActiveProfile() }
+        PageHeader {
+          title: root.t(root.uiLang, "windows")
+          subtitle: root.t(root.uiLang, "windowsSubtitle") + " · " + root.t(root.uiLang, "appliesInstantly")
+          foreground: root.fg
+          fontFamily: root.fontFamily
         }
 
-        Text {
-          text: root.t(root.uiLang, "gapIn") + ": " + root.gapsIn + "px   ·   " + root.t(root.uiLang, "gapOut") + ": " + root.gapsOut + "px"
-          color: root.fg
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
+        GroupHeader {
+          topGap: Style.space(10)
+          title: root.t(root.uiLang, "groupLayout")
+          foreground: root.fg
+          fontFamily: root.fontFamily
         }
 
-        Slider {
-          width: parent.width
+        SliderRow {
+          separator: false
+          label: root.t(root.uiLang, "gapIn")
+          suffix: "px"
           from: 0
           to: 40
           stepSize: 1
           value: root.gapsIn
+          foreground: root.fg
+          fontFamily: root.fontFamily
           onMoved: {
             root.gapsIn = value
             root.applyGaps("gaps_in", value)
           }
         }
 
-        Slider {
-          width: parent.width
+        SliderRow {
+          label: root.t(root.uiLang, "gapOut")
+          suffix: "px"
           from: 0
           to: 40
           stepSize: 1
           value: root.gapsOut
+          foreground: root.fg
+          fontFamily: root.fontFamily
           onMoved: {
             root.gapsOut = value
             root.applyGaps("gaps_out", value)
           }
         }
 
-        Text {
-          text: root.t(root.uiLang, "fontSize") + ": " + root.fontBaseSize + "px"
-          color: root.fg
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-
-        Slider {
-          width: parent.width
+        SliderRow {
+          label: root.t(root.uiLang, "fontSize")
+          suffix: "px"
           from: 9
           to: 26
           stepSize: 1
           value: root.fontBaseSize
+          foreground: root.fg
+          fontFamily: root.fontFamily
           onMoved: root.applyFontSize(value)
         }
 
-        PanelSeparator { visible: root.devMode; foreground: Color.urgent }
-
         ToggleRow {
-          label: root.missionControlBusy ? root.t(root.uiLang, "missionControlInstalling") : root.t(root.uiLang, "missionControl")
-          visible: root.devMode
-          foreground: Color.urgent
-          checked: root.missionControlEnabled
-          enabled: !root.missionControlBusy
-          onClicked: root.setMissionControl(!root.missionControlEnabled)
+          label: root.t(root.uiLang, "singleWindowSquare")
+          description: root.t(root.uiLang, "singleWindowSquareHint")
+          checked: root.squareSingleWindowOn
+          onClicked: root.setHyprFlag("single-window-aspect-ratio", !root.squareSingleWindowOn)
+        }
+        ToggleRow {
+          label: root.t(root.uiLang, "noGaps")
+          checked: root.noGapsOn
+          onClicked: root.setHyprFlag("window-no-gaps", !root.noGapsOn)
         }
 
-        Text {
-          visible: root.devMode
-          width: parent.width
-          text: root.t(root.uiLang, "missionControlHint")
-          color: Qt.darker(root.fg, 1.35)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
-        }
-
-        Text {
-          visible: root.devMode && root.missionControlError !== ""
-          width: parent.width
-          text: root.missionControlError
-          color: Color.urgent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
+        GroupHeader {
+          title: root.t(root.uiLang, "workspaceSetup")
+          foreground: root.fg
+          fontFamily: root.fontFamily
         }
 
         Text {
           width: parent.width
-          text: root.t(root.uiLang, "workspaceSetup")
-          color: root.fg
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-          font.bold: true
-        }
-
-        Text {
-          width: parent.width
+          topPadding: Style.space(8)
+          bottomPadding: Style.space(4)
           text: WorkspaceModel.summary(root.displays, root.singleMonitorWorkspaces, root.multiMonitorWorkspaces)
-          color: root.fg
-          opacity: 0.65
+          color: Qt.alpha(root.fg, 0.62)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           wrapMode: Text.WordWrap
         }
 
-        Text {
-          text: root.t(root.uiLang, "oneMonitorWorkspaces") + ": " + root.singleMonitorWorkspaces
-          color: root.fg
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-
-        Slider {
-          width: parent.width
+        SliderRow {
+          separator: false
+          label: root.t(root.uiLang, "oneMonitorWorkspaces")
           from: 1
           to: 10
           stepSize: 1
           value: root.singleMonitorWorkspaces
+          foreground: root.fg
+          fontFamily: root.fontFamily
           onMoved: root.singleMonitorWorkspaces = Math.round(value)
         }
 
-        Text {
-          text: root.t(root.uiLang, "multiMonitorWorkspaces") + ": " + root.multiMonitorWorkspaces
-          color: root.fg
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-
-        Slider {
-          width: parent.width
+        SliderRow {
+          label: root.t(root.uiLang, "multiMonitorWorkspaces")
           from: 1
           to: 10
           stepSize: 1
           value: root.multiMonitorWorkspaces
+          foreground: root.fg
+          fontFamily: root.fontFamily
           onMoved: root.multiMonitorWorkspaces = Math.round(value)
         }
+
+        Item { width: 1; height: Style.space(8) }
 
         Button {
           width: parent.width
@@ -3627,19 +3701,24 @@ Item {
         }
       }
 
-      PanelSeparator { foreground: root.fg }
-
       // ---------- Devices ----------
       Column {
         Layout.fillWidth: true
         visible: root.currentTab === 4
-        spacing: Style.space(10)
+        spacing: Style.space(8)
 
-        RowLayout {
-          width: parent.width
-          Text { text: "󰍹"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title }
-          Text { Layout.fillWidth: true; text: root.t(root.uiLang, "devices"); color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true }
-          Button { text: root.t(root.uiLang, "profileSave"); foreground: root.fg; bordered: true; enabled: root.activeProfileId !== "default" && root.activeProfileId !== "retina"; onClicked: root.saveCurrentToActiveProfile() }
+        PageHeader {
+          title: root.t(root.uiLang, "devices")
+          subtitle: root.t(root.uiLang, "devicesSubtitle")
+          foreground: root.fg
+          fontFamily: root.fontFamily
+        }
+
+        GroupHeader {
+          topGap: Style.space(4)
+          title: root.t(root.uiLang, "apfsTitle")
+          foreground: root.fg
+          fontFamily: root.fontFamily
         }
 
         Button {
@@ -3739,6 +3818,14 @@ Item {
         }
       }
 
+      // ---------- Task Manager (bundled omarchy-task-manager plugin) ----------
+      TaskManagerPage {
+        Layout.fillWidth: true
+        visible: root.currentTab === 8
+        active: root.opened && root.currentTab === 8
+        core: root
+      }
+
       // ---------- Network devices (manual scans only) ----------
       NetworkDevicesPage {
         Layout.fillWidth: true
@@ -3760,25 +3847,18 @@ Item {
         visible: root.currentTab === 7
         spacing: Style.space(10)
 
-        RowLayout {
+        PageHeader {
           Layout.fillWidth: true
-          spacing: Style.space(12)
-          Text {
-            text: "󰆸"
-            color: root.fg
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.title
-          }
-          Text {
-            Layout.fillWidth: true
-            text: root.t(root.uiLang, "profiles")
-            color: root.fg
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.title
-            font.bold: true
-          }
+          title: root.t(root.uiLang, "profiles")
+          subtitle: root.t(root.uiLang, "profilesSubtitle")
+          foreground: root.fg
+          fontFamily: root.fontFamily
+
           ToggleRow {
-            Layout.preferredWidth: Style.space(150)
+            width: Style.space(140)
+            separator: false
+            topPadding: 0
+            bottomPadding: 0
             label: "Dev mode"
             checked: root.devMode
             foreground: Color.urgent
@@ -3786,12 +3866,37 @@ Item {
           }
         }
 
+        // Settings apply as they change; storing them in a profile is its
+        // own deliberate step, available here instead of on every page.
+        RowLayout {
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(4)
+          spacing: Style.space(12)
+          Text {
+            Layout.fillWidth: true
+            text: root.t(root.uiLang, "profilesSaveHint")
+            color: Qt.alpha(root.fg, 0.62)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+          Button {
+            text: root.t(root.uiLang, "profileSave")
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            bordered: true
+            enabled: root.activeProfileId !== "default" && root.activeProfileId !== "retina"
+            onClicked: root.saveCurrentToActiveProfile()
+          }
+        }
+
         // Keep/Revert for pending display changes is also available on the
-        // Profiles tab so the user can confirm after applying a profile.
+        // Profiles tab so the user can confirm after applying a profile. The
+        // desktop window already shows it in a footer outside the scroller.
         Column {
           width: parent.width
           spacing: Style.space(16)
-          visible: root.displayAwaitingConfirmation
+          visible: root.displayAwaitingConfirmation && !root.externalNavigation
           opacity: visible ? 1 : 0
           Behavior on opacity { NumberAnimation { duration: 180 } }
 
@@ -3852,8 +3957,8 @@ Item {
                 required property var modelData
                 width: parent.width
                 height: profileCard.height + Style.space(12)
-                color: root.activeProfileId === modelData.id ? Style.selectedFillFor(root.fg, Color.accent) : Color.popups.background
-                border.color: root.activeProfileId === modelData.id ? Color.accent : "transparent"
+                color: root.activeProfileId === modelData.id ? Style.selectedFillFor(root.fg, Color.accent) : "transparent"
+                border.color: root.activeProfileId === modelData.id ? Color.accent : Qt.alpha(root.fg, 0.16)
                 border.width: Style.space(1)
                 radius: Style.cornerRadius
 
@@ -3868,7 +3973,8 @@ Item {
                     spacing: Style.space(8)
                     Text {
                       visible: root.editingProfileId !== modelData.id
-                      text: modelData.name + (root.activeProfileId === modelData.id ? " · " + root.t(root.uiLang, "current") : "")
+                      text: (modelData.builtin ? root.t(root.uiLang, modelData.name) : modelData.name)
+                        + (root.activeProfileId === modelData.id ? " · " + root.t(root.uiLang, "current") : "")
                       color: root.fg
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.body
@@ -3925,8 +4031,10 @@ Item {
                     width: parent.width
                     spacing: Style.space(6)
                     visible: !modelData.builtin
+                    // The active profile is saved from the page action above.
                     Button {
                       Layout.fillWidth: true
+                      visible: root.activeProfileId !== modelData.id
                       text: root.t(root.uiLang, "profileSave")
                       foreground: root.fg
                       bordered: true
@@ -3952,32 +4060,23 @@ Item {
         visible: root.currentTab === 2
         spacing: Style.space(10)
 
-        RowLayout {
-          width: parent.width
-          spacing: Style.space(12)
+        PageHeader {
+          title: root.t(root.uiLang, "displays")
+          subtitle: root.displays.length + (root.displays.length === 1 ? " " + root.t(root.uiLang, "displayCount") : " " + root.t(root.uiLang, "displaysCount"))
+          foreground: root.fg
+          fontFamily: root.fontFamily
+
+          // Loading indicator keeps its space, so it never shifts the canvas
+          // or the actions when it flashes.
           Text {
-            text: "󰍺"
-            color: root.fg
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.display
-          }
-          Column {
-            Layout.fillWidth: true
-            Text { width: parent.width; text: root.t(root.uiLang, "displays"); color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true; elide: Text.ElideRight }
-            Text { width: parent.width; text: root.displays.length + (root.displays.length === 1 ? " " + root.t(root.uiLang, "displayCount") : " " + root.t(root.uiLang, "displaysCount")); color: Qt.darker(root.fg, 1.4); font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true; font.letterSpacing: 1.1; elide: Text.ElideRight }
-          }
-          // Loading indicator lives in the (fixed-height) header with reserved
-          // space, so it never shifts the canvas/content when it flashes.
-          Text {
-            Layout.alignment: Qt.AlignVCenter
+            anchors.verticalCenter: parent.verticalCenter
             text: root.t(root.uiLang, "readingDisplays")
-            color: Qt.darker(root.fg, 1.4)
+            color: Qt.alpha(root.fg, 0.62)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             opacity: root.displayLoading ? 1 : 0
           }
           Button {
-            Layout.alignment: Qt.AlignVCenter
             text: root.t(root.uiLang, "identify")
             foreground: root.fg
             fontFamily: root.fontFamily
@@ -3989,7 +4088,6 @@ Item {
             }
           }
           Button {
-            Layout.alignment: Qt.AlignVCenter
             text: root.t(root.uiLang, "saveDisplayLayout")
             foreground: root.fg
             fontFamily: root.fontFamily
@@ -4137,13 +4235,12 @@ Item {
           width: parent.width
           spacing: Style.space(6)
 
-          Text {
-            width: parent.width
-            text: root.t(root.uiLang, "workspaceMonitorColor") + " · " + (root.displaySelected ? root.displaySelected.name : "")
-            color: Qt.darker(root.fg, 1.4)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
+          GroupHeader {
+            topGap: Style.space(8)
+            title: root.t(root.uiLang, "workspaceMonitorColor")
+            note: root.displaySelected ? root.displaySelected.name : ""
+            foreground: root.fg
+            fontFamily: root.fontFamily
           }
 
           Flow {
@@ -4184,13 +4281,11 @@ Item {
             wrapMode: Text.Wrap
           }
 
-          Text {
-            width: parent.width
-            text: root.t(root.uiLang, "workspaceIndicatorMode")
-            color: Qt.darker(root.fg, 1.4)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
+          GroupHeader {
+            topGap: Style.space(12)
+            title: root.t(root.uiLang, "workspaceIndicatorMode")
+            foreground: root.fg
+            fontFamily: root.fontFamily
           }
 
           RowLayout {
@@ -4213,36 +4308,26 @@ Item {
               }
             }
 
-            ColumnLayout {
-              Layout.preferredWidth: Style.space(180)
-              spacing: Style.space(4)
-
-              Text {
-                Layout.fillWidth: true
-                text: root.t(root.uiLang, "workspaceIndicatorPadding") + " · " + root.workspaceIndicatorPadding + " px"
-                color: Qt.darker(root.fg, 1.25)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-
-              Slider {
-                Layout.fillWidth: true
-                from: 0
-                to: 4
-                stepSize: 1
-                snapMode: Slider.SnapAlways
-                value: root.workspaceIndicatorPadding
-                onMoved: root.setWorkspaceIndicatorPadding(value)
-              }
+            SliderRow {
+              Layout.preferredWidth: Style.space(220)
+              separator: false
+              label: root.t(root.uiLang, "workspaceIndicatorPadding")
+              suffix: "px"
+              from: 0
+              to: 4
+              stepSize: 1
+              value: root.workspaceIndicatorPadding
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              onMoved: root.setWorkspaceIndicatorPadding(value)
             }
           }
 
-          Text {
-            text: root.t(root.uiLang, "workspaceNumerals")
-            color: Qt.darker(root.fg, 1.4)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
+          GroupHeader {
+            topGap: Style.space(12)
+            title: root.t(root.uiLang, "workspaceNumerals")
+            foreground: root.fg
+            fontFamily: root.fontFamily
           }
 
           Flow {
@@ -4493,14 +4578,74 @@ Item {
         }
       }
 
-      PanelSeparator { foreground: root.fg }
-
-      // ---------- Animation ----------
+      // ---------- Animation / interface (Windows page, continued) ----------
       Column {
         Layout.fillWidth: true
         visible: root.currentTab === 1
-        spacing: Style.space(10)
+        spacing: 0
 
+        GroupHeader {
+          title: root.t(root.uiLang, "groupInterface")
+          foreground: root.fg
+          fontFamily: root.fontFamily
+        }
+
+        ToggleRow {
+          separator: false
+          label: root.t(root.uiLang, "sysAnims")
+          checked: root.animationsEnabled
+          onClicked: { root.applyAnimations(!root.animationsEnabled) }
+        }
+        ToggleRow {
+          label: root.t(root.uiLang, "wsSlide")
+          checked: root.wsAnimationOn
+          onClicked: { root.animSet(!root.wsAnimationOn) }
+        }
+        ToggleRow {
+          label: root.t(root.uiLang, "nightLight")
+          checked: root.nightLightOn
+          onClicked: { root.nightLightOn = !root.nightLightOn; root.run("omarchy-toggle-nightlight") }
+        }
+
+        GroupHeader {
+          visible: root.devMode
+          title: root.t(root.uiLang, "groupDev")
+          accent: Color.urgent
+          foreground: root.fg
+          fontFamily: root.fontFamily
+        }
+
+        ToggleRow {
+          separator: false
+          label: root.missionControlBusy ? root.t(root.uiLang, "missionControlInstalling") : root.t(root.uiLang, "missionControl")
+          visible: root.devMode
+          foreground: Color.urgent
+          checked: root.missionControlEnabled
+          enabled: !root.missionControlBusy
+          onClicked: root.setMissionControl(!root.missionControlEnabled)
+        }
+
+        Text {
+          visible: root.devMode
+          width: parent.width
+          text: root.t(root.uiLang, "missionControlHint")
+          color: Qt.darker(root.fg, 1.35)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+          bottomPadding: Style.space(6)
+        }
+
+        Text {
+          visible: root.devMode && root.missionControlError !== ""
+          width: parent.width
+          text: root.missionControlError
+          color: Color.urgent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+          bottomPadding: Style.space(6)
+        }
 
         ToggleRow {
           label: root.t(root.uiLang, "browserCloseTab")
@@ -4508,25 +4653,6 @@ Item {
           foreground: Color.urgent
           checked: root.browserCloseTabOn
           onClicked: { root.setBrowserCloseTab(!root.browserCloseTabOn) }
-        }
-        ToggleRow {
-          label: root.t(root.uiLang, "sysAnims")
-          checked: root.animationsEnabled
-          onClicked: { root.applyAnimations(!root.animationsEnabled) }
-        }
-        PanelSeparator { foreground: root.fg }
-        ToggleRow {
-          label: root.t(root.uiLang, "wsSlide")
-          checked: root.wsAnimationOn
-          onClicked: { root.animSet(!root.wsAnimationOn) }
-        }
-
-        PanelSeparator { foreground: root.fg }
-
-        ToggleRow {
-          label: root.t(root.uiLang, "nightLight")
-          checked: root.nightLightOn
-          onClicked: { root.nightLightOn = !root.nightLightOn; root.run("omarchy-toggle-nightlight") }
         }
       }
 

@@ -1,4 +1,4 @@
-import QtQuick
+import QtQuick 6.11
 import "PointerFeelModel.js" as PointerFeelModel
 
 Rectangle {

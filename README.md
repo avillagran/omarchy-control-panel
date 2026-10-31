@@ -16,14 +16,23 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   - Inertial scrolling
   - 3-finger swipe to switch workspaces
 - **Animations**: system animations, workspace transition, flat pointer acceleration, speed/sensitivity
-- **Windows**: inner/outer gaps, font size, animations and workspace distribution
+- **Windows**: inner/outer gaps, font size, Omarchy's square single-window and no-gaps toggles, animations and workspace distribution
 - **Displays**: layout, resolution/refresh/orientation/scale, a color per monitor, and square/rounded/circle/none workspace indicators in the bar. Profiles remember a separate layout for each physical monitor combination using EDID identity rather than connector names.
 - **Devices**: keyboard backlight, APFS (macOS disks)
 - **QuickView (development)**: native Control Panel overview with live window cards and workspace activation, available from Dev mode.
 - **Keyboard & Language**: physical layout, system language
+- **Task Manager (bundled)**: [omarchy-task-manager](https://github.com/avillagran/omarchy-task-manager) pauses memory-hungry apps before the desktop freezes. It stays its own plugin and repo, but the panel ships it **on by default**: Control Panel > Task Manager shows Omi, live CPU/RAM and the activity graph, and its switch turns the whole thing off (watchdog stopped, paused apps thawed, bar icon removed) or back on.
 - **Night light**, and more
 
 ## What's new in 0.5
+
+- **Monitor hotplug without the panel open**: the always-running bar widget
+  now resyncs displays when a monitor is connected or disconnected, and once
+  at shell start. It restores the active profile's layout for that exact
+  monitor combination, places an unsaved monitor flush to the right instead
+  of overlapping, redistributes workspace ranges, and keeps
+  `control-panel.lua` and the bar's workspace colors in sync. Disconnected
+  monitors no longer keep workspace rules for an absent output.
 
 - **Crash-safe scroll inertia**: the always-running bar widget now restores the
   persisted touchpad and physical mouse scroll settings when Quickshell starts.
@@ -133,12 +142,14 @@ The installer (Arch/Omarchy) does everything in one pass:
 
 1. Installs the **omarchy-control-panel** plugin and enables its bar widget on
    the **right** side (`omarchy plugin enable … --section right`).
-2. Enables **Dev mode** in the plugin prefs, which exposes the *Scroll feel*
+2. Installs the bundled **Task Manager** (pass `--no-task-manager` to skip
+   it; you can still turn it on later from the panel).
+3. Enables **Dev mode** in the plugin prefs, which exposes the *Scroll feel*
    card in the Trackpad tab.
-3. Installs build deps with pacman (skipped when already present, so reruns
+4. Installs build deps with pacman (skipped when already present, so reruns
    need no sudo), fetches upstream Hyprland at the pinned commit, applies
    `patches/hyprland/` and builds it (~5–15 min).
-4. Adds a PATH hook and appends a **gated** block to `~/.config/hypr/input.lua`
+5. Adds a PATH hook and appends a **gated** block to `~/.config/hypr/input.lua`
    that only applies the new options when the running compositor is the shadow
    binary — stock Hyprland never sees unknown config keys.
 
@@ -187,6 +198,10 @@ curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0.
 omarchy plugin add https://github.com/avillagran/omarchy-control-panel
 ```
 
+The first time the panel runs it also installs the bundled
+[Task Manager](https://github.com/avillagran/omarchy-task-manager) once. Turn
+it off in Control Panel > Task Manager and it stays off.
+
 Update an existing git-managed installation to the latest release with:
 
 ```bash
@@ -194,6 +209,15 @@ omarchy plugin update io.github.avillagran.omarchy-control-panel --yes
 ```
 
 Or clone manually into `~/.config/omarchy/plugins/io.github.avillagran.omarchy-control-panel/` and enable it.
+
+## Development note: `import QtQuick 6.11`
+
+Every QML file imports `QtQuick 6.11` (and `QtQuick.Window 6.11`), never the
+unversioned module. Qt 6.12 added a `QtQuick` `Color` singleton that shadows
+`Color` from Omarchy's `qs.Commons`, leaving theme colors `undefined`
+(white surfaces, black text, `Cannot read property 'background' of
+undefined`). An unversioned `import QtQuick.Window` re-imports the latest
+QtQuick and brings the problem back. New files must use the pinned import.
 
 ## Structure
 

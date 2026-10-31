@@ -17,8 +17,10 @@ assert.match(core, /label: root\.missionControlBusy[^\n]*\n\s*visible:\s*root\.d
   'unfinished QuickView must stay hidden outside Dev mode');
 assert.match(core, /label:\s*"Dev mode"[\s\S]*foreground:\s*Color\.urgent/,
   'Dev mode control must be highlighted in red');
-assert.match(shell, /navButton\.modelData\.devOnly \? theme\.urgent/,
-  'developer-only navigation entries must be highlighted in red');
+assert.match(shell, /id: devBadge\s*visible: navButton\.modelData\.devOnly\s*[\s\S]*?text: "DEV"/,
+  'developer-only navigation entries must carry a DEV badge');
+assert.doesNotMatch(shell, /navButton\.modelData\.devOnly \? theme\.urgent/,
+  'developer-only navigation is optional, not urgent: no red entries');
 assert.match(core, /devMode = d\.devMode === true/);
 assert.match(core, /devMode:\s*devMode/,
   'Dev mode must persist locally');
