@@ -2,7 +2,7 @@
 # Install the ready-to-use panel. Experimental compositor trials are separate.
 set -euo pipefail
 export OMARCHY_PATH="${OMARCHY_PATH:-/usr/share/omarchy}"
-ref="${OMARCHY_PANEL_REF:-5f3d41e4719d95e7749c7b86602ede38bb1cb6e7}"
+ref="${OMARCHY_PANEL_REF:-a7e34667fa7de6147cd5bb807ea553501777f88e}"
 [[ $ref =~ ^[0-9a-f]{40}$ ]] || { echo "Expected a full immutable OMARCHY_PANEL_REF" >&2; exit 2; }
 id=io.github.avillagran.omarchy-control-panel
 plugins="$HOME/.config/omarchy/plugins"
