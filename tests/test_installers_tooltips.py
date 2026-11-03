@@ -34,7 +34,22 @@ class InstallerTests(unittest.TestCase):
         self.git("-C", str(self.remote), "tag", "0.5")
         self.sha = self.git("-C", str(self.remote), "rev-parse", "HEAD").stdout.strip()
         (self.root / "bin").mkdir()
-        (self.root / "bin/omarchy").write_text("#!/bin/bash\nexit 0\n")
+        (self.root / "bin/omarchy").write_text(
+            '#!/bin/bash\n'
+            'if [[ $* == "plugin list --json" ]]; then\n'
+            '  if [[ -f $HOME/discovered && ! -f $HOME/discovery-blocked ]]; then\n'
+            "    echo '" + json.dumps([{"id": PLUGIN}]) + "'\n"
+            '  else echo "[]"; fi\n'
+            'elif [[ $1 == plugin && $2 == enable ]]; then\n'
+            '  [[ -f $HOME/discovered && ! -f $HOME/discovery-blocked ]] || exit 9\n'
+            '  touch "$HOME/enabled"\n'
+            'fi\n'
+        )
+        (self.root / "bin/omarchy-shell").write_text(
+            '#!/bin/bash\n[[ $* == "shell rescanPlugins" ]] || exit 8\n'
+            'touch "$HOME/discovered"\n'
+        )
+        (self.root / "bin/omarchy-shell").chmod(0o755)
         (self.root / "bin/omarchy").chmod(0o755)
         self.env = dict(os.environ, HOME=str(self.home), XDG_CACHE_HOME=str(self.root / "cache"),
                         XDG_STATE_HOME=str(self.root / "state"), PATH=str(self.root / "bin") + ":" + os.environ["PATH"],
@@ -47,6 +62,33 @@ class InstallerTests(unittest.TestCase):
 
     def run_script(self, script, *args):
         return subprocess.run(["bash", str(ROOT / "bin" / script), *args], env=self.env, capture_output=True, text=True)
+
+    def test_panel_installer_enables_and_opens_without_trials(self):
+        (self.root / "bin/hyprctl").write_text("""#!/bin/bash
+if [[ -f $HOME/opened ]]; then
+  echo '[{"title":"Control Panel","mapped":true}]'
+else
+  echo "[]"
+fi
+""")
+        (self.root / "bin/hyprctl").chmod(0o755)
+        launcher = self.remote / "bin/toggle-desktop.sh"
+        launcher.write_text('#!/bin/bash\ntouch "$HOME/opened"\n')
+        self.git("-C", str(self.remote), "add", ".")
+        self.git("-C", str(self.remote), "-c", "user.email=test@example.com",
+                 "-c", "user.name=Test", "commit", "-qm", "panel launcher")
+        self.env["OMARCHY_PANEL_REF"] = self.git("-C", str(self.remote), "rev-parse", "HEAD").stdout.strip()
+        self.plugin.mkdir()
+        (self.plugin / "personal-file").write_text("keep")
+        result = self.run_script("install.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.home / "enabled").exists())
+        self.assertTrue((self.home / "opened").exists())
+        backups = list((self.root / "cache/omarchy-control-panel/plugin-backups").glob("*/personal-file"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), "keep")
+        self.assertFalse((self.home / ".local/bin/Hyprland").exists())
+        self.assertFalse((self.root / "state/omarchy/tooltip-trial.json").exists())
 
     def test_bootstrap_placeholder_refuses_without_mutation(self):
         script = self.root / "unpublished-bootstrap"
@@ -123,6 +165,25 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(json.loads(state_path.read_text())["pluginBackup"], original)
         self.assertEqual(Path(original).joinpath("user-file").read_text(), "original")
         self.assertFalse(list(self.plugin.glob(".control-panel.*")))
+
+    def test_fresh_install_discovers_before_enabling(self):
+        result = self.run_script("install-hyprland-scroll-patch.sh")
+        # The fixture tooltip bootstrap exits 7, after plugin enable.
+        self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+        self.assertTrue((self.home / "enabled").exists())
+
+    def test_discovery_timeout_preserves_retry_state_without_enabling(self):
+        (self.home / "discovery-blocked").touch()
+        result = self.run_script("install-hyprland-scroll-patch.sh")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("plugin discovery timed out", result.stdout)
+        self.assertFalse((self.home / "enabled").exists())
+        self.assertTrue((self.root / "state/omarchy-control-panel-scroll-patch.json").exists())
+        self.assertFalse((self.root / "state/omarchy/control-panel-prefs.json").exists())
+        (self.home / "discovery-blocked").unlink()
+        retry = self.run_script("install-hyprland-scroll-patch.sh")
+        self.assertEqual(retry.returncode, 7, retry.stdout + retry.stderr)
+        self.assertTrue((self.home / "enabled").exists())
 
     def test_uninstall_without_state_preserves_existing_shadow(self):
         shadow = self.home / ".local/bin/Hyprland"

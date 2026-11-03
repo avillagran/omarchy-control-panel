@@ -8,7 +8,7 @@
 #   See the pinned combined installer command in README.md.
 #
 # What it does:
-#   1. Installs the omarchy-control-panel plugin (omarchy plugin add) and
+#   1. Installs the pinned omarchy-control-panel checkout and
 #      enables its bar widget on the RIGHT side (omarchy plugin enable
 #      --section right).
 #   1b. Installs the bundled Task Manager (omarchy-task-manager, its own
@@ -336,6 +336,20 @@ with os.fdopen(fd, 'w') as out:
 os.replace(tmp, path)
 PY
 fi
+
+# A copied checkout is not immediately known to the running shell. Discovery
+# is asynchronous, just as in omarchy-plugin-add; wait before enabling it.
+log "Discovering the installed plugin ..."
+omarchy-shell shell rescanPlugins >/dev/null
+discovered=false
+for (( attempt = 0; attempt < 40; attempt++ )); do
+  if omarchy plugin list --json | python3 -c 'import json,sys; sys.exit(0 if any(p.get("id") == sys.argv[1] for p in json.load(sys.stdin)) else 1)' "$PLUGIN_ID"; then
+    discovered=true
+    break
+  fi
+  sleep 0.05
+done
+[[ $discovered == true ]] || die "plugin discovery timed out; check omarchy plugin list --json before retrying"
 
 log "Enabling the bar widget on the RIGHT side ..."
 omarchy plugin enable "$PLUGIN_ID" --section right
