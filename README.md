@@ -6,6 +6,29 @@ A system settings panel for **Omarchy / Hyprland**, built as an Omarchy shell pl
 
 ![Trackpad](screenshot-1-trackpad.png)
 
+## One-line installer
+
+Run this from a terminal in your Omarchy desktop session. It installs the panel,
+enables its widget on the right of the bar and opens the window immediately:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/417973c53a6cbed152988e969dd1a2b4df239d1c/bin/install.sh | bash
+```
+
+The installer downloads an immutable panel revision with Qt 6.12 compatibility.
+An existing plugin directory is backed up before replacement; your saved settings
+are retained. The panel is ready in the current session without a reboot.
+The experimental scroll and tooltip trials have a separate installer below.
+
+Requires Omarchy with a running Hyprland desktop, Git, Python 3, jq and Quickshell.
+To remove the panel, run `omarchy plugin remove io.github.avillagran.omarchy-control-panel`.
+Previous plugin copies are preserved under
+`~/.cache/omarchy-control-panel/plugin-backups/` (or `$XDG_CACHE_HOME`).
+The installer changes the plugin directory and its bar placement; it keeps your
+panel preferences. To restore an earlier copy, disable the plugin, move the
+current plugin directory aside and move the saved backup to its original path,
+then run `omarchy-shell shell rescanPlugins` and enable the plugin again.
+
 ## Features
 
 A quick settings panel summoned from the Omarchy bar. It manages settings without touching `/usr/share/omarchy` and without sudo:
@@ -177,7 +200,7 @@ enable it only if the wheel feel works well with your mouse and applications.
 The switch uses dedicated `input:mouse:scroll_*` options, so it does not change
 the touchpad setting and is never written for stock Hyprland.
 
-### One-line installer
+### Experimental scroll and tooltip installer
 
 Install the Control Panel, the scroll inertia trial and [Omarchy's unified tooltip PR #15694](https://github.com/omacom/omarchy/pull/15694) together:
 
