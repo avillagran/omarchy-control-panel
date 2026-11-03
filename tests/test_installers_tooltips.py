@@ -90,6 +90,16 @@ fi
         self.assertFalse((self.home / ".local/bin/Hyprland").exists())
         self.assertFalse((self.root / "state/omarchy/tooltip-trial.json").exists())
 
+    def test_retired_compositor_installer_refuses_without_mutation(self):
+        self.plugin.mkdir()
+        (self.plugin / "user-file").write_text("preserve")
+        result = self.run_script("install-hyprland-scroll-patch.sh")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("retired", result.stdout)
+        self.assertEqual((self.plugin / "user-file").read_text(), "preserve")
+        self.assertFalse((self.root / "state").exists())
+        self.assertFalse((self.root / "cache").exists())
+
     def test_bootstrap_placeholder_refuses_without_mutation(self):
         script = self.root / "unpublished-bootstrap"
         script.write_text(re.sub(r'^OMARCHY_TOOLTIP_COMMIT="[^"]+"', 'OMARCHY_TOOLTIP_COMMIT="OMARCHY_TOOLTIP_COMMIT"', (ROOT / "bin/install-tooltip-patch.sh").read_text(), flags=re.M))
@@ -133,57 +143,9 @@ fi
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.home / "rollback-args").read_text(), "--uninstall\n")
 
-    def test_non_git_plugin_is_backed_up_on_bootstrap_failure(self):
-        self.plugin.mkdir()
-        (self.plugin / "user-file").write_text("never lose me")
-        result = self.run_script("install-hyprland-scroll-patch.sh")
-        self.assertEqual(result.returncode, 7, result.stderr)
-        state = json.loads((self.root / "state/omarchy-control-panel-scroll-patch.json").read_text())
-        self.assertEqual(state["panelSha"], self.sha)
-        self.assertEqual(Path(state["pluginBackup"]).joinpath("user-file").read_text(), "never lose me")
-        self.assertEqual(self.git("-C", str(self.plugin), "rev-parse", "HEAD").stdout.strip(), self.sha)
-        self.assertFalse((self.home / ".local/bin/Hyprland").exists())
-        # Even a failed bootstrap leaves an explicit, reversible state.
-        existing_shadow = self.home / ".local/bin/Hyprland"
-        existing_shadow.parent.mkdir(parents=True)
-        existing_shadow.write_text("prior user binary")
-        undone = self.run_script("install-hyprland-scroll-patch.sh", "--uninstall")
-        self.assertEqual(undone.returncode, 0, undone.stderr)
-        self.assertEqual((self.plugin / "user-file").read_text(), "never lose me")
-        self.assertEqual(existing_shadow.read_text(), "prior user binary")
-        self.assertFalse((self.root / "state/omarchy-control-panel-scroll-patch.json").exists())
 
-    def test_rerun_preserves_original_backup_without_nested_checkout(self):
-        self.plugin.mkdir()
-        (self.plugin / "user-file").write_text("original")
-        first = self.run_script("install-hyprland-scroll-patch.sh")
-        self.assertEqual(first.returncode, 7)
-        state_path = self.root / "state/omarchy-control-panel-scroll-patch.json"
-        original = json.loads(state_path.read_text())["pluginBackup"]
-        second = self.run_script("install-hyprland-scroll-patch.sh")
-        self.assertEqual(second.returncode, 7, second.stdout + second.stderr)
-        self.assertEqual(json.loads(state_path.read_text())["pluginBackup"], original)
-        self.assertEqual(Path(original).joinpath("user-file").read_text(), "original")
-        self.assertFalse(list(self.plugin.glob(".control-panel.*")))
 
-    def test_fresh_install_discovers_before_enabling(self):
-        result = self.run_script("install-hyprland-scroll-patch.sh")
-        # The fixture tooltip bootstrap exits 7, after plugin enable.
-        self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
-        self.assertTrue((self.home / "enabled").exists())
 
-    def test_discovery_timeout_preserves_retry_state_without_enabling(self):
-        (self.home / "discovery-blocked").touch()
-        result = self.run_script("install-hyprland-scroll-patch.sh")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("plugin discovery timed out", result.stdout)
-        self.assertFalse((self.home / "enabled").exists())
-        self.assertTrue((self.root / "state/omarchy-control-panel-scroll-patch.json").exists())
-        self.assertFalse((self.root / "state/omarchy/control-panel-prefs.json").exists())
-        (self.home / "discovery-blocked").unlink()
-        retry = self.run_script("install-hyprland-scroll-patch.sh")
-        self.assertEqual(retry.returncode, 7, retry.stdout + retry.stderr)
-        self.assertTrue((self.home / "enabled").exists())
 
     def test_uninstall_without_state_preserves_existing_shadow(self):
         shadow = self.home / ".local/bin/Hyprland"
@@ -193,31 +155,7 @@ fi
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(shadow.read_text(), "not owned")
 
-    def test_dirty_tracked_plugin_refused_without_stash_or_move(self):
-        shutil.copytree(self.remote, self.plugin)
-        (self.plugin / "bin/install-tooltip-patch.sh").write_text("dirty\n")
-        result = self.run_script("install-hyprland-scroll-patch.sh")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("dirty tracked edits", result.stdout)
-        self.assertEqual((self.plugin / "bin/install-tooltip-patch.sh").read_text(), "dirty\n")
-        self.assertFalse((self.root / "state/omarchy-control-panel-scroll-patch.json").exists())
 
-    def test_sha_ref_and_unpublished_bootstrap_refuse_before_plugin_move(self):
-        self.env["OMARCHY_PANEL_REF"] = self.sha
-        (self.remote / "bin/install-tooltip-patch.sh").write_text(
-            '#!/bin/bash\nOMARCHY_TOOLTIP_COMMIT="OMARCHY_TOOLTIP_COMMIT"\n'
-        )
-        self.git("-C", str(self.remote), "add", ".")
-        self.git("-C", str(self.remote), "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "unpublished")
-        new_sha = self.git("-C", str(self.remote), "rev-parse", "HEAD").stdout.strip()
-        self.env["OMARCHY_PANEL_REF"] = new_sha
-        self.plugin.mkdir()
-        (self.plugin / "user-file").write_text("safe")
-        result = self.run_script("install-hyprland-scroll-patch.sh")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unpublished", result.stdout)
-        self.assertEqual((self.plugin / "user-file").read_text(), "safe")
-        self.assertFalse((self.root / "state/omarchy-control-panel-scroll-patch.json").exists())
 
 
 if __name__ == "__main__":

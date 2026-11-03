@@ -16,7 +16,6 @@
     "tooltipInvalidColor": "Enter a valid hex color (#RRGGBB).",
     "tooltipInvalidFile": "The tooltip settings file contains invalid data. Repair it before saving.",
     "tooltipWriteFailed": "Could not read or save tooltip settings.",
-
     "naturalMac": "Natural scrolling (Mac-style)",
     "sysAnims": "System animations",
     "wsSlide": "Workspace switch transition",
@@ -121,7 +120,6 @@
     "tooltipInvalidColor": "Introduce un color hexadecimal válido (#RRGGBB).",
     "tooltipInvalidFile": "El archivo de ajustes de tooltips contiene datos no válidos. Corrígelo antes de guardar.",
     "tooltipWriteFailed": "No se pudieron leer o guardar los ajustes de tooltips.",
-
     "naturalMac": "Scroll natural (como Mac)",
     "sysAnims": "Animaciones del sistema",
     "wsSlide": "Transición de escritorios",
@@ -226,7 +224,6 @@
     "tooltipInvalidColor": "Digite uma cor hexadecimal válida (#RRGGBB).",
     "tooltipInvalidFile": "O arquivo de dicas contém dados inválidos. Corrija-o antes de salvar.",
     "tooltipWriteFailed": "Não foi possível ler ou salvar as opções de dicas.",
-
     "naturalMac": "Rolagem natural (estilo Mac)",
     "sysAnims": "Animações do sistema",
     "wsSlide": "Transição de áreas de trabalho",
@@ -284,7 +281,6 @@
     "tooltipInvalidColor": "Saisissez une couleur hexadécimale valide (#RRGGBB).",
     "tooltipInvalidFile": "Le fichier des infobulles contient des données invalides. Corrigez-le avant d’enregistrer.",
     "tooltipWriteFailed": "Impossible de lire ou enregistrer les réglages des infobulles.",
-
     "naturalMac": "Défilement naturel (style Mac)",
     "sysAnims": "Animations du système",
     "wsSlide": "Transition entre bureaux",
@@ -342,7 +338,6 @@
     "tooltipInvalidColor": "Geben Sie eine gültige Hex-Farbe ein (#RRGGBB).",
     "tooltipInvalidFile": "Die Tooltip-Einstellungsdatei enthält ungültige Daten. Korrigieren Sie sie vor dem Speichern.",
     "tooltipWriteFailed": "Tooltip-Einstellungen konnten nicht gelesen oder gespeichert werden.",
-
     "naturalMac": "Natürliches Scrollen (Mac-Stil)",
     "sysAnims": "Systemanimationen",
     "wsSlide": "Arbeitsplatzwechsel-Übergang",
@@ -400,7 +395,6 @@
     "tooltipInvalidColor": "Inserisci un colore esadecimale valido (#RRGGBB).",
     "tooltipInvalidFile": "Il file delle impostazioni contiene dati non validi. Correggilo prima di salvare.",
     "tooltipWriteFailed": "Impossibile leggere o salvare le impostazioni dei suggerimenti.",
-
     "naturalMac": "Scorrimento naturale (stile Mac)",
     "sysAnims": "Animazioni di sistema",
     "wsSlide": "Transizione cambio area di lavoro",
@@ -458,7 +452,6 @@
     "tooltipInvalidColor": "Voer een geldige hexkleur in (#RRGGBB).",
     "tooltipInvalidFile": "Het tooltipbestand bevat ongeldige gegevens. Herstel het voordat je opslaat.",
     "tooltipWriteFailed": "Tooltipinstellingen konden niet worden gelezen of opgeslagen.",
-
     "naturalMac": "Natuurlijk scrollen (Mac-stijl)",
     "sysAnims": "Systeemanimaties",
     "wsSlide": "Werkbladwissel-overgang",
@@ -516,7 +509,6 @@
     "tooltipInvalidColor": "Wprowadź poprawny kolor szesnastkowy (#RRGGBB).",
     "tooltipInvalidFile": "Plik ustawień podpowiedzi zawiera błędne dane. Napraw go przed zapisem.",
     "tooltipWriteFailed": "Nie można odczytać ani zapisać ustawień podpowiedzi.",
-
     "naturalMac": "Naturalne przewijanie (styl Mac)",
     "sysAnims": "Animacje systemowe",
     "wsSlide": "Przejście między pulpitami",
@@ -574,7 +566,6 @@
     "tooltipInvalidColor": "Введите допустимый шестнадцатеричный цвет (#RRGGBB).",
     "tooltipInvalidFile": "Файл настроек подсказок содержит неверные данные. Исправьте его перед сохранением.",
     "tooltipWriteFailed": "Не удалось прочитать или сохранить настройки подсказок.",
-
     "naturalMac": "Естественная прокрутка (в стиле Mac)",
     "sysAnims": "Системные анимации",
     "wsSlide": "Переход при смене рабочего стола",
@@ -632,7 +623,6 @@
     "tooltipInvalidColor": "有効な16進数の色を入力してください（#RRGGBB）。",
     "tooltipInvalidFile": "設定ファイルに無効なデータがあります。修正してから保存してください。",
     "tooltipWriteFailed": "ツールチップ設定の読み込みまたは保存に失敗しました。",
-
     "naturalMac": "自然なスクロール (Macスタイル)",
     "sysAnims": "システムアニメーション",
     "wsSlide": "ワークスペース切り替えの遷移",
@@ -690,7 +680,6 @@
     "tooltipInvalidColor": "올바른 16진수 색상을 입력하세요 (#RRGGBB).",
     "tooltipInvalidFile": "설정 파일에 잘못된 데이터가 있습니다. 수정한 후 저장하세요.",
     "tooltipWriteFailed": "툴팁 설정을 읽거나 저장할 수 없습니다.",
-
     "naturalMac": "자연스러운 스크롤 (Mac 스타일)",
     "sysAnims": "시스템 애니메이션",
     "wsSlide": "작업 공간 전환 효과",
@@ -748,7 +737,6 @@
     "tooltipInvalidColor": "请输入有效的十六进制颜色（#RRGGBB）。",
     "tooltipInvalidFile": "提示框设置文件含有无效数据。请先修复再保存。",
     "tooltipWriteFailed": "无法读取或保存提示框设置。",
-
     "naturalMac": "自然滚动 (Mac 风格)",
     "sysAnims": "系统动画",
     "wsSlide": "工作区切换过渡",
@@ -806,7 +794,6 @@
     "tooltipInvalidColor": "أدخل لوناً سداسياً صالحاً (#RRGGBB).",
     "tooltipInvalidFile": "يحتوي ملف الإعدادات على بيانات غير صالحة. أصلحه قبل الحفظ.",
     "tooltipWriteFailed": "تعذرت قراءة إعدادات التلميحات أو حفظها.",
-
     "naturalMac": "التمرير الطبيعي (أسلوب Mac)",
     "sysAnims": "رسوم متحركة للنظام",
     "wsSlide": "انتقال تبديل مساحة العمل",
@@ -864,7 +851,6 @@
     "tooltipInvalidColor": "Geçerli bir onaltılık renk girin (#RRGGBB).",
     "tooltipInvalidFile": "Ayarlar dosyasında geçersiz veri var. Kaydetmeden önce düzeltin.",
     "tooltipWriteFailed": "Araç ipucu ayarları okunamadı veya kaydedilemedi.",
-
     "naturalMac": "Doğal kaydırma (Mac tarzı)",
     "sysAnims": "Sistem animasyonları",
     "wsSlide": "Çalışma alanı geçiş efekti",
@@ -922,7 +908,6 @@
     "tooltipInvalidColor": "Ange en giltig hexfärg (#RRGGBB).",
     "tooltipInvalidFile": "Inställningsfilen innehåller ogiltiga data. Rätta den innan du sparar.",
     "tooltipWriteFailed": "Kunde inte läsa eller spara verktygstipsinställningar.",
-
     "naturalMac": "Naturligt rullande (Mac-stil)",
     "sysAnims": "Systemanimationer",
     "wsSlide": "Övergång vid byte av arbetsyta",
@@ -980,7 +965,6 @@
     "tooltipInvalidColor": "Indtast en gyldig hexfarve (#RRGGBB).",
     "tooltipInvalidFile": "Indstillingsfilen indeholder ugyldige data. Ret den før du gemmer.",
     "tooltipWriteFailed": "Kunne ikke læse eller gemme værktøjstipindstillinger.",
-
     "naturalMac": "Naturligt rulning (Mac-stil)",
     "sysAnims": "Systemanimationer",
     "wsSlide": "Overgang ved skift af arbejdsområde",
@@ -1038,7 +1022,6 @@
     "tooltipInvalidColor": "Skriv inn en gyldig heksfarge (#RRGGBB).",
     "tooltipInvalidFile": "Innstillingsfilen inneholder ugyldige data. Rett den før lagring.",
     "tooltipWriteFailed": "Kunne ikke lese eller lagre verktøytipsinnstillinger.",
-
     "naturalMac": "Naturlig rulling (Mac-stil)",
     "sysAnims": "Systemanimasjoner",
     "wsSlide": "Overgang ved bytte av arbeidsområde",
@@ -1096,7 +1079,6 @@
     "tooltipInvalidColor": "Anna kelvollinen heksaväri (#RRGGBB).",
     "tooltipInvalidFile": "Asetustiedostossa on virheellisiä tietoja. Korjaa ne ennen tallennusta.",
     "tooltipWriteFailed": "Työkaluvihjeasetuksia ei voitu lukea tai tallentaa.",
-
     "naturalMac": "Luonnollinen vieritys (Mac-tyyli)",
     "sysAnims": "Järjestelmän animaatiot",
     "wsSlide": "Työpöydän vaihdon siirtymä",
@@ -1154,7 +1136,6 @@
     "tooltipInvalidColor": "Zadejte platnou hexadecimální barvu (#RRGGBB).",
     "tooltipInvalidFile": "Soubor nastavení obsahuje neplatná data. Před uložením jej opravte.",
     "tooltipWriteFailed": "Nastavení popisků nelze načíst ani uložit.",
-
     "naturalMac": "Přirozené posouvání (ve stylu Mac)",
     "sysAnims": "Systémové animace",
     "wsSlide": "Přechod při přepnutí plochy",

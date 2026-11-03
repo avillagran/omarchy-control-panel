@@ -242,6 +242,10 @@ PY
 
 [ "${1:-}" = "--uninstall" ] && uninstall
 
+# Retired: replacing the channel compositor can break login after updates.
+# Keep the original rollback implementation for existing installations.
+die "This installer is retired: Control Panel must not replace Omarchy's Hyprland. Use bin/install.sh for the panel. --uninstall remains available for existing trials."
+
 WITH_TASK_MANAGER=true
 for arg in "$@"; do
   case "$arg" in

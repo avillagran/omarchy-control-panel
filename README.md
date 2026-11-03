@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/41
 The installer downloads an immutable panel revision with Qt 6.12 compatibility.
 An existing plugin directory is backed up before replacement; your saved settings
 are retained. The panel is ready in the current session without a reboot.
-The experimental scroll and tooltip trials have a separate installer below.
+The previous experimental compositor installer is retired; see the explanation below.
 
 Requires Omarchy with a running Hyprland desktop, Git, Python 3, jq and Quickshell.
 To remove the panel, run `omarchy plugin remove io.github.avillagran.omarchy-control-panel`.
@@ -50,7 +50,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 
 ## Development: unified tooltips
 
-[Omarchy PR #15694](https://github.com/omacom/omarchy/pull/15694) adds shared themed hints and optional interactive cards. This Control Panel integration adds live appearance settings at the end of Windows, translated into all 19 UI languages, and includes the trial in the combined installer below.
+[Omarchy PR #15694](https://github.com/omacom/omarchy/pull/15694) adds shared themed hints and optional interactive cards. This Control Panel integration adds live appearance settings at the end of Windows, translated into all 19 UI languages. The previous combined trial installer is retired.
 
 ## What's new in 0.5
 
@@ -91,9 +91,9 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **QuickView preview (Dev mode)**: a native workspace/window overview powered by the pinned
   [qs-hyprview](https://github.com/dom0/qs-hyprview) project, with
   Omarchy-specific launcher and integration patches kept separately.
-- **Experimental mouse-wheel inertia**: the patched Hyprland installer now
-  offers an independent opt-in for physical mouse-wheel acceleration and
-  coasting, without changing touchpad behavior.
+- **Experimental mouse-wheel inertia (retired trial)**: the historical compositor
+  patch included physical mouse-wheel coasting. The panel no longer offers an
+  alternate compositor installer.
 - **Safe installer reruns**: running the one-liner again updates an existing
   plugin checkout instead of leaving an older installed revision in place.
 
@@ -202,29 +202,15 @@ the touchpad setting and is never written for stock Hyprland.
 
 ### Experimental scroll and tooltip installer
 
-Install the Control Panel, the scroll inertia trial and [Omarchy's unified tooltip PR #15694](https://github.com/omacom/omarchy/pull/15694) together:
+The combined trial installer is retired. It installed a shadow Hyprland binary,
+which could diverge from Omarchy's channel and break login after an update.
+Control Panel must use the compositor supplied by Omarchy. Use the normal
+one-line installer above.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/25aa630efde26e7b3c1699590b0b839ef1c59e20/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=25aa630efde26e7b3c1699590b0b839ef1c59e20 bash
-```
-
-The script, plugin checkout and fallback scroll patches use the same immutable Control Panel commit (`25aa630efde26e7b3c1699590b0b839ef1c59e20`). The tooltip bootstrap verifies Omarchy commit `9cefb2fe88a56b76a64d0c206cbfa10455acbff7` from the official Omarchy repository. No moving `main` branch or retagged release is downloaded.
-
-The installer (Arch/Omarchy) performs these steps:
-
-1. Installs the pinned Control Panel and enables its bar widget on the right. An existing clean checkout or non-Git plugin directory is preserved in a durable backup; tracked edits are refused. Dev mode exposes the Scroll feel card.
-2. Installs the bundled Task Manager (skip with `--no-task-manager`).
-3. Builds the pinned Quickshell 0.3.1 compatibility runtime and packages the standalone Omarchy tooltip style. It keeps the previous package and selects a tooltip-only copy of the currently installed Omarchy tree, preserving the installed release's other APIs. It requires the official Quickshell 0.3.1 archive and refuses incompatible versions.
-4. Builds the existing scroll patch series from pinned upstream Hyprland as a reversible shadow binary at `~/.local/bin/Hyprland`.
-5. Adds the existing gated scroll configuration and panel persistence hook. Stock Hyprland never receives unsupported scroll keys.
-
-Save your work and reboot to activate both trials. The installer does not restart the compositor or reboot automatically. Source builds need development packages, disk space and terminal sudo; both CPU architectures use the same implementation. A previously installed tooltip trial is retained rather than claimed as owned by this installer. Legacy inertia installation state must be removed with its original pinned installer before upgrading; the combined installer refuses to guess its ownership or discard its backups.
-
-**Tooltip preferences:** open **Windows**, then scroll to its final section, **Tooltip appearance**. Choose **Theme / Square / Rounded** and **Theme / Transparent / Custom** border color. Custom colors use validated `#RRGGBB` input. After the initial activation, edits apply live to open tooltip hosts without rewriting themes or Hyprland configuration. Theme restores the active theme's geometry, border colors and gradients. The shared file is `~/.config/omarchy/tooltips.json` (or under `XDG_CONFIG_HOME`).
-
-The tooltip integration covers Omarchy and Qt Quick Controls applications. GTK, Qt Widgets, browser content and application-specific tooltip renderers retain their own policies. The runtime compatibility patch is carried by the Omarchy PR; no Hyprland or Quickshell PR is required for tooltips.
-
-**Maintaining the scroll series:** update `HYPRLAND_PIN` and regenerate `patches/hyprland/` together. The installer verifies the series with `git apply --check` and builds only its exact pinned source. The tooltip runtime also requires a reviewed refresh before changing the supported Quickshell version.
+Global inertial scrolling is unavailable when the channel compositor does not
+provide it. Scroll speed and each application's native scrolling still work.
+The source patches remain here for upstream development, not for installation
+on users' desktops.
 
 To restore the previous configuration and packages installed by this combined trial, then reboot:
 

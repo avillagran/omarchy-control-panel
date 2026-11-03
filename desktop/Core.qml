@@ -3409,24 +3409,12 @@ Item {
 
         Text {
           width: parent.width
-          visible: !root.devMode
+          visible: !root.devMode && !root.scrollPatchSupported
           wrapMode: Text.WordWrap
           text: root.t(root.uiLang, "scrollFeelDevHint")
-          color: Color.urgent
+          color: Qt.alpha(root.fg, 0.72)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
-        }
-
-        Item { width: 1; height: Style.space(8); visible: !root.devMode }
-
-        Button {
-          width: parent.width
-          visible: !root.devMode
-          text: root.t(root.uiLang, "scrollFeelDevRepo")
-          bordered: true
-          foreground: root.fg
-          fontFamily: root.fontFamily
-          onClicked: Qt.openUrlExternally("https://github.com/avillagran/Hyprland/tree/feat/touchpad-scroll-acceleration")
         }
 
         // DEV ONLY: touchpad scroll acceleration + coast. Requires a compositor
