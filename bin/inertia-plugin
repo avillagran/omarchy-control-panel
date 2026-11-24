@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# Touchpad inertia: build native/inertia against the running Hyprland and load it.
+#   inertia-plugin on    build if needed, then load
+#   inertia-plugin off   unload
+#   inertia-plugin sync  follow "inertia" in control-panel-prefs.json (login)
+#   inertia-plugin status
+# The library is built on this machine (never shipped) into the state dir, outside
+# the plugin tree, and only loaded when the installed headers match the running
+# compositor. A Hyprland update therefore pauses inertia until the next login.
+set -euo pipefail
+umask 077
+
+name=control-panel-inertia
+mode=${1:-sync}
+src=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../native/inertia" && pwd -P)
+state=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/$name
+prefs=$HOME/.local/state/omarchy/control-panel-prefs.json
+loaded_file=$state/loaded
+
+log() { printf '%s: %s\n' "$name" "$*" >&2; }
+
+case $mode in on|off|sync|status) ;; *) log "usage: $0 on|off|sync|status"; exit 2 ;; esac
+command -v hyprctl >/dev/null || { log "hyprctl not found"; exit 1; }
+
+mkdir -p "$state"
+[[ ! -L $state ]] || { log "refusing symlinked state dir"; exit 1; }
+exec 9>"$state/lock"
+flock -w 120 9 || { log "another run holds the lock"; exit 1; }
+
+is_loaded() {
+  hyprctl plugin list -j 2>/dev/null | python3 -c '
+import json, sys
+try: plugins = json.load(sys.stdin)
+except ValueError: plugins = []
+sys.exit(0 if any(p.get("name") in sys.argv[1:] for p in plugins) else 1)' omarchy-inertia
+}
+
+unload() {
+  local path=""
+  [[ -f $loaded_file && ! -L $loaded_file ]] && path=$(<"$loaded_file")
+  if is_loaded; then
+    # Not ours: Omarchy's Setup > Touchpad > Inertia loaded it. Leave it.
+    [[ -n $path ]] || { log "inertia is on in Omarchy's Setup > Touchpad; turn it off there"; return 0; }
+    hyprctl plugin unload "$path" >/dev/null
+  fi
+  rm -f "$loaded_file"
+}
+
+wanted() {
+  [[ -f $prefs && ! -L $prefs ]] || return 1
+  python3 - "$prefs" <<'PY'
+import json, os, sys
+path = sys.argv[1]
+try:
+    if os.path.getsize(path) > 65536: sys.exit(1)
+    with open(path, encoding="utf-8") as handle: data = json.load(handle)
+except (OSError, ValueError): sys.exit(1)
+sys.exit(0 if isinstance(data, dict) and (data.get("inertia") is True or data.get("inertiaMouse") is True) else 1)
+PY
+}
+
+running_commit() {
+  hyprctl version -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit", ""))'
+}
+
+build() {
+  local commit=$1 header=${HYPRLAND_VERSION_HEADER:-/usr/include/hyprland/src/version.h}
+  for tool in c++ make pkg-config; do
+    command -v "$tool" >/dev/null || { log "missing $tool (install base-devel)"; return 1; }
+  done
+  pkg-config --exists hyprland || { log "Hyprland headers not found"; return 1; }
+  local header_commit
+  header_commit=$(sed -n 's/^#define GIT_COMMIT_HASH *"\([0-9a-f]*\)".*/\1/p' "$header" 2>/dev/null)
+  if [[ $header_commit != "$commit" ]]; then
+    log "Hyprland was updated; inertia resumes after the next login"
+    return 3
+  fi
+  local hash
+  hash=$(cat "$src/Makefile" "$src/Momentum.hpp" "$src/plugin.cpp" | sha256sum | cut -c1-16)
+  out=$state/build/$commit-$hash/$name.so
+  [[ -f $out && ! -L $out ]] && return 0
+  local failed=$state/build/$commit-$hash.failed
+  if [[ -f $failed ]]; then log "build failed earlier for this Hyprland; see $failed"; return 1; fi
+  mkdir -p "${out%/*}"
+  local tmp="$out.tmp.$$"
+  if ! make -s -C "$src" OUT="$tmp" >"$failed" 2>&1; then
+    rm -f "$tmp"
+    log "build failed; see $failed"
+    return 1
+  fi
+  rm -f "$failed"
+  mv -f "$tmp" "$out"
+  # Keep only the current build.
+  local dir
+  for dir in "$state"/build/*/; do
+    dir=${dir%/}
+    [[ $dir == "${out%/*}" || -L $dir ]] && continue
+    rm -f -- "$dir/$name.so" && rmdir -- "$dir" 2>/dev/null || true
+  done
+}
+
+load() {
+  local commit out
+  # Omarchy's own package wins: the same plugin, rebuilt for every Hyprland.
+  # Loading both would scroll twice.
+  out=${OMARCHY_INERTIA_SO:-/usr/lib/omarchy-hyprland-inertia/inertia.so}
+  if [[ ! -f $out ]]; then
+    commit=$(running_commit)
+    [[ $commit =~ ^[0-9a-f]{40}$ ]] || { log "could not read the running Hyprland version"; return 1; }
+    build "$commit" || return $?
+  fi
+  if is_loaded; then
+    # Loaded by Omarchy's own config: already on.
+    [[ -f $loaded_file ]] || return 0
+    [[ $(<"$loaded_file") == "$out" ]] && return 0
+    unload
+  fi
+  local reply
+  reply=$(hyprctl plugin load "$out" 2>&1)
+  if ! is_loaded; then log "Hyprland refused the plugin: $reply"; return 1; fi
+  printf '%s\n' "$out" >"$loaded_file"
+}
+
+case $mode in
+  on) load ;;
+  off) unload ;;
+  sync) if wanted; then load; else unload; fi ;;
+  status) if is_loaded; then echo loaded; else echo unloaded; fi ;;
+esac

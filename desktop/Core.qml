@@ -198,6 +198,7 @@ Item {
   property bool trackpadGesturesInstalled: false
   property bool kittyInstalled: true
   property bool inertiaOn: false
+  property bool inertiaMouseOn: false
   property bool tapToClick: false
   property var trackpadNames: []
   property var allMiceNames: []
@@ -782,6 +783,7 @@ Item {
     browserCloseTab: true,
     middleButtonScreenshotOff: false,
     inertia: false,
+    inertiaMouse: false,
     singleMonitorWorkspaces: 10,
     multiMonitorWorkspaces: 5,
     displays: []
@@ -806,6 +808,14 @@ Item {
       touchpadSettings += ", clickfinger_behavior = " + (saved.clickfingerBehavior ? "true" : "false")
     }
     L.push("hl.config({ input = { touchpad = { " + touchpadSettings + " } } })")
+    // Scroll inertia (omarchy-hyprland-inertia). Its options only exist while
+    // it is loaded and reset on every reload, so set them here, guarded.
+    if (saved.inertia || saved.inertiaMouse) {
+      L.push("for _, p in ipairs(hl.get_loaded_plugins and hl.get_loaded_plugins() or {}) do")
+      L.push("  if p.name == \"omarchy-inertia\" then hl.config({ plugin = { inertia = { touchpad = "
+        + (saved.inertia ? "true" : "false") + ", mouse = " + (saved.inertiaMouse ? "true" : "false") + " } } }) end")
+      L.push("end")
+    }
     // Scroll acceleration + coast (DEV, requires a compositor built with the
     // touchpad scroll patch). Emission is gated on BOTH the runtime capability
     // probe and the user having configured values here, so a stock Hyprland
@@ -1942,10 +1952,27 @@ Item {
     }
   }
 
+  // Scroll inertia comes from omarchy-hyprland-inertia (or native/inertia,
+  // built here) loaded into the running Hyprland. control-panel.lua carries
+  // its touchpad/mouse options; with both off the plugin is unloaded.
+  function applyInertia() {
+    savePrefs()
+    writeLua()
+    Quickshell.execDetached(["bash", root.binDir + "/inertia-plugin",
+      (inertiaOn || inertiaMouseOn) ? "on" : "off"])
+  }
+
+  function setInertiaMouse(on) {
+    inertiaMouseOn = on
+    saved.inertiaMouse = on
+    applyInertia()
+    statusMessage = t(uiLang, "inertiaMouse") + " · " + (on ? "on" : "off")
+  }
+
   function setInertia(on) {
     inertiaOn = on
     saved.inertia = on
-    savePrefs()
+    applyInertia()
     statusMessage = t(uiLang, "inertia") + " · " + (on ? "on" : "off")
   }
 
@@ -1975,6 +2002,8 @@ Item {
       saved.swipe3 = swipe3On
       inertiaOn = d.inertia === true
       saved.inertia = inertiaOn
+      inertiaMouseOn = d.inertiaMouse === true
+      saved.inertiaMouse = inertiaMouseOn
       singleMonitorWorkspaces = Math.max(1, Math.min(10, Number(d.singleMonitorWorkspaces) || 10))
       multiMonitorWorkspaces = Math.max(1, Math.min(10, Number(d.multiMonitorWorkspaces) || 5))
       monitorColors = d.monitorColors && typeof d.monitorColors === "object" ? d.monitorColors : ({})
@@ -2052,6 +2081,7 @@ Item {
     prefsFile.setText(JSON.stringify({
       swipe3: swipe3On,
       inertia: inertiaOn,
+      inertiaMouse: inertiaMouseOn,
       naturalScroll: naturalScroll,
       tapToClick: tapToClick,
       browserCloseTab: browserCloseTabOn,
@@ -3317,6 +3347,12 @@ Item {
           description: "Terminal · " + (root.defaultTerm !== "" ? root.defaultTerm : "?")
           checked: root.inertiaOn
           onClicked: { root.setInertia(!root.inertiaOn) }
+        }
+
+        ToggleRow {
+          label: root.t(root.uiLang, "inertiaMouse")
+          checked: root.inertiaMouseOn
+          onClicked: { root.setInertiaMouse(!root.inertiaMouseOn) }
         }
 
         Item {

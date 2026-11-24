@@ -4,6 +4,14 @@
 
 A system settings panel for **Omarchy / Hyprland**, built as an Omarchy shell plugin (Quickshell/QML). Familiar for users coming from macOS, useful for everyone.
 
+**Scroll inertia, like on macOS:** swipe with two fingers and lift them, and
+the page keeps scrolling and slows down. A fast mouse-wheel spin can coast the
+same way. It comes from
+[omarchy-hyprland-inertia](https://github.com/avillagran/omarchy-hyprland-inertia),
+a small Hyprland plugin that loads into the Hyprland Omarchy already runs.
+Turn it on in the Trackpad tab, for the touchpad and for the mouse wheel
+([details](#scroll-inertia)).
+
 ![Trackpad](screenshot-1-trackpad.png)
 
 ## One-line installer
@@ -18,7 +26,6 @@ curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/f6
 The installer downloads an immutable panel revision with Qt 6.12 compatibility.
 An existing plugin directory is backed up before replacement; your saved settings
 are retained. The panel is ready in the current session without a reboot.
-The previous experimental compositor installer is retired; see the explanation below.
 
 Requires Omarchy with a running Hyprland desktop, Git, Python 3, jq and Quickshell.
 To remove the panel, run `omarchy plugin remove io.github.avillagran.omarchy-control-panel`.
@@ -36,7 +43,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **Trackpad / Mouse** (tuned for the Apple MTP multi-touch, which Hyprland classifies as a mouse):
   - Tap to click (no physical press)
   - Natural/inverted scrolling (per-device via `natural_scroll` + `scroll_factor`)
-  - Inertial scrolling
+  - Inertial scrolling for the touchpad and, optionally, the mouse wheel ([omarchy-hyprland-inertia](https://github.com/avillagran/omarchy-hyprland-inertia), [details](#scroll-inertia))
   - 3-finger swipe to switch workspaces
 - **Animations**: system animations, workspace transition, flat pointer acceleration, speed/sensitivity
 - **Windows**: inner/outer gaps, font size, Omarchy's square single-window and no-gaps toggles, animations and workspace distribution
@@ -50,7 +57,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 
 ## Development: unified tooltips
 
-[Omarchy PR #15694](https://github.com/omacom/omarchy/pull/15694) adds shared themed hints and optional interactive cards. This Control Panel integration adds live appearance settings at the end of Windows, translated into all 19 UI languages. The previous combined trial installer is retired.
+[Omarchy PR #15694](https://github.com/omacom/omarchy/pull/15694) adds shared themed hints and optional interactive cards. This Control Panel integration adds live appearance settings at the end of Windows, translated into all 19 UI languages.
 
 ## What's new in 0.5
 
@@ -91,9 +98,6 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **QuickView preview (Dev mode)**: a native workspace/window overview powered by the pinned
   [qs-hyprview](https://github.com/dom0/qs-hyprview) project, with
   Omarchy-specific launcher and integration patches kept separately.
-- **Experimental mouse-wheel inertia (retired trial)**: the historical compositor
-  patch included physical mouse-wheel coasting. The panel no longer offers an
-  alternate compositor installer.
 - **Safe installer reruns**: running the one-liner again updates an existing
   plugin checkout instead of leaving an older installed revision in place.
 
@@ -173,7 +177,7 @@ packages are not reinstalled, and staged configurations are not activated.
 Review restored data before applying it. See [the backup contract](docs/backup.md)
 for exclusions, format, recovery procedure, limitations and fixture-only tests.
 
-## QuickView and experimental scroll patch
+## QuickView
 
 QuickView uses [qs-hyprview](https://github.com/dom0/qs-hyprview), authored by
 Domenico Martella ([dom0](https://github.com/dom0)), as its overview renderer.
@@ -182,43 +186,31 @@ gesture/key-binding integration, and Omarchy-specific extensions. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the pinned revision and
 license notice.
 
-The Trackpad tab includes **Scroll feel** presets and live sliders for touchpad
-scroll acceleration + coast. They are **Dev mode** features because they need a
-patched Hyprland that is still under review:
+## Scroll inertia
 
-- [hyprwm/Hyprland#16254](https://github.com/hyprwm/Hyprland/pull/16254) — scroll
-  acceleration, coast and `scroll_ignore_classes`
-- [hyprwm/aquamarine#405](https://github.com/hyprwm/aquamarine/pull/405) — Wayland
-  axis source propagation (only needed for nested testing)
+The Trackpad tab has two switches: **Inertial scrolling** for the touchpad and
+**Inertia with the mouse wheel**. Either one loads a small Hyprland plugin into
+the compositor Omarchy already runs. The plugin lives in its own repository,
+[omarchy-hyprland-inertia](https://github.com/avillagran/omarchy-hyprland-inertia),
+meant to become an Omarchy package like its titlebars plugin; `native/inertia`
+keeps a copy for systems without that package. It does not replace
+Hyprland or hook its functions: it listens to touchpad scroll events and, after
+the fingers lift, keeps scrolling for up to 0.8 s while slowing down. Moving
+the pointer, touching the pad, clicking, typing or changing window stops it.
+With the mouse-wheel switch on, a fast spin coasts once the wheel stops; a
+single notch or a slow scroll stops exactly where it is, and moving the mouse
+does not cut the coast. Browsers and terminals keep their own inertia.
 
-### Experimental physical mouse-wheel inertia
-
-The same Dev-mode card includes an opt-in **Apply to mouse wheel** switch. It
-enables the experimental acceleration and inertial coast behavior for physical
-mouse-wheel input using the patched Hyprland build. It is disabled by default:
-enable it only if the wheel feel works well with your mouse and applications.
-The switch uses dedicated `input:mouse:scroll_*` options, so it does not change
-the touchpad setting and is never written for stock Hyprland.
-
-### Experimental scroll and tooltip installer
-
-The combined trial installer is retired. It installed a shadow Hyprland binary,
-which could diverge from Omarchy's channel and break login after an update.
-Control Panel must use the compositor supplied by Omarchy. Use the normal
-one-line installer above.
-
-Global inertial scrolling is unavailable when the channel compositor does not
-provide it. Scroll speed and each application's native scrolling still work.
-The source patches remain here for upstream development, not for installation
-on users' desktops.
-
-To restore the previous configuration and packages installed by this combined trial, then reboot:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/25aa630efde26e7b3c1699590b0b839ef1c59e20/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=25aa630efde26e7b3c1699590b0b839ef1c59e20 bash -s -- --uninstall
-```
-
-Rollback restores the original plugin directory and any previous shadow binary, and removes the tooltip trial only if this installer created it. It refuses modified replacement files or an unrelated later Omarchy selection. Personal tooltip preferences are retained.
+When the `omarchy-hyprland-inertia` package is installed, the switch loads it
+and builds nothing. If inertia is already on in Omarchy's own settings, the
+panel leaves it alone, so it never scrolls twice. Otherwise
+`bin/inertia-plugin` compiles the plugin on your machine the first time
+(about 4 s; needs `base-devel`, Hyprland's headers ship with the `hyprland`
+package) into `~/.local/state/omarchy/control-panel-inertia/`, outside the
+plugin folder. No binary is shipped. A plugin only works with the exact
+Hyprland build it was compiled for, so after a Hyprland update inertia pauses
+until the next login, then rebuilds itself. If anything fails, Hyprland keeps
+running without inertia. The bar widget reloads the plugin at login.
 
 ## Internationalization
 
@@ -293,6 +285,35 @@ It validates the manifest with `omarchy-plugin-validate`, checks for symlinks, J
 ![Devices](screenshot-4-devices.png)
 ![Keyboard](screenshot-5-keyboard-a.png)
 ![Keyboard](screenshot-5-keyboard-b.png)
+
+## History: retired scroll experiments
+
+Before the inertia plugin, the panel tried to get scroll acceleration and
+inertia by patching Hyprland itself. Those upstream pull requests were closed
+without merging, and that approach is finished:
+
+- [hyprwm/Hyprland#16254](https://github.com/hyprwm/Hyprland/pull/16254) (scroll
+  acceleration, coast and `scroll_ignore_classes`) and
+  [hyprwm/aquamarine#405](https://github.com/hyprwm/aquamarine/pull/405)
+  (Wayland axis source for nested sessions): closed.
+- The **Scroll feel** presets and sliders, and the Dev-mode **Apply to mouse
+  wheel** switch, remain behind Dev mode. They only act on a patched Hyprland
+  and do nothing on the one Omarchy ships. Mouse-wheel inertia now comes from
+  the plugin's own switch.
+- The combined scroll and tooltip trial installer is retired. It installed a
+  separate Hyprland binary, which could drift from Omarchy's and break login
+  after an update. The patches stay in `patches/` for reference only.
+
+To undo that trial installer on a machine that still has it, then reboot:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/25aa630efde26e7b3c1699590b0b839ef1c59e20/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=25aa630efde26e7b3c1699590b0b839ef1c59e20 bash -s -- --uninstall
+```
+
+It restores the original plugin directory and any previous Hyprland binary, and
+removes the tooltip trial only if this installer created it. It refuses
+modified replacement files or an unrelated later Omarchy selection. Personal
+tooltip preferences are retained.
 
 ## License
 
