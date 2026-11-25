@@ -604,7 +604,13 @@
     "omabridgeErrorPathUnsupported": "OmaBridge is installed in a path a background service cannot use.",
     "omabridgeErrorPairDenied": "The other device refused this invitation. Ask for a new one.",
     "omabridgeErrorPeerUnreachable": "The other device could not be reached. Check that it is published and try again.",
-    "omabridgeErrorRequestChanged": "This request changed. Refresh and try again."
+    "omabridgeErrorRequestChanged": "This request changed. Refresh and try again.",
+    "displayBrightness": "Brightness",
+    "scrollFeelPluginSupported": "Inertia plugin detected: values are live. Here the presets set how long scrolling keeps going after you let go; acceleration needs the patched Hyprland build.",
+    "scrollIgnorePluginHint": "Except browsers: browsers keep their own coast after a touchpad flick, and the mouse wheel coasts everywhere, terminals included. Nowhere turns coasting off without unloading the plugin.",
+    "scrollIgnorePluginLabel": "Inertia in",
+    "scrollIgnorePluginNative": "Nowhere",
+    "scrollIgnorePluginBrowsers": "Except browsers"
   },
   "es": {
     "tooltipAppearance": "Apariencia de las ayudas emergentes",
@@ -1211,7 +1217,13 @@
     "omabridgeErrorPathUnsupported": "OmaBridge está instalado en una ruta que un servicio en segundo plano no puede usar.",
     "omabridgeErrorPairDenied": "El otro equipo rechazó esta invitación. Pide una nueva.",
     "omabridgeErrorPeerUnreachable": "No se pudo contactar con el otro equipo. Comprueba que esté publicado e inténtalo de nuevo.",
-    "omabridgeErrorRequestChanged": "Esta solicitud cambió. Actualiza e inténtalo de nuevo."
+    "omabridgeErrorRequestChanged": "Esta solicitud cambió. Actualiza e inténtalo de nuevo.",
+    "displayBrightness": "Brillo",
+    "scrollFeelPluginSupported": "Plugin de inercia detectado: los valores se aplican al instante. Aquí los presets fijan cuánto sigue el scroll después de soltar; la aceleración requiere la build parcheada de Hyprland.",
+    "scrollIgnorePluginHint": "Excepto navegadores: los navegadores mantienen su propia inercia del touchpad, y la rueda del mouse tiene inercia en todas partes, terminales incluidas. En ninguna apaga la inercia sin descargar el plugin.",
+    "scrollIgnorePluginLabel": "Inercia en",
+    "scrollIgnorePluginNative": "En ninguna",
+    "scrollIgnorePluginBrowsers": "Excepto navegadores"
   },
   "pt": {
     "tooltipAppearance": "Aparência das dicas",
@@ -1317,7 +1329,13 @@
     "tmBarNumbers": "Números",
     "tmBarGraph": "Gráfico",
     "tmSparklines": "Mini gráfico em cada app",
-    "tmCores": "Gráfico de CPU por núcleo"
+    "tmCores": "Gráfico de CPU por núcleo",
+    "displayBrightness": "Brilho",
+    "scrollFeelPluginSupported": "Plugin de inércia detectado: os valores se aplicam na hora. Aqui os presets definem quanto a rolagem continua depois de soltar; a aceleração exige a build corrigida do Hyprland.",
+    "scrollIgnorePluginHint": "Exceto navegadores: os navegadores mantêm a própria inércia do touchpad, e a roda do mouse tem inércia em todo lugar, terminais incluídos. Em nenhum desliga a inércia sem descarregar o plugin.",
+    "scrollIgnorePluginLabel": "Inércia em",
+    "scrollIgnorePluginNative": "Em nenhum",
+    "scrollIgnorePluginBrowsers": "Exceto navegadores"
   },
   "fr": {
     "tooltipAppearance": "Apparence des infobulles",
@@ -1423,7 +1441,13 @@
     "tmBarNumbers": "Chiffres",
     "tmBarGraph": "Graphique",
     "tmSparklines": "Mini graphique par app",
-    "tmCores": "Graphique CPU par cœur"
+    "tmCores": "Graphique CPU par cœur",
+    "displayBrightness": "Luminosité",
+    "scrollFeelPluginSupported": "Plugin d'inertie détecté : les valeurs s'appliquent en direct. Ici, les préréglages fixent la durée du défilement après avoir lâché ; l'accélération nécessite la build patchée de Hyprland.",
+    "scrollIgnorePluginHint": "Sauf navigateurs : les navigateurs gardent leur propre inertie au pavé tactile, et la molette a de l'inertie partout, terminaux compris. Nulle part coupe l'inertie sans décharger le plugin.",
+    "scrollIgnorePluginLabel": "Inertie dans",
+    "scrollIgnorePluginNative": "Nulle part",
+    "scrollIgnorePluginBrowsers": "Sauf navigateurs"
   },
   "de": {
     "tooltipAppearance": "Tooltip-Darstellung",
@@ -1529,7 +1553,13 @@
     "tmBarNumbers": "Zahlen",
     "tmBarGraph": "Grafik",
     "tmSparklines": "Mini-Grafik je App",
-    "tmCores": "CPU-Grafik pro Kern"
+    "tmCores": "CPU-Grafik pro Kern",
+    "displayBrightness": "Helligkeit",
+    "scrollFeelPluginSupported": "Trägheits-Plugin erkannt: Werte wirken sofort. Hier legen die Voreinstellungen fest, wie lange nach dem Loslassen weitergescrollt wird; Beschleunigung erfordert den gepatchten Hyprland-Build.",
+    "scrollIgnorePluginHint": "Außer Browser: Browser behalten ihre eigene Touchpad-Trägheit, das Mausrad hat überall Trägheit, auch in Terminals. Nirgends schaltet die Trägheit ab, ohne das Plugin zu entladen.",
+    "scrollIgnorePluginLabel": "Trägheit in",
+    "scrollIgnorePluginNative": "Nirgends",
+    "scrollIgnorePluginBrowsers": "Außer Browser"
   },
   "it": {
     "tooltipAppearance": "Aspetto dei suggerimenti",
@@ -1635,7 +1665,13 @@
     "tmBarNumbers": "Numeri",
     "tmBarGraph": "Grafico",
     "tmSparklines": "Mini grafico per app",
-    "tmCores": "Grafico CPU per core"
+    "tmCores": "Grafico CPU per core",
+    "displayBrightness": "Luminosità",
+    "scrollFeelPluginSupported": "Plugin di inerzia rilevato: i valori si applicano subito. Qui i preset stabiliscono quanto continua lo scorrimento dopo il rilascio; l'accelerazione richiede la build patchata di Hyprland.",
+    "scrollIgnorePluginHint": "Tranne browser: i browser mantengono la propria inerzia del touchpad, e la rotella ha inerzia ovunque, terminali compresi. Da nessuna parte disattiva l'inerzia senza scaricare il plugin.",
+    "scrollIgnorePluginLabel": "Inerzia in",
+    "scrollIgnorePluginNative": "Da nessuna parte",
+    "scrollIgnorePluginBrowsers": "Tranne browser"
   },
   "nl": {
     "tooltipAppearance": "Uiterlijk van tooltips",
@@ -1741,7 +1777,13 @@
     "tmBarNumbers": "Cijfers",
     "tmBarGraph": "Grafiek",
     "tmSparklines": "Mini-grafiek per app",
-    "tmCores": "CPU-grafiek per kern"
+    "tmCores": "CPU-grafiek per kern",
+    "displayBrightness": "Helderheid",
+    "scrollFeelPluginSupported": "Traagheidsplugin gevonden: waarden werken meteen. Hier bepalen de presets hoe lang het scrollen doorgaat na loslaten; versnelling vereist de gepatchte Hyprland-build.",
+    "scrollIgnorePluginHint": "Behalve browsers: browsers houden hun eigen touchpad-traagheid, het muiswiel heeft overal traagheid, ook in terminals. Nergens zet de traagheid uit zonder de plugin te ontladen.",
+    "scrollIgnorePluginLabel": "Traagheid in",
+    "scrollIgnorePluginNative": "Nergens",
+    "scrollIgnorePluginBrowsers": "Behalve browsers"
   },
   "pl": {
     "tooltipAppearance": "Wygląd podpowiedzi",
@@ -1847,7 +1889,13 @@
     "tmBarNumbers": "Liczby",
     "tmBarGraph": "Wykres",
     "tmSparklines": "Mini wykres przy każdej aplikacji",
-    "tmCores": "Wykres CPU dla każdego rdzenia"
+    "tmCores": "Wykres CPU dla każdego rdzenia",
+    "displayBrightness": "Jasność",
+    "scrollFeelPluginSupported": "Wykryto wtyczkę bezwładności: wartości działają od razu. Tu ustawienia określają, jak długo przewijanie trwa po puszczeniu; przyspieszenie wymaga łatanej wersji Hyprland.",
+    "scrollIgnorePluginHint": "Oprócz przeglądarek: przeglądarki zachowują własną bezwładność touchpada, a kółko myszy ma bezwładność wszędzie, także w terminalach. Nigdzie wyłącza bezwładność bez wyładowania wtyczki.",
+    "scrollIgnorePluginLabel": "Bezwładność w",
+    "scrollIgnorePluginNative": "Nigdzie",
+    "scrollIgnorePluginBrowsers": "Oprócz przeglądarek"
   },
   "ru": {
     "tooltipAppearance": "Вид подсказок",
@@ -1953,7 +2001,13 @@
     "tmBarNumbers": "Числа",
     "tmBarGraph": "График",
     "tmSparklines": "Мини-график у каждого приложения",
-    "tmCores": "График CPU по ядрам"
+    "tmCores": "График CPU по ядрам",
+    "displayBrightness": "Яркость",
+    "scrollFeelPluginSupported": "Плагин инерции найден: значения применяются сразу. Здесь пресеты задают, как долго прокрутка продолжается после отпускания; для ускорения нужна пропатченная сборка Hyprland.",
+    "scrollIgnorePluginHint": "Кроме браузеров: браузеры сохраняют собственную инерцию тачпада, а колесо мыши получает инерцию везде, включая терминалы. «Нигде» выключает инерцию без выгрузки плагина.",
+    "scrollIgnorePluginLabel": "Инерция в",
+    "scrollIgnorePluginNative": "Нигде",
+    "scrollIgnorePluginBrowsers": "Кроме браузеров"
   },
   "ja": {
     "tooltipAppearance": "ツールチップの外観",
@@ -2059,7 +2113,13 @@
     "tmBarNumbers": "数値",
     "tmBarGraph": "グラフ",
     "tmSparklines": "アプリごとのミニグラフ",
-    "tmCores": "コアごとのCPUグラフ"
+    "tmCores": "コアごとのCPUグラフ",
+    "displayBrightness": "明るさ",
+    "scrollFeelPluginSupported": "慣性プラグインを検出しました。値はすぐに反映されます。ここではプリセットで指を離した後のスクロール継続時間を設定します。加速にはパッチ版 Hyprland が必要です。",
+    "scrollIgnorePluginHint": "ブラウザー以外: ブラウザーはタッチパッドの独自の慣性を保ち、マウスホイールはターミナルを含むすべての場所で慣性が効きます。「なし」はプラグインをアンロードせずに慣性を止めます。",
+    "scrollIgnorePluginLabel": "慣性の適用先",
+    "scrollIgnorePluginNative": "なし",
+    "scrollIgnorePluginBrowsers": "ブラウザー以外"
   },
   "ko": {
     "tooltipAppearance": "툴팁 모양",
@@ -2165,7 +2225,13 @@
     "tmBarNumbers": "숫자",
     "tmBarGraph": "그래프",
     "tmSparklines": "앱별 미니 그래프",
-    "tmCores": "코어별 CPU 그래프"
+    "tmCores": "코어별 CPU 그래프",
+    "displayBrightness": "밝기",
+    "scrollFeelPluginSupported": "관성 플러그인이 감지되었습니다. 값은 즉시 적용됩니다. 여기서 프리셋은 손을 뗀 뒤 스크롤이 이어지는 시간을 정합니다. 가속은 패치된 Hyprland 빌드가 필요합니다.",
+    "scrollIgnorePluginHint": "브라우저 제외: 브라우저는 자체 터치패드 관성을 유지하고, 마우스 휠은 터미널을 포함한 모든 곳에서 관성이 적용됩니다. '없음'은 플러그인을 내리지 않고 관성을 끕니다.",
+    "scrollIgnorePluginLabel": "관성 적용",
+    "scrollIgnorePluginNative": "없음",
+    "scrollIgnorePluginBrowsers": "브라우저 제외"
   },
   "zh": {
     "tooltipAppearance": "提示框外观",
@@ -2271,7 +2337,13 @@
     "tmBarNumbers": "数字",
     "tmBarGraph": "图表",
     "tmSparklines": "每个应用的迷你图",
-    "tmCores": "每核 CPU 图"
+    "tmCores": "每核 CPU 图",
+    "displayBrightness": "亮度",
+    "scrollFeelPluginSupported": "已检测到惯性插件：数值实时生效。此处预设决定松手后滚动持续多久；加速需要打过补丁的 Hyprland 版本。",
+    "scrollIgnorePluginHint": "浏览器除外：浏览器保留自己的触控板惯性，鼠标滚轮在所有地方都有惯性，包括终端。“无”会关闭惯性而不卸载插件。",
+    "scrollIgnorePluginLabel": "惯性应用于",
+    "scrollIgnorePluginNative": "不启用",
+    "scrollIgnorePluginBrowsers": "浏览器除外"
   },
   "ar": {
     "tooltipAppearance": "مظهر التلميحات",
@@ -2377,7 +2449,13 @@
     "tmBarNumbers": "أرقام",
     "tmBarGraph": "رسم",
     "tmSparklines": "رسم مصغر لكل تطبيق",
-    "tmCores": "رسم المعالج لكل نواة"
+    "tmCores": "رسم المعالج لكل نواة",
+    "displayBrightness": "السطوع",
+    "scrollFeelPluginSupported": "تم اكتشاف إضافة القصور الذاتي: تُطبَّق القيم فورًا. هنا تحدد الإعدادات المسبقة مدة استمرار التمرير بعد الإفلات؛ يتطلب التسريع نسخة Hyprland المعدلة.",
+    "scrollIgnorePluginHint": "باستثناء المتصفحات: تحتفظ المتصفحات بقصورها الذاتي الخاص بلوحة اللمس، وتحصل عجلة الفأرة على القصور الذاتي في كل مكان بما في ذلك الطرفيات. «لا مكان» يوقف القصور الذاتي دون إلغاء تحميل الإضافة.",
+    "scrollIgnorePluginLabel": "القصور الذاتي في",
+    "scrollIgnorePluginNative": "لا مكان",
+    "scrollIgnorePluginBrowsers": "باستثناء المتصفحات"
   },
   "tr": {
     "tooltipAppearance": "Araç ipucu görünümü",
@@ -2483,7 +2561,13 @@
     "tmBarNumbers": "Sayılar",
     "tmBarGraph": "Grafik",
     "tmSparklines": "Her uygulamada mini grafik",
-    "tmCores": "Çekirdek başına CPU grafiği"
+    "tmCores": "Çekirdek başına CPU grafiği",
+    "displayBrightness": "Parlaklık",
+    "scrollFeelPluginSupported": "Atalet eklentisi bulundu: değerler anında uygulanır. Burada ön ayarlar bıraktıktan sonra kaydırmanın ne kadar süreceğini belirler; hızlanma için yamalı Hyprland sürümü gerekir.",
+    "scrollIgnorePluginHint": "Tarayıcılar hariç: tarayıcılar kendi dokunmatik yüzey ataletini korur, fare tekerleği terminaller dahil her yerde ataletli kayar. Hiçbir yerde, eklentiyi kaldırmadan ataleti kapatır.",
+    "scrollIgnorePluginLabel": "Atalet",
+    "scrollIgnorePluginNative": "Hiçbiri",
+    "scrollIgnorePluginBrowsers": "Tarayıcılar hariç"
   },
   "sv": {
     "tooltipAppearance": "Verktygstipsens utseende",
@@ -2589,7 +2673,13 @@
     "tmBarNumbers": "Siffror",
     "tmBarGraph": "Graf",
     "tmSparklines": "Minigraf för varje app",
-    "tmCores": "CPU-graf per kärna"
+    "tmCores": "CPU-graf per kärna",
+    "displayBrightness": "Ljusstyrka",
+    "scrollFeelPluginSupported": "Tröghetsplugin hittat: värden gäller direkt. Här styr förinställningarna hur länge rullningen fortsätter efter att du släppt; acceleration kräver den patchade Hyprland-versionen.",
+    "scrollIgnorePluginHint": "Utom webbläsare: webbläsare behåller sin egen tröghet på pekplattan, och mushjulet får tröghet överallt, även i terminaler. Ingenstans stänger av trögheten utan att ladda ur pluginet.",
+    "scrollIgnorePluginLabel": "Tröghet i",
+    "scrollIgnorePluginNative": "Ingenstans",
+    "scrollIgnorePluginBrowsers": "Utom webbläsare"
   },
   "da": {
     "tooltipAppearance": "Værktøjstippets udseende",
@@ -2695,7 +2785,13 @@
     "tmBarNumbers": "Tal",
     "tmBarGraph": "Graf",
     "tmSparklines": "Minigraf ved hver app",
-    "tmCores": "CPU-graf pr. kerne"
+    "tmCores": "CPU-graf pr. kerne",
+    "displayBrightness": "Lysstyrke",
+    "scrollFeelPluginSupported": "Inerti-plugin fundet: værdier virker med det samme. Her bestemmer forudindstillingerne, hvor længe rulningen fortsætter efter du slipper; acceleration kræver den patchede Hyprland-version.",
+    "scrollIgnorePluginHint": "Undtagen browsere: browsere beholder deres egen inerti på touchpad, og musehjulet får inerti overalt, også i terminaler. Ingen steder slår inerti fra uden at fjerne pluginet.",
+    "scrollIgnorePluginLabel": "Inerti i",
+    "scrollIgnorePluginNative": "Ingen steder",
+    "scrollIgnorePluginBrowsers": "Undtagen browsere"
   },
   "no": {
     "tooltipAppearance": "Verktøytipsutseende",
@@ -2801,7 +2897,13 @@
     "tmBarNumbers": "Tall",
     "tmBarGraph": "Graf",
     "tmSparklines": "Minigraf for hver app",
-    "tmCores": "CPU-graf per kjerne"
+    "tmCores": "CPU-graf per kjerne",
+    "displayBrightness": "Lysstyrke",
+    "scrollFeelPluginSupported": "Treghetsplugin funnet: verdiene virker med en gang. Her bestemmer forhåndsvalgene hvor lenge rullingen fortsetter etter at du slipper; akselerasjon krever den patchede Hyprland-versjonen.",
+    "scrollIgnorePluginHint": "Unntatt nettlesere: nettlesere beholder sin egen treghet på styreflaten, og musehjulet får treghet overalt, også i terminaler. Ingen steder slår av tregheten uten å laste ut programtillegget.",
+    "scrollIgnorePluginLabel": "Treghet i",
+    "scrollIgnorePluginNative": "Ingen steder",
+    "scrollIgnorePluginBrowsers": "Unntatt nettlesere"
   },
   "fi": {
     "tooltipAppearance": "Työkaluvihjeen ulkoasu",
@@ -2907,7 +3009,13 @@
     "tmBarNumbers": "Luvut",
     "tmBarGraph": "Kaavio",
     "tmSparklines": "Minikaavio jokaiselle sovellukselle",
-    "tmCores": "Ydinkohtainen CPU-kaavio"
+    "tmCores": "Ydinkohtainen CPU-kaavio",
+    "displayBrightness": "Kirkkaus",
+    "scrollFeelPluginSupported": "Inertialiitännäinen löytyi: arvot toimivat heti. Tässä esiasetukset määräävät, kuinka kauan vieritys jatkuu irrottamisen jälkeen; kiihdytys vaatii paikatun Hyprland-version.",
+    "scrollIgnorePluginHint": "Paitsi selaimet: selaimet pitävät oman kosketuslevyn inertiansa, ja hiiren rulla saa inertian kaikkialla, myös päätteissä. Ei missään poistaa inertian käytöstä purkamatta laajennusta.",
+    "scrollIgnorePluginLabel": "Inertia",
+    "scrollIgnorePluginNative": "Ei missään",
+    "scrollIgnorePluginBrowsers": "Paitsi selaimet"
   },
   "cs": {
     "tooltipAppearance": "Vzhled popisků",
@@ -3013,6 +3121,12 @@
     "tmBarNumbers": "Čísla",
     "tmBarGraph": "Graf",
     "tmSparklines": "Minigraf u každé aplikace",
-    "tmCores": "Graf CPU po jádrech"
+    "tmCores": "Graf CPU po jádrech",
+    "displayBrightness": "Jas",
+    "scrollFeelPluginSupported": "Zjištěn plugin setrvačnosti: hodnoty platí hned. Předvolby zde určují, jak dlouho posouvání pokračuje po puštění; zrychlení vyžaduje upravené sestavení Hyprlandu.",
+    "scrollIgnorePluginHint": "Kromě prohlížečů: prohlížeče si ponechají vlastní setrvačnost touchpadu a kolečko myši má setrvačnost všude, i v terminálech. Nikde vypne setrvačnost bez odebrání pluginu.",
+    "scrollIgnorePluginLabel": "Setrvačnost v",
+    "scrollIgnorePluginNative": "Nikde",
+    "scrollIgnorePluginBrowsers": "Kromě prohlížečů"
   }
 }

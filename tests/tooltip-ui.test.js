@@ -21,7 +21,7 @@ assert.match(core, /visible: root.currentTab === 1[\s\S]*?tooltipAppearance[\s\S
 assert.match(core, /root\.binDir \+ "\/tooltip-settings"/);
 assert.match(core, /\["python3", root\.tooltipHelperPath, "get"\]/);
 assert.match(core, /\["python3", root\.tooltipHelperPath, "set", field, value\]/);
-assert.match(core, /onCurrentTabChanged: if \(currentTab === 1\) readTooltips\(\)/);
+assert.match(core, /onCurrentTabChanged: \{\s*if \(currentTab === 1\) readTooltips\(\)/);
 assert.match(core, /function setTooltip\(field, value\) \{[\s\S]*?\^#\[0-9a-fA-F\]\{6\}\$/);
 assert.match(core, /selected: root\.tooltipShape === modelData/);
 assert.match(core, /selected: root\.tooltipBorderMode === modelData/);

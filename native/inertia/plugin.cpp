@@ -1,12 +1,14 @@
 // Scroll inertia for Omarchy. After the fingers lift off the touchpad (or,
 // when enabled, after a mouse wheel stops spinning), keep sending the focused
-// surface scroll frames that slow down, for at most 0.8 s.
+// surface scroll frames that slow down, for 0.8 s by default.
 // It only listens to Hyprland's input events: no function hooks, and nothing
 // is sent when no surface has pointer focus.
 //
 // Options (reset to these defaults on every config reload):
 //   plugin:inertia:touchpad  true   coast after a two-finger touchpad scroll
 //   plugin:inertia:mouse     false  coast after a fast mouse-wheel spin
+//   plugin:inertia:coast     800    how long a coast lasts, in ms (0 = none)
+//   plugin:inertia:all_apps  false  also coast after touchpad flicks in browsers
 #include "Momentum.hpp"
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/version.h>
@@ -18,6 +20,7 @@
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/config/ConfigValue.hpp>
 #include <hyprland/src/config/values/types/BoolValue.hpp>
+#include <hyprland/src/config/values/types/IntValue.hpp>
 #include <array>
 #include <chrono>
 #include <cstring>
@@ -36,12 +39,19 @@ constexpr int WHEEL_RELEASE_MS = 60;
 // Slower than this (about a notch every 60 ms) a wheel just stops, as it does
 // without inertia, so careful scrolling stays exact.
 constexpr double WHEEL_MIN_VELOCITY = 0.25;
+// At the default 800 ms coast: touchpad tau 140, wheel tau 220. Both scale
+// with plugin:inertia:coast, so a longer coast also carries further.
+constexpr double DEFAULT_COAST_MS = 800;
 constexpr double TOUCHPAD_TAU = 140;
 constexpr double WHEEL_TAU = 220;
 wl_event_source* wheelTimer = nullptr;
 unsigned wheelAxis = 0;
 SP<Config::Values::CBoolValue> touchpadOption;
 SP<Config::Values::CBoolValue> mouseOption;
+SP<Config::Values::CIntValue> coastOption;
+SP<Config::Values::CBoolValue> allAppsOption;
+double coastMs() { return coastOption ? std::clamp<double>(coastOption->value(), 0, 3000) : DEFAULT_COAST_MS; }
+double scaledTau(double base) { return base * coastMs() / DEFAULT_COAST_MS; }
 enum class Source { None, Finger, Wheel };
 Source source = Source::None;
 WP<CWLSurfaceResource> target;
@@ -62,8 +72,10 @@ void startCoast(Clock::time_point now) {
     tickTime = now;
     wl_event_source_timer_update(timer, 16);
 }
-bool allowed() {
-    // Keep native inertia in browsers and terminals; never emit without a target.
+bool allowed(Source from) {
+    // Browsers already coast after a touchpad flick, so they keep their own
+    // there. They have no wheel inertia, and terminals have none at all.
+    // Never emit without a target.
     const auto surface = g_pSeatManager->m_state.pointerFocus.lock();
     if (!surface) return false;
     // The window under the pointer, even when it opened under a still cursor.
@@ -72,14 +84,15 @@ bool allowed() {
     auto window = hl ? Desktop::View::CWindow::fromView(hl->view()) : nullptr;
     if (!window) window = g_pInputManager->m_lastMouseFocus.lock();
     if (!window) return false;
+    if (from == Source::Wheel || (allAppsOption && allAppsOption->value())) return true;
     std::string cls = window->metadata().appID();
     std::transform(cls.begin(), cls.end(), cls.begin(), [](unsigned char c) { return std::tolower(c); });
-    for (const auto* excluded : {"firefox", "chrom", "brave", "vivaldi", "librewolf", "zen", "kitty", "alacritty", "foot", "ghostty", "terminal"})
+    for (const auto* excluded : {"firefox", "chrom", "brave", "vivaldi", "librewolf", "zen"})
         if (cls.find(excluded) != std::string::npos) return false;
     return true;
 }
 int tick(void*) {
-    if (!allowed() || target.expired() || target.lock() != g_pSeatManager->m_state.pointerFocus.lock()) { stop(); return 0; }
+    if (!allowed(source) || target.expired() || target.lock() != g_pSeatManager->m_state.pointerFocus.lock()) { stop(); return 0; }
     const auto now = Clock::now();
     const auto dt = elapsed(now, tickTime);
     tickTime = now;
@@ -92,7 +105,7 @@ int tick(void*) {
     const auto axisSource = wheel ? WL_POINTER_AXIS_SOURCE_CONTINUOUS : WL_POINTER_AXIS_SOURCE_FINGER;
     const double factor = wheel ? *mouseFactor : *touchpadFactor;
     for (unsigned i = 0; i < 2; ++i) {
-        const auto delta = axes[i].tick(dt);
+        const auto delta = axes[i].tick(dt, coastMs());
         if (delta != 0)
             g_pSeatManager->sendPointerAxis(ms, static_cast<wl_pointer_axis>(i), delta * factor, 0, 0,
                 axisSource, WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
@@ -104,11 +117,11 @@ int tick(void*) {
     return 0;
 }
 int wheelReleased(void*) {
-    if (source != Source::Wheel || !allowed() || target.expired() || target.lock() != g_pSeatManager->m_state.pointerFocus.lock()) { stop(); return 0; }
+    if (source != Source::Wheel || !allowed(Source::Wheel) || target.expired() || target.lock() != g_pSeatManager->m_state.pointerFocus.lock()) { stop(); return 0; }
     const auto now = Clock::now();
     auto& axis = axes[wheelAxis];
     axis.release(elapsed(now, sampled[wheelAxis]));
-    if (axis.active && std::abs(axis.velocity) >= WHEEL_MIN_VELOCITY) startCoast(now);
+    if (axis.active && coastMs() > 0 && std::abs(axis.velocity) >= WHEEL_MIN_VELOCITY) startCoast(now);
     else stop();
     return 0;
 }
@@ -127,14 +140,14 @@ void wheelAxisEvent(const IPointer::SAxisEvent& e, unsigned i) {
     target = current;
     wheelAxis = i;
     if (dt > 150) axes[i].reset();
-    axes[i].tau = WHEEL_TAU;
+    axes[i].tau = scaledTau(WHEEL_TAU);
     axes[i].sample(e.delta, dt, 150);
     sampled[i] = now;
     wl_event_source_timer_update(wheelTimer, WHEEL_RELEASE_MS);
 }
 void axis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
     const unsigned i = static_cast<unsigned>(e.axis);
-    if (info.cancelled || i > 1 || !std::isfinite(e.delta) || !allowed()) { stop(); return; }
+    if (info.cancelled || i > 1 || !std::isfinite(e.delta) || !allowed(e.source == WL_POINTER_AXIS_SOURCE_WHEEL ? Source::Wheel : Source::Finger)) { stop(); return; }
     if (e.source == WL_POINTER_AXIS_SOURCE_WHEEL) {
         if (mouseOption && mouseOption->value() && e.delta != 0) wheelAxisEvent(e, i);
         else stop();
@@ -150,13 +163,14 @@ void axis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
     if (e.delta == 0) {
         // Only an explicit finger axis-stop starts momentum. Silence never does.
         axes[i].release(dt);
-        if (axes[i].active) startCoast(now);
+        if (axes[i].active && coastMs() > 0) startCoast(now);
+        else axes[i].reset();
     } else {
         if (coasting()) stop();
         source = Source::Finger;
         target = current;
         if (dt > 80) axes[i].reset();
-        axes[i].tau = TOUCHPAD_TAU;
+        axes[i].tau = scaledTau(TOUCHPAD_TAU);
         axes[i].sample(e.delta, dt);
         sampled[i] = now;
     }
@@ -173,7 +187,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     touchpadOption = makeShared<Config::Values::CBoolValue>("plugin:inertia:touchpad", "Keep scrolling briefly after the fingers lift off the touchpad", true);
     mouseOption = makeShared<Config::Values::CBoolValue>("plugin:inertia:mouse", "Keep scrolling briefly after a fast mouse-wheel spin", false);
     HyprlandAPI::addConfigValueV2(handle, touchpadOption);
+    coastOption = makeShared<Config::Values::CIntValue>("plugin:inertia:coast", "How long a coast lasts, in ms (0 = no coast)", 800,
+        Config::Values::SIntValueOptions{.min = 0, .max = 3000});
+    allAppsOption = makeShared<Config::Values::CBoolValue>("plugin:inertia:all_apps", "Also coast after touchpad flicks in browsers, which have their own", false);
     HyprlandAPI::addConfigValueV2(handle, mouseOption);
+    HyprlandAPI::addConfigValueV2(handle, coastOption);
+    HyprlandAPI::addConfigValueV2(handle, allAppsOption);
     listeners.emplace_back(Event::bus()->m_events.input.mouse.axis.listen(axis));
     // Moving a mouse while its wheel coasts is normal; only touchpad coasts stop.
     listeners.emplace_back(Event::bus()->m_events.input.mouse.move.listen([](const Vector2D&, Event::SCallbackInfo&) {
@@ -190,7 +209,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     }
     // A config read before this load could not set plugin:inertia:*; read it again.
     HyprlandAPI::reloadConfig();
-    return {"omarchy-inertia", "Scroll inertia for Omarchy", "avillagran", "0.1.1"};
+    return {"omarchy-inertia", "Scroll inertia for Omarchy", "avillagran", "0.1.2"};
 }
 APICALL EXPORT void PLUGIN_EXIT() {
     listeners.clear();
@@ -200,4 +219,6 @@ APICALL EXPORT void PLUGIN_EXIT() {
     timer = wheelTimer = nullptr;
     touchpadOption.reset();
     mouseOption.reset();
+    coastOption.reset();
+    allAppsOption.reset();
 }

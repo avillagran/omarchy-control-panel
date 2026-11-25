@@ -74,5 +74,10 @@ int main() {
     Momentum touch = fastWheel;
     touch.tau = 140;
     check(coast(fastWheel) > coast(touch), "a longer tau carries further");
+    Momentum shortCoast = fastWheel;
+    double shortMs = 0, t = 0;
+    while (shortCoast.active && t < 3000) { shortCoast.tick(16, 200); t += 16; }
+    shortMs = t;
+    check(shortMs <= 216, "maxAge bounds how long a coast runs");
     return failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }

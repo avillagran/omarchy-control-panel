@@ -394,6 +394,9 @@ ShellRoot {
                 y: win.contentPadY
                 width: contentFlick.width - win.contentPadX * 2
                 externalNavigation: true
+                // Follows the window, so overlays tied to an open panel (the
+                // Displays border) go away when the window is closed.
+                opened: win.visible
                 onCloseRequested: win.visible = false
                 onImplicitHeightChanged: win.scheduleResize()
                 onImplicitWidthChanged: win.scheduleResize()

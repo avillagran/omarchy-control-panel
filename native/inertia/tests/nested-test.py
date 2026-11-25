@@ -143,12 +143,31 @@ hl.config({ animations = { enabled = false }, input = { follow_mouse = 1, touchp
     axis = [l for l in plog.read_text().splitlines()[mark:] if ' axis 0 ' in l]
     check('mouse wheel unaffected (no coast)', len(axis) == 3, f'({len(axis)} events for 3 clicks)')
 
-    # Excluded app (terminal-like app id) keeps native behaviour.
+    # Terminals have no inertia of their own, so they coast.
     probes[0].terminate(); probes[0].wait()
     time.sleep(.3)
-    klog = probe('kitty')
-    _, after, _ = gesture(klog, ['stop 0'])
-    check('excluded class (kitty) gets no coast', len(after) == 0, f'({len(after)} extra)')
+    tlog = probe('Alacritty')
+    _, after, _ = gesture(tlog, ['stop 0'])
+    check('terminal (Alacritty) coasts', len(after) >= 5, f'({len(after)})')
+    probes[-1].terminate(); probes[-1].wait()
+    time.sleep(.3)
+
+    # Browsers keep their own touchpad fling, but get wheel coasting.
+    blog = probe('google-chrome')
+    _, after, _ = gesture(blog, ['stop 0'])
+    check('browser (google-chrome) keeps its own touchpad fling', len(after) == 0, f'({len(after)} extra)')
+    ctl('eval', 'hl.config({ plugin = { inertia = { mouse = true } } })')
+    drive(['move 600 380', 'wait 30', 'move 640 400', 'wait 150'])
+    mark = len(blog.read_text().splitlines())
+    drive(['wheel 1', 'wait 15'] * 5 + ['wheel 1'])
+    time.sleep(1.3)
+    axis = [l for l in blog.read_text().splitlines()[mark:] if ' axis 0 ' in l and float(l.split()[3]) != 0]
+    check('browser: a fast wheel spin coasts', len(axis) - 6 >= 5, f'({len(axis) - 6} extra)')
+    ctl('reload'); time.sleep(.4)
+    ctl('eval', 'hl.config({ plugin = { inertia = { all_apps = true } } })')
+    _, after, _ = gesture(blog, ['stop 0'])
+    check('all_apps: browser touchpad coasts too', len(after) >= 5, f'({len(after)})')
+    ctl('reload'); time.sleep(.4)
     probes[-1].terminate(); probes[-1].wait()
     time.sleep(.3)
 
@@ -214,6 +233,15 @@ hl.config({ animations = { enabled = false }, input = { follow_mouse = 1, touchp
     ctl('eval', 'hl.config({ plugin = { inertia = { touchpad = false } } })')
     _, after, _ = gesture(plog, ['stop 0'])
     check('touchpad option off: no touchpad coast', len(after) == 0, f'({len(after)})')
+    ctl('reload'); time.sleep(.4)
+    ctl('eval', 'hl.config({ plugin = { inertia = { coast = 0 } } })')
+    _, after, _ = gesture(plog, ['stop 0'])
+    check('coast 0: no touchpad coast', len(after) == 0, f'({len(after)})')
+    ctl('eval', 'hl.config({ plugin = { inertia = { coast = 1600 } } })')
+    _, after, _ = gesture(plog, ['stop 0'], extra_after=('wait 900',))
+    ts = [float(l.split()[0]) for l in after]
+    span = (ts[-1] - ts[0]) if ts else 0
+    check('coast 1600: coasts longer than the 800 ms default', span > 900 and span <= 1650, f'({span:.0f} ms)')
     ctl('reload'); time.sleep(.4)
     _, after, _ = gesture(plog, ['stop 0'])
     check('options return to defaults on reload: touchpad coasts again', len(after) >= 5, f'({len(after)})')

@@ -154,6 +154,11 @@ Item {
   property bool scrollPatchProbed: false
   property bool scrollPatchSupported: false
   property bool mouseScrollPatchSupported: false
+  // Plugin mode: on a stock Hyprland, omarchy-hyprland-inertia 0.1.2+ is
+  // loaded and the card drives its coast length and app scope instead.
+  property bool inertiaPluginFeel: false
+  readonly property bool scrollPluginMode: !scrollPatchSupported && inertiaPluginFeel
+  readonly property bool scrollFeelLive: scrollPatchSupported || inertiaPluginFeel
   property bool disableWhileTyping: true
   property bool clickfingerBehavior: true
   property int practiceHits: 0
@@ -279,7 +284,11 @@ Item {
       if (!root.tooltipError) root.tooltipError = "tooltipWriteFailed"
     }
   }
-  onCurrentTabChanged: if (currentTab === 1) readTooltips()
+  onCurrentTabChanged: {
+    if (currentTab === 1) readTooltips()
+    if (currentTab === 2) readDisplayBrightness()
+  }
+  onOpenedChanged: if (opened && currentTab === 2) readDisplayBrightness()
 
   // APFS (Extras): driver presence + detected partitions.
   property bool apfsInstalled: false
@@ -322,6 +331,63 @@ Item {
   property bool profileApplyQueued: false
 
   readonly property var displaySelected: displays.length && displaySelectedIndex < displays.length ? displays[displaySelectedIndex] : null
+
+  // Brightness of the selected display, through Omarchy's own helper (kernel
+  // backlight for the built-in panel, DDC or Apple for external ones).
+  // -1 = unknown or unsupported, which hides the slider.
+  property int displayBrightness: -1
+  property string displayBrightnessFor: ""
+  // Value waiting to be written; -1 when nothing is queued. The helper drops
+  // overlapping calls (flock -n), so writes run one at a time and the last
+  // slider position is always the one that lands.
+  property int displayBrightnessPending: -1
+
+  function readDisplayBrightness() {
+    var name = root.displaySelected ? root.displaySelected.name : ""
+    root.displayBrightnessFor = name
+    if (!name || root.displaySelected.disabled) { root.displayBrightness = -1; return }
+    displayBrightnessRead.running = false
+    displayBrightnessRead.command = ["omarchy-brightness-display", "--monitor", name]
+    displayBrightnessRead.running = true
+  }
+
+  function setDisplayBrightness(pct) {
+    if (!root.displayBrightnessFor) return
+    root.displayBrightness = Math.max(0, Math.min(100, Math.round(pct)))
+    root.displayBrightnessPending = root.displayBrightness
+    if (!displayBrightnessWrite.running) root.flushDisplayBrightness()
+  }
+
+  function flushDisplayBrightness() {
+    if (root.displayBrightnessPending < 0 || !root.displayBrightnessFor) return
+    var pct = root.displayBrightnessPending
+    root.displayBrightnessPending = -1
+    displayBrightnessWrite.command = ["omarchy-brightness-display", "--no-osd",
+      "--monitor", root.displayBrightnessFor, pct + "%"]
+    displayBrightnessWrite.running = true
+  }
+
+  onDisplaySelectedChanged: {
+    var name = root.displaySelected ? root.displaySelected.name : ""
+    if (name !== root.displayBrightnessFor) root.readDisplayBrightness()
+  }
+
+  Process {
+    id: displayBrightnessRead
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var pct = parseInt(text.trim())
+        root.displayBrightness = isNaN(pct) ? -1 : Math.max(0, Math.min(100, pct))
+      }
+    }
+    onExited: function(code) { if (code !== 0) root.displayBrightness = -1 }
+  }
+
+  Process {
+    id: displayBrightnessWrite
+    onExited: root.flushDisplayBrightness()
+  }
   readonly property int displayActiveCount: displays.filter(function(d) { return !d.disabled }).length
   readonly property bool displayValidLayout: displayActiveCount > 0 && !DisplayModel.hasOverlap(displays)
 
@@ -729,6 +795,7 @@ Item {
     readProc.running = true
     if (!kbdLedProbe.running) kbdLedProbe.running = true
     if (!scrollProbeProc.running) scrollProbeProc.running = true
+    root.probeInertiaFeel()
     displayRefresh()
   }
 
@@ -811,10 +878,9 @@ Item {
     // Scroll inertia (omarchy-hyprland-inertia). Its options only exist while
     // it is loaded and reset on every reload, so set them here, guarded.
     if (saved.inertia || saved.inertiaMouse) {
-      L.push("for _, p in ipairs(hl.get_loaded_plugins and hl.get_loaded_plugins() or {}) do")
-      L.push("  if p.name == \"omarchy-inertia\" then hl.config({ plugin = { inertia = { touchpad = "
-        + (saved.inertia ? "true" : "false") + ", mouse = " + (saved.inertiaMouse ? "true" : "false") + " } } }) end")
-      L.push("end")
+      var pluginLines = ScrollFeelModel.pluginLuaLines(saved.inertia, saved.inertiaMouse,
+        root.pluginCoastValue(), ScrollFeelModel.pluginAllApps(saved.scrollIgnoreMode))
+      for (var pl = 0; pl < pluginLines.length; pl++) L.push(pluginLines[pl])
     }
     // Scroll acceleration + coast (DEV, requires a compositor built with the
     // touchpad scroll patch). Emission is gated on BOTH the runtime capability
@@ -1189,7 +1255,33 @@ Item {
     root.scrollDecel = ScrollFeelModel.clampDecel(decel)
   }
 
+  // Coast the plugin should use: the saved value once the user picked one
+  // here, otherwise the plugin's own default.
+  function pluginCoastValue() {
+    var decel = root.saved.scrollFeelConfigured ? root.saved.scrollDecel : ScrollFeelModel.pluginDefaultCoast
+    return ScrollFeelModel.pluginCoast(root.saved.scrollIgnoreMode, decel)
+  }
+
+  function applyPluginFeel() {
+    if (!root.inertiaPluginFeel) return
+    Quickshell.execDetached(["hyprctl", "eval", ScrollFeelModel.pluginFeelStatement(
+      root.pluginCoastValue(), ScrollFeelModel.pluginAllApps(root.saved.scrollIgnoreMode))])
+  }
+
+  function updatePluginCoast(decel, quiet) {
+    if (!root.scrollPluginMode) return
+    root.scrollDecel = ScrollFeelModel.clampDecel(decel)
+    root.scrollFeelConfigured = true
+    root.saved.scrollFeelConfigured = true
+    root.saved.scrollDecel = root.scrollDecel
+    root.applyPluginFeel()
+    root.writeLua()
+    root.savePrefs()
+    if (!quiet) root.statusMessage = root.t(root.uiLang, "scrollFeelApplied")
+  }
+
   function updateScrollFeel(profile, speed, max, decel, quiet) {
+    if (root.scrollPluginMode) { root.updatePluginCoast(decel, quiet); return }
     if (!root.scrollPatchSupported) return
     root.stageScrollFeel(profile, speed, max, decel)
     root.scrollFeelConfigured = true
@@ -1222,6 +1314,16 @@ Item {
   }
 
   function selectScrollPreset(id) {
+    if (root.scrollPluginMode) {
+      if (!(id in ScrollFeelModel.pluginPresets)) return
+      // A preset means coasting is wanted: leave "native" (off) mode.
+      if (root.saved.scrollIgnoreMode === "native") {
+        root.saved.scrollIgnoreMode = "browsers"
+        root.scrollIgnoreMode = "browsers"
+      }
+      root.updatePluginCoast(ScrollFeelModel.pluginPresets[id])
+      return
+    }
     if (!root.scrollPatchSupported) return
     var value = ScrollFeelModel.preset(id)
     if (!value) return
@@ -1238,6 +1340,16 @@ Item {
   // which then feel doubly inert), "browsers" = browsers/terminals with
   // their own inertia keep it, "native" = patch off globally.
   function updateScrollIgnoreMode(mode, quiet) {
+    if (root.scrollPluginMode) {
+      mode = ScrollFeelModel.clampIgnoreMode(mode)
+      root.scrollIgnoreMode = mode
+      root.saved.scrollIgnoreMode = mode
+      root.applyPluginFeel()
+      root.writeLua()
+      root.savePrefs()
+      if (!quiet) root.statusMessage = root.t(root.uiLang, "scrollIgnoreApplied")
+      return
+    }
     if (!root.scrollPatchSupported || !root.scrollIgnoreSupported) return
     mode = ScrollFeelModel.clampIgnoreMode(mode)
     root.scrollIgnoreMode = mode
@@ -1280,9 +1392,9 @@ Item {
     // so the macOS bundle actually survives a relogin.
     root.trackpadFeelConfigured = true
     root.saved.trackpadFeelConfigured = true
-    if (root.scrollPatchSupported) {
+    if (root.scrollPatchSupported || root.scrollPluginMode) {
       root.selectScrollPreset("adaptive")
-      if (root.scrollIgnoreSupported)
+      if (root.scrollIgnoreSupported || root.scrollPluginMode)
         root.updateScrollIgnoreMode("browsers", true)
     }
     root.writeLua()
@@ -1302,6 +1414,37 @@ Item {
         if (!scrollStateProc.running) scrollStateProc.running = true
         if (!mouseScrollProbeProc.running) mouseScrollProbeProc.running = true
       }
+    }
+  }
+
+  // Is omarchy-hyprland-inertia 0.1.2+ loaded? Re-run after inertia changes,
+  // since loading the plugin (and building it the first time) is async.
+  Process {
+    id: inertiaFeelProbe
+    command: ["hyprctl", "getoption", "plugin:inertia:coast", "-j"]
+    stdout: StdioCollector { waitForEnd: true }
+    onExited: function(exitCode) {
+      root.inertiaPluginFeel = ScrollFeelModel.supportsPluginFeelFromProbe(
+        inertiaFeelProbe.stdout.text, exitCode)
+      // Show the plugin's real default until the user picks a coast here.
+      if (root.inertiaPluginFeel && !root.scrollPatchSupported && !root.saved.scrollFeelConfigured)
+        root.scrollDecel = ScrollFeelModel.pluginDefaultCoast
+    }
+  }
+
+  function probeInertiaFeel() {
+    if (!inertiaFeelProbe.running) inertiaFeelProbe.running = true
+  }
+
+  Timer {
+    id: inertiaFeelReprobe
+    // The first enable may build the plugin; check again until it settles.
+    interval: 1500
+    repeat: true
+    property int left: 0
+    onTriggered: {
+      root.probeInertiaFeel()
+      if (--left <= 0) stop()
     }
   }
 
@@ -1960,6 +2103,8 @@ Item {
     writeLua()
     Quickshell.execDetached(["bash", root.binDir + "/inertia-plugin",
       (inertiaOn || inertiaMouseOn) ? "on" : "off"])
+    inertiaFeelReprobe.left = 20
+    inertiaFeelReprobe.restart()
   }
 
   function setInertiaMouse(on) {
@@ -3445,7 +3590,7 @@ Item {
 
         Text {
           width: parent.width
-          visible: !root.devMode && !root.scrollPatchSupported
+          visible: !root.devMode && !root.scrollFeelLive
           wrapMode: Text.WordWrap
           text: root.t(root.uiLang, "scrollFeelDevHint")
           color: Qt.alpha(root.fg, 0.72)
@@ -3466,8 +3611,8 @@ Item {
           color: Qt.alpha(root.fg, 0.035)
           border.color: Color.urgent
           border.width: 1
-          enabled: root.scrollPatchSupported
-          opacity: root.scrollPatchSupported ? 1 : 0.55
+          enabled: root.scrollFeelLive
+          opacity: root.scrollFeelLive ? 1 : 0.55
 
           Column {
             id: scrollFeelContent
@@ -3511,18 +3656,21 @@ Item {
               wrapMode: Text.WordWrap
               text: root.scrollPatchSupported
                 ? root.t(root.uiLang, "scrollFeelSupported")
-                : root.t(root.uiLang, "scrollFeelUnsupported")
-              color: root.scrollPatchSupported ? root.fg : Color.urgent
-              opacity: root.scrollPatchSupported ? 0.66 : 1
+                : root.scrollPluginMode
+                  ? root.t(root.uiLang, "scrollFeelPluginSupported")
+                  : root.t(root.uiLang, "scrollFeelUnsupported")
+              color: root.scrollFeelLive ? root.fg : Color.urgent
+              opacity: root.scrollFeelLive ? 0.66 : 1
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
 
             ToggleRow {
               label: root.t(root.uiLang, "scrollFeelMouseWheel")
-              checked: root.mouseScrollFeelEnabled
-              enabled: root.mouseScrollPatchSupported
+              checked: root.scrollPluginMode ? root.inertiaMouseOn : root.mouseScrollFeelEnabled
+              enabled: root.mouseScrollPatchSupported || root.scrollPluginMode
               onClicked: {
+                if (root.scrollPluginMode) { root.setInertiaMouse(!root.inertiaMouseOn); return }
                 root.mouseScrollFeelEnabled = !root.mouseScrollFeelEnabled
                 root.applyMouseScrollFeel(false)
               }
@@ -3559,8 +3707,10 @@ Item {
                   required property string modelData
                   width: (scrollFeelContent.width - Style.space(6)) / 2
                   text: root.t(root.uiLang, ScrollFeelModel.presetLabelKey(modelData))
-                  selected: ScrollFeelModel.detectPreset(root.scrollAccelProfile,
-                    root.scrollAccelSpeed, root.scrollAccelMax, root.scrollDecel) === modelData
+                  selected: (root.scrollPluginMode
+                    ? (root.scrollIgnoreMode === "native" ? "native" : ScrollFeelModel.detectPluginPreset(root.scrollDecel))
+                    : ScrollFeelModel.detectPreset(root.scrollAccelProfile,
+                      root.scrollAccelSpeed, root.scrollAccelMax, root.scrollDecel)) === modelData
                   bordered: true
                   foreground: root.fg
                   fontFamily: root.fontFamily
@@ -3571,6 +3721,7 @@ Item {
 
             Text {
               width: parent.width
+              visible: !root.scrollPluginMode
               wrapMode: Text.WordWrap
               text: root.t(root.uiLang, ScrollFeelModel.presetDescriptionKey(
                 ScrollFeelModel.detectPreset(root.scrollAccelProfile, root.scrollAccelSpeed,
@@ -3584,7 +3735,7 @@ Item {
             Text {
               width: parent.width
               wrapMode: Text.WordWrap
-              text: root.t(root.uiLang, "scrollIgnoreLabel")
+              text: root.t(root.uiLang, root.scrollPluginMode ? "scrollIgnorePluginLabel" : "scrollIgnoreLabel")
               color: root.fg
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -3601,9 +3752,11 @@ Item {
                 Button {
                   required property string modelData
                   width: (scrollFeelContent.width - Style.space(12)) / 3
-                  text: root.t(root.uiLang, ScrollFeelModel.ignoreModeLabelKey(modelData))
+                  text: root.t(root.uiLang, root.scrollPluginMode && modelData !== "off"
+                    ? (modelData === "native" ? "scrollIgnorePluginNative" : "scrollIgnorePluginBrowsers")
+                    : ScrollFeelModel.ignoreModeLabelKey(modelData))
                   selected: root.scrollIgnoreMode === modelData
-                  enabled: root.scrollIgnoreSupported
+                  enabled: root.scrollIgnoreSupported || root.scrollPluginMode
                   bordered: true
                   foreground: root.fg
                   fontFamily: root.fontFamily
@@ -3615,17 +3768,19 @@ Item {
             Text {
               width: parent.width
               wrapMode: Text.WordWrap
-              text: root.scrollIgnoreSupported
-                ? root.t(root.uiLang, "scrollIgnoreHint")
-                : root.t(root.uiLang, "scrollIgnoreUnsupported")
-              color: root.scrollIgnoreSupported ? root.fg : Color.urgent
-              opacity: root.scrollIgnoreSupported ? 0.66 : 1
+              text: root.scrollPluginMode
+                ? root.t(root.uiLang, "scrollIgnorePluginHint")
+                : root.scrollIgnoreSupported
+                  ? root.t(root.uiLang, "scrollIgnoreHint")
+                  : root.t(root.uiLang, "scrollIgnoreUnsupported")
+              color: root.scrollIgnoreSupported || root.scrollPluginMode ? root.fg : Color.urgent
+              opacity: root.scrollIgnoreSupported || root.scrollPluginMode ? 0.66 : 1
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
 
             SliderRow {
-              visible: root.scrollAccelProfile > 0
+              visible: root.scrollAccelProfile > 0 && !root.scrollPluginMode
               label: root.t(root.uiLang, "scrollFeelSpeed")
               note: root.t(root.uiLang, ScrollFeelModel.speedLabel(root.scrollAccelSpeed))
               decimals: 2
@@ -3641,7 +3796,7 @@ Item {
             }
 
             SliderRow {
-              visible: root.scrollAccelProfile > 0
+              visible: root.scrollAccelProfile > 0 && !root.scrollPluginMode
               label: root.t(root.uiLang, "scrollFeelMax")
               note: root.t(root.uiLang, ScrollFeelModel.maxLabel(root.scrollAccelMax))
               decimals: 2
@@ -4451,6 +4606,21 @@ Item {
               }
             }
           }
+        }
+
+        SliderRow {
+          visible: root.displaySelected !== null && root.displayBrightness >= 0
+          width: parent.width
+          label: root.t(root.uiLang, "displayBrightness")
+          note: root.displaySelected ? root.displaySelected.name : ""
+          suffix: "%"
+          from: 0
+          to: 100
+          stepSize: 1
+          value: Math.max(0, root.displayBrightness)
+          foreground: root.fg
+          fontFamily: root.fontFamily
+          onMoved: root.setDisplayBrightness(value)
         }
 
         GridLayout {

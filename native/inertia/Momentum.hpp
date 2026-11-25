@@ -23,8 +23,9 @@ struct Momentum {
     }
     // One lone event (a single wheel notch, a touch) never coasts.
     void release(double idle) { active = samples >= 2 && idle < 80 && std::abs(velocity) >= 0.02; }
-    double tick(double dt) {
-        if (!active || !std::isfinite(dt) || dt <= 0 || dt > 100 || age + dt > 800) { reset(); return 0; }
+    // maxAge is the longest a coast may run, in ms.
+    double tick(double dt, double maxAge = 800) {
+        if (!active || !std::isfinite(dt) || dt <= 0 || dt > 100 || age + dt > maxAge) { reset(); return 0; }
         const double decay = std::exp(-dt / tau);
         const double delta = velocity * tau * (1.0 - decay);
         velocity *= decay;

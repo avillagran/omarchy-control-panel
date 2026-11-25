@@ -29,11 +29,11 @@ for (const property of ['scrollAccelProfile', 'scrollAccelSpeed', 'scrollAccelMa
   assert.match(core, new RegExp(`property (?:int|real|bool) ${property}:`), `${property} state missing`);
 
 // Setters must refuse to run on an unpatched compositor.
-assert.match(core, /function updateScrollFeel\(profile, speed, max, decel, quiet\) \{\s*if \(!root\.scrollPatchSupported\) return/,
+assert.match(core, /function updateScrollFeel\(profile, speed, max, decel, quiet\) \{\s*if \(root\.scrollPluginMode\) \{ root\.updatePluginCoast\(decel, quiet\); return \}\s*if \(!root\.scrollPatchSupported\) return/,
   'scroll setters must be gated on the capability probe');
-assert.match(core, /function selectScrollPreset\(id\) \{\s*if \(!root\.scrollPatchSupported\) return/,
+assert.match(core, /function selectScrollPreset\(id\) \{\s*if \(root\.scrollPluginMode\) \{[\s\S]*?return\s*\}\s*if \(!root\.scrollPatchSupported\) return/,
   'preset selection must be gated on the capability probe');
-assert.match(core, /function updateScrollIgnoreMode\(mode, quiet\) \{\s*if \(!root\.scrollPatchSupported \|\| !root\.scrollIgnoreSupported\) return/,
+assert.match(core, /function updateScrollIgnoreMode\(mode, quiet\) \{\s*if \(root\.scrollPluginMode\) \{[\s\S]*?return\s*\}\s*if \(!root\.scrollPatchSupported \|\| !root\.scrollIgnoreSupported\) return/,
   'ignore-mode setter must be gated on both probes');
 assert.match(core, /property string scrollIgnoreMode:/, 'ignore mode state missing');
 assert.match(core, /property bool scrollIgnoreSupported:/, 'ignore support probe state missing');
@@ -85,7 +85,7 @@ assert.match(core, /onClicked: root\.updateScrollIgnoreMode\(modelData\)/,
   'ignore-mode buttons must apply live');
 assert.match(core, /scrollFeelMouseWheel[\s\S]*?root\.applyMouseScrollFeel\(false\)/,
   'mouse-wheel toggle must apply live');
-assert.match(core, /enabled: root\.mouseScrollPatchSupported/,
+assert.match(core, /enabled: root\.mouseScrollPatchSupported \|\| root\.scrollPluginMode/,
   'mouse-wheel toggle must remain disabled until the mouse patch capability probes true');
 assert.match(core, /onMoved: root\.updateScrollFeel\(root\.scrollAccelProfile, value,\s*root\.scrollAccelMax, root\.scrollDecel, true\)/,
   'coast slider must apply live');
@@ -107,7 +107,7 @@ assert.match(core, /root\.scrollIgnoreSupported\s*=\s*values\.ignoreSupported/,
   'state probe must record ignore support');
 assert.match(core, /luaConfigStatement\([\s\S]*?root\.scrollIgnoreSupported\)/,
   'writeLua must omit scroll_ignore_classes on a 4-key build');
-assert.match(core, /enabled: root\.scrollIgnoreSupported/,
+assert.match(core, /enabled: root\.scrollIgnoreSupported \|\| root\.scrollPluginMode/,
   'mode buttons must disable when the compositor lacks the ignore key');
 assert.match(core, /scrollFeelConfigured: scrollFeelConfigured,\s*scrollIgnoreMode: scrollIgnoreMode,\s*scrollAccelProfile: scrollAccelProfile/,
   'savePrefs must persist the scroll fields');
@@ -131,7 +131,7 @@ assert.match(core, /applyMacOSConfig[\s\S]*?root\.selectScrollPreset\("adaptive"
   'macOS config must apply the Adaptive scroll preset');
 assert.match(core, /applyMacOSConfig[\s\S]*?root\.updateScrollIgnoreMode\("browsers", true\)/,
   'macOS config must keep browsers/terminals inertia excepted');
-assert.match(core, /if \(root\.scrollPatchSupported\) \{\s*root\.selectScrollPreset\("adaptive"\)/,
+assert.match(core, /if \(root\.scrollPatchSupported \|\| root\.scrollPluginMode\) \{\s*root\.selectScrollPreset\("adaptive"\)/,
   'scroll part of the macOS config must be gated on the patch probe');
 assert.match(core, /onClicked: root\.applyMacOSConfig\(\)/,
   'macOS config button must call the bundle');

@@ -216,3 +216,66 @@ function parseLiveValues(lines) {
   }
   return values
 }
+
+// ---- Plugin mode (omarchy-hyprland-inertia) --------------------------------
+// On a stock Hyprland the inertia plugin does the coasting. It cannot change
+// how fast the live scroll moves, so here the presets only set how long a
+// coast lasts (plugin:inertia:coast, ms). Adaptive matches the plugin default.
+var pluginPresets = { native: 0, linear: 400, adaptive: 800, glide: 1000 }
+var pluginDefaultCoast = 800
+
+function detectPluginPreset(decel) {
+  var d = clampDecel(decel)
+  var ids = presetIds()
+  for (var i = 0; i < ids.length; i++)
+    if (pluginPresets[ids[i]] === d) return ids[i]
+  return "custom"
+}
+
+// Coast the plugin gets for an ignore mode: "native" means no coasting.
+function pluginCoast(mode, decel) {
+  return clampIgnoreMode(mode) === "native" ? 0 : clampDecel(decel)
+}
+
+function pluginAllApps(mode) {
+  return clampIgnoreMode(mode) === "off"
+}
+
+// Live statement for the plugin's feel options (0.1.2 and later).
+function pluginFeelStatement(coast, allApps) {
+  return "hl.config({ plugin = { inertia = { coast = " + clampDecel(coast)
+    + ", all_apps = " + (allApps ? "true" : "false") + " } } })"
+}
+
+// control-panel.lua lines for the plugin. Its options exist only while it is
+// loaded and reset on every reload, so they are set inside the loaded-plugin
+// guard. coast/all_apps arrived in 0.1.2: an older plugin would reject them
+// as unknown keys, so they are guarded by version too.
+function pluginLuaLines(touchpad, mouse, coast, allApps) {
+  return [
+    "for _, p in ipairs(hl.get_loaded_plugins and hl.get_loaded_plugins() or {}) do",
+    "  if p.name == \"omarchy-inertia\" then",
+    "    hl.config({ plugin = { inertia = { touchpad = " + (touchpad ? "true" : "false")
+      + ", mouse = " + (mouse ? "true" : "false") + " } } })",
+    "    local a, b, c = tostring(p.version):match(\"^(%d+)%.(%d+)%.(%d+)\")",
+    "    if a and tonumber(a) * 1000000 + tonumber(b) * 1000 + tonumber(c) >= 1002 then",
+    "      " + pluginFeelStatement(coast, allApps),
+    "    end",
+    "  end",
+    "end"
+  ]
+}
+
+// `hyprctl getoption plugin:inertia:coast -j` answers with JSON only when a
+// plugin that has the option is loaded; otherwise "no such option".
+function supportsPluginFeelFromProbe(stdoutText, exitCode) {
+  if (exitCode !== 0) return false
+  var text = String(stdoutText || "").trim()
+  if (text.indexOf("{") !== 0) return false
+  try {
+    var parsed = JSON.parse(text)
+    return typeof parsed === "object" && parsed !== null
+  } catch (e) {
+    return false
+  }
+}
