@@ -4,9 +4,13 @@
 #   inertia-plugin off   unload
 #   inertia-plugin sync  follow "inertia" in control-panel-prefs.json (login)
 #   inertia-plugin status
+#   inertia-plugin check  ok | off | missing<TAB>reason (wanted but not loaded)
 # The library is built on this machine (never shipped) into the state dir, outside
 # the plugin tree, and only loaded when the installed headers match the running
 # compositor. A Hyprland update therefore pauses inertia until the next login.
+# The build is keyed by the whole version.h, which also names the versions of
+# aquamarine, hyprutils, hyprgraphics…: a rebuild of the same Hyprland commit
+# against newer libraries changes the ABI hash and needs a fresh build.
 set -euo pipefail
 umask 077
 
@@ -16,10 +20,11 @@ src=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../native/inertia" && pwd -P)
 state=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/$name
 prefs=$HOME/.local/state/omarchy/control-panel-prefs.json
 loaded_file=$state/loaded
+error_file=$state/last-error
 
-log() { printf '%s: %s\n' "$name" "$*" >&2; }
+log() { printf '%s: %s\n' "$name" "$*" >&2; printf '%s\n' "$*" >"$error_file" 2>/dev/null || true; }
 
-case $mode in on|off|sync|status) ;; *) log "usage: $0 on|off|sync|status"; exit 2 ;; esac
+case $mode in on|off|sync|status|check) ;; *) log "usage: $0 on|off|sync|status|check"; exit 2 ;; esac
 command -v hyprctl >/dev/null || { log "hyprctl not found"; exit 1; }
 
 mkdir -p "$state"
@@ -43,7 +48,7 @@ unload() {
     [[ -n $path ]] || { log "inertia is on in Omarchy's Setup > Touchpad; turn it off there"; return 0; }
     hyprctl plugin unload "$path" >/dev/null
   fi
-  rm -f "$loaded_file"
+  rm -f "$loaded_file" "$error_file"
 }
 
 wanted() {
@@ -76,7 +81,7 @@ build() {
     return 3
   fi
   local hash
-  hash=$(cat "$src/Makefile" "$src/Momentum.hpp" "$src/plugin.cpp" | sha256sum | cut -c1-16)
+  hash=$(cat "$src/Makefile" "$src/Momentum.hpp" "$src/plugin.cpp" "$header" | sha256sum | cut -c1-16)
   out=$state/build/$commit-$hash/$name.so
   [[ -f $out && ! -L $out ]] && return 0
   local failed=$state/build/$commit-$hash.failed
@@ -115,10 +120,34 @@ load() {
     [[ $(<"$loaded_file") == "$out" ]] && return 0
     unload
   fi
+  # This compositor already refused this exact library: wait for a new session.
+  local instance=${HYPRLAND_INSTANCE_SIGNATURE:-}
+  if [[ -n $instance && -f $state/refused && ! -L $state/refused && $(<"$state/refused") == "$instance $out" ]]; then
+    log "Hyprland was updated; inertia resumes after the next login"
+    return 3
+  fi
   local reply
   reply=$(hyprctl plugin load "$out" 2>&1)
-  if ! is_loaded; then log "Hyprland refused the plugin: $reply"; return 1; fi
+  if ! is_loaded; then
+    if [[ $reply == *"incompatible Hyprland ABI"* ]]; then
+      # Headers newer than the running compositor (updated, not yet restarted).
+      [[ -n $instance ]] && printf '%s %s\n' "$instance" "$out" >"$state/refused"
+      log "Hyprland was updated; inertia resumes after the next login"
+      return 3
+    fi
+    log "Hyprland refused the plugin: $reply"
+    return 1
+  fi
+  rm -f "$error_file" "$state/refused"
   printf '%s\n' "$out" >"$loaded_file"
+}
+
+check() {
+  if ! wanted; then echo off; return 0; fi
+  if is_loaded; then echo ok; return 0; fi
+  local reason=""
+  [[ -f $error_file && ! -L $error_file ]] && reason=$(head -c 300 "$error_file" | head -n1)
+  printf 'missing\t%s\n' "$reason"
 }
 
 case $mode in
@@ -126,4 +155,5 @@ case $mode in
   off) unload ;;
   sync) if wanted; then load; else unload; fi ;;
   status) if is_loaded; then echo loaded; else echo unloaded; fi ;;
+  check) check ;;
 esac

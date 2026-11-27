@@ -4,24 +4,10 @@ const path = require('node:path');
 
 const core = fs.readFileSync(path.join(__dirname, '../desktop/Core.qml'), 'utf8');
 const i18n = JSON.parse(fs.readFileSync(path.join(__dirname, '../desktop/i18n.json'), 'utf8'));
-const installer = fs.readFileSync(path.join(__dirname, '../bin/install-hyprland-scroll-patch.sh'), 'utf8');
-
-const pinnedCommit = installer.match(/^HYPRLAND_PIN="([0-9a-f]{40})"$/m)?.[1];
-assert.ok(pinnedCommit, 'scroll-patch installer must declare a full 40-character Hyprland commit');
-assert.match(installer, new RegExp(`git -C "\\$SRC_DIR" checkout -q --detach ${pinnedCommit}`),
-  'scroll-patch installer must detached-checkout the literal pinned commit before building');
-assert.match(installer, /PLUGIN_DIR="\$HOME\/\.config\/omarchy\/plugins\/\$PLUGIN_ID"/,
-  'installer must locate an already-installed plugin for safe reruns');
-assert.match(installer, /^RELEASE_TAG=\$\{OMARCHY_PANEL_REF:-0\.5\}$/m,
-  'the one-liner accepts an immutable commit without moving a release tag');
-assert.match(installer, /git -C "\$panel_stage" fetch --depth 1 origin "\$RELEASE_TAG"/,
-  'the one-liner fetches its pinned panel commit');
-assert.match(installer, /raw\.githubusercontent\.com\/avillagran\/omarchy-control-panel\/\$panel_sha\/patches\/hyprland/,
-  'fallback patches come from the verified panel commit');
-assert.match(installer, /plugin has dirty tracked edits/,
-  'the installer refuses to overwrite tracked plugin edits');
-assert.match(installer, /bash "\$PLUGIN_DIR\/bin\/install-tooltip-patch\.sh"/,
-  'the combined installer also installs the pinned Omarchy tooltip integration');
+// The Hyprland scroll patch installer was retired in 1.0.5: the panel no longer
+// builds or replaces Hyprland. Scroll feel comes from the inertia plugin.
+assert.ok(!fs.existsSync(path.join(__dirname, '../bin/install-hyprland-scroll-patch.sh')));
+assert.ok(!fs.existsSync(path.join(__dirname, '../patches/hyprland')));
 
 assert.match(core, /import "ScrollFeelModel\.js" as ScrollFeelModel/);
 for (const property of ['scrollAccelProfile', 'scrollAccelSpeed', 'scrollAccelMax',

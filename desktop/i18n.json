@@ -611,7 +611,15 @@
     "scrollIgnorePluginHint": "Except browsers: browsers keep their own coast after a touchpad flick, and the mouse wheel coasts everywhere, terminals included. Nowhere turns coasting off without unloading the plugin.",
     "scrollIgnorePluginLabel": "Inertia in",
     "scrollIgnorePluginNative": "Nowhere",
-    "scrollIgnorePluginBrowsers": "Except browsers"
+    "scrollIgnorePluginBrowsers": "Except browsers",
+    "swipeEmpty": "Swipe also goes to empty workspaces",
+    "inertiaMissing": "Inertia is on, but Hyprland is running without it",
+    "inertiaReinstall": "Reinstall inertia",
+    "inertiaReinstalling": "Reinstalling…",
+    "inertiaReinstalled": "Inertia is back on",
+    "inertiaReinstallFailed": "Could not reinstall inertia",
+    "inertiaPaused": "Hyprland was updated: inertia comes back after the next login",
+    "inertiaAlert": "Inertia is not running"
   },
   "es": {
     "tooltipAppearance": "Apariencia de las ayudas emergentes",
@@ -1225,7 +1233,15 @@
     "scrollIgnorePluginHint": "Excepto navegadores: los navegadores mantienen su propia inercia del touchpad, y la rueda del mouse tiene inercia en todas partes, terminales incluidas. En ninguna apaga la inercia sin descargar el plugin.",
     "scrollIgnorePluginLabel": "Inercia en",
     "scrollIgnorePluginNative": "En ninguna",
-    "scrollIgnorePluginBrowsers": "Excepto navegadores"
+    "scrollIgnorePluginBrowsers": "Excepto navegadores",
+    "swipeEmpty": "El swipe también va a escritorios vacíos",
+    "inertiaMissing": "La inercia está activada, pero Hyprland corre sin ella",
+    "inertiaReinstall": "Reinstalar inercia",
+    "inertiaReinstalling": "Reinstalando…",
+    "inertiaReinstalled": "La inercia volvió a funcionar",
+    "inertiaReinstallFailed": "No se pudo reinstalar la inercia",
+    "inertiaPaused": "Hyprland se actualizó: la inercia vuelve en el próximo inicio de sesión",
+    "inertiaAlert": "La inercia no está funcionando"
   },
   "pt": {
     "tooltipAppearance": "Aparência das dicas",
@@ -1337,7 +1353,15 @@
     "scrollIgnorePluginHint": "Exceto navegadores: os navegadores mantêm a própria inércia do touchpad, e a roda do mouse tem inércia em todo lugar, terminais incluídos. Em nenhum desliga a inércia sem descarregar o plugin.",
     "scrollIgnorePluginLabel": "Inércia em",
     "scrollIgnorePluginNative": "Em nenhum",
-    "scrollIgnorePluginBrowsers": "Exceto navegadores"
+    "scrollIgnorePluginBrowsers": "Exceto navegadores",
+    "swipeEmpty": "O swipe também vai para áreas de trabalho vazias",
+    "inertiaMissing": "A inércia está ativada, mas o Hyprland está rodando sem ela",
+    "inertiaReinstall": "Reinstalar inércia",
+    "inertiaReinstalling": "Reinstalando…",
+    "inertiaReinstalled": "A inércia voltou a funcionar",
+    "inertiaReinstallFailed": "Não foi possível reinstalar a inércia",
+    "inertiaPaused": "O Hyprland foi atualizado: a inércia volta no próximo login",
+    "inertiaAlert": "A inércia não está funcionando"
   },
   "fr": {
     "tooltipAppearance": "Apparence des infobulles",
@@ -1449,7 +1473,15 @@
     "scrollIgnorePluginHint": "Sauf navigateurs : les navigateurs gardent leur propre inertie au pavé tactile, et la molette a de l'inertie partout, terminaux compris. Nulle part coupe l'inertie sans décharger le plugin.",
     "scrollIgnorePluginLabel": "Inertie dans",
     "scrollIgnorePluginNative": "Nulle part",
-    "scrollIgnorePluginBrowsers": "Sauf navigateurs"
+    "scrollIgnorePluginBrowsers": "Sauf navigateurs",
+    "swipeEmpty": "Le balayage va aussi aux bureaux vides",
+    "inertiaMissing": "L'inertie est activée, mais Hyprland tourne sans elle",
+    "inertiaReinstall": "Réinstaller l'inertie",
+    "inertiaReinstalling": "Réinstallation…",
+    "inertiaReinstalled": "L'inertie fonctionne de nouveau",
+    "inertiaReinstallFailed": "Impossible de réinstaller l'inertie",
+    "inertiaPaused": "Hyprland a été mis à jour : l'inertie revient à la prochaine connexion",
+    "inertiaAlert": "L'inertie ne fonctionne pas"
   },
   "de": {
     "tooltipAppearance": "Tooltip-Darstellung",
@@ -1561,7 +1593,15 @@
     "scrollIgnorePluginHint": "Außer Browser: Browser behalten ihre eigene Touchpad-Trägheit, das Mausrad hat überall Trägheit, auch in Terminals. Nirgends schaltet die Trägheit ab, ohne das Plugin zu entladen.",
     "scrollIgnorePluginLabel": "Trägheit in",
     "scrollIgnorePluginNative": "Nirgends",
-    "scrollIgnorePluginBrowsers": "Außer Browser"
+    "scrollIgnorePluginBrowsers": "Außer Browser",
+    "swipeEmpty": "Wischen wechselt auch zu leeren Arbeitsplätzen",
+    "inertiaMissing": "Trägheit ist an, aber Hyprland läuft ohne sie",
+    "inertiaReinstall": "Trägheit neu installieren",
+    "inertiaReinstalling": "Wird neu installiert…",
+    "inertiaReinstalled": "Trägheit ist wieder aktiv",
+    "inertiaReinstallFailed": "Trägheit konnte nicht neu installiert werden",
+    "inertiaPaused": "Hyprland wurde aktualisiert: Trägheit kommt nach der nächsten Anmeldung zurück",
+    "inertiaAlert": "Trägheit läuft nicht"
   },
   "it": {
     "tooltipAppearance": "Aspetto dei suggerimenti",
@@ -1673,7 +1713,15 @@
     "scrollIgnorePluginHint": "Tranne browser: i browser mantengono la propria inerzia del touchpad, e la rotella ha inerzia ovunque, terminali compresi. Da nessuna parte disattiva l'inerzia senza scaricare il plugin.",
     "scrollIgnorePluginLabel": "Inerzia in",
     "scrollIgnorePluginNative": "Da nessuna parte",
-    "scrollIgnorePluginBrowsers": "Tranne browser"
+    "scrollIgnorePluginBrowsers": "Tranne browser",
+    "swipeEmpty": "Lo scorrimento va anche alle aree di lavoro vuote",
+    "inertiaMissing": "L'inerzia è attiva, ma Hyprland funziona senza",
+    "inertiaReinstall": "Reinstalla l'inerzia",
+    "inertiaReinstalling": "Reinstallazione…",
+    "inertiaReinstalled": "L'inerzia funziona di nuovo",
+    "inertiaReinstallFailed": "Impossibile reinstallare l'inerzia",
+    "inertiaPaused": "Hyprland è stato aggiornato: l'inerzia torna al prossimo accesso",
+    "inertiaAlert": "L'inerzia non è attiva"
   },
   "nl": {
     "tooltipAppearance": "Uiterlijk van tooltips",
@@ -1785,7 +1833,15 @@
     "scrollIgnorePluginHint": "Behalve browsers: browsers houden hun eigen touchpad-traagheid, het muiswiel heeft overal traagheid, ook in terminals. Nergens zet de traagheid uit zonder de plugin te ontladen.",
     "scrollIgnorePluginLabel": "Traagheid in",
     "scrollIgnorePluginNative": "Nergens",
-    "scrollIgnorePluginBrowsers": "Behalve browsers"
+    "scrollIgnorePluginBrowsers": "Behalve browsers",
+    "swipeEmpty": "Vegen gaat ook naar lege werkbladen",
+    "inertiaMissing": "Traagheid staat aan, maar Hyprland draait zonder",
+    "inertiaReinstall": "Traagheid opnieuw installeren",
+    "inertiaReinstalling": "Opnieuw installeren…",
+    "inertiaReinstalled": "Traagheid werkt weer",
+    "inertiaReinstallFailed": "Traagheid kon niet opnieuw worden geïnstalleerd",
+    "inertiaPaused": "Hyprland is bijgewerkt: traagheid komt terug na de volgende aanmelding",
+    "inertiaAlert": "Traagheid draait niet"
   },
   "pl": {
     "tooltipAppearance": "Wygląd podpowiedzi",
@@ -1897,7 +1953,15 @@
     "scrollIgnorePluginHint": "Oprócz przeglądarek: przeglądarki zachowują własną bezwładność touchpada, a kółko myszy ma bezwładność wszędzie, także w terminalach. Nigdzie wyłącza bezwładność bez wyładowania wtyczki.",
     "scrollIgnorePluginLabel": "Bezwładność w",
     "scrollIgnorePluginNative": "Nigdzie",
-    "scrollIgnorePluginBrowsers": "Oprócz przeglądarek"
+    "scrollIgnorePluginBrowsers": "Oprócz przeglądarek",
+    "swipeEmpty": "Przesunięcie przechodzi też do pustych pulpitów",
+    "inertiaMissing": "Bezwładność jest włączona, ale Hyprland działa bez niej",
+    "inertiaReinstall": "Zainstaluj ponownie bezwładność",
+    "inertiaReinstalling": "Ponowna instalacja…",
+    "inertiaReinstalled": "Bezwładność znów działa",
+    "inertiaReinstallFailed": "Nie udało się ponownie zainstalować bezwładności",
+    "inertiaPaused": "Hyprland został zaktualizowany: bezwładność wróci po następnym zalogowaniu",
+    "inertiaAlert": "Bezwładność nie działa"
   },
   "ru": {
     "tooltipAppearance": "Вид подсказок",
@@ -2009,7 +2073,15 @@
     "scrollIgnorePluginHint": "Кроме браузеров: браузеры сохраняют собственную инерцию тачпада, а колесо мыши получает инерцию везде, включая терминалы. «Нигде» выключает инерцию без выгрузки плагина.",
     "scrollIgnorePluginLabel": "Инерция в",
     "scrollIgnorePluginNative": "Нигде",
-    "scrollIgnorePluginBrowsers": "Кроме браузеров"
+    "scrollIgnorePluginBrowsers": "Кроме браузеров",
+    "swipeEmpty": "Смахивание переходит и на пустые рабочие столы",
+    "inertiaMissing": "Инерция включена, но Hyprland работает без неё",
+    "inertiaReinstall": "Переустановить инерцию",
+    "inertiaReinstalling": "Переустановка…",
+    "inertiaReinstalled": "Инерция снова работает",
+    "inertiaReinstallFailed": "Не удалось переустановить инерцию",
+    "inertiaPaused": "Hyprland обновлён: инерция вернётся после следующего входа",
+    "inertiaAlert": "Инерция не работает"
   },
   "ja": {
     "tooltipAppearance": "ツールチップの外観",
@@ -2121,7 +2193,15 @@
     "scrollIgnorePluginHint": "ブラウザー以外: ブラウザーはタッチパッドの独自の慣性を保ち、マウスホイールはターミナルを含むすべての場所で慣性が効きます。「なし」はプラグインをアンロードせずに慣性を止めます。",
     "scrollIgnorePluginLabel": "慣性の適用先",
     "scrollIgnorePluginNative": "なし",
-    "scrollIgnorePluginBrowsers": "ブラウザー以外"
+    "scrollIgnorePluginBrowsers": "ブラウザー以外",
+    "swipeEmpty": "スワイプで空のワークスペースにも移動",
+    "inertiaMissing": "慣性はオンですが、Hyprlandは慣性なしで動作しています",
+    "inertiaReinstall": "慣性を再インストール",
+    "inertiaReinstalling": "再インストール中…",
+    "inertiaReinstalled": "慣性が再び有効になりました",
+    "inertiaReinstallFailed": "慣性を再インストールできませんでした",
+    "inertiaPaused": "Hyprlandが更新されました。次回ログイン後に慣性が戻ります",
+    "inertiaAlert": "慣性が動作していません"
   },
   "ko": {
     "tooltipAppearance": "툴팁 모양",
@@ -2233,7 +2313,15 @@
     "scrollIgnorePluginHint": "브라우저 제외: 브라우저는 자체 터치패드 관성을 유지하고, 마우스 휠은 터미널을 포함한 모든 곳에서 관성이 적용됩니다. '없음'은 플러그인을 내리지 않고 관성을 끕니다.",
     "scrollIgnorePluginLabel": "관성 적용",
     "scrollIgnorePluginNative": "없음",
-    "scrollIgnorePluginBrowsers": "브라우저 제외"
+    "scrollIgnorePluginBrowsers": "브라우저 제외",
+    "swipeEmpty": "스와이프로 빈 작업 공간으로도 이동",
+    "inertiaMissing": "관성이 켜져 있지만 Hyprland가 관성 없이 실행 중입니다",
+    "inertiaReinstall": "관성 다시 설치",
+    "inertiaReinstalling": "다시 설치하는 중…",
+    "inertiaReinstalled": "관성이 다시 작동합니다",
+    "inertiaReinstallFailed": "관성을 다시 설치할 수 없습니다",
+    "inertiaPaused": "Hyprland가 업데이트되었습니다. 다음 로그인 후 관성이 돌아옵니다",
+    "inertiaAlert": "관성이 작동하지 않습니다"
   },
   "zh": {
     "tooltipAppearance": "提示框外观",
@@ -2345,7 +2433,15 @@
     "scrollIgnorePluginHint": "浏览器除外：浏览器保留自己的触控板惯性，鼠标滚轮在所有地方都有惯性，包括终端。“无”会关闭惯性而不卸载插件。",
     "scrollIgnorePluginLabel": "惯性应用于",
     "scrollIgnorePluginNative": "不启用",
-    "scrollIgnorePluginBrowsers": "浏览器除外"
+    "scrollIgnorePluginBrowsers": "浏览器除外",
+    "swipeEmpty": "滑动也会切换到空工作区",
+    "inertiaMissing": "惯性已开启，但 Hyprland 未加载它",
+    "inertiaReinstall": "重新安装惯性",
+    "inertiaReinstalling": "正在重新安装…",
+    "inertiaReinstalled": "惯性已恢复",
+    "inertiaReinstallFailed": "无法重新安装惯性",
+    "inertiaPaused": "Hyprland 已更新：下次登录后惯性会恢复",
+    "inertiaAlert": "惯性未运行"
   },
   "ar": {
     "tooltipAppearance": "مظهر التلميحات",
@@ -2457,7 +2553,15 @@
     "scrollIgnorePluginHint": "باستثناء المتصفحات: تحتفظ المتصفحات بقصورها الذاتي الخاص بلوحة اللمس، وتحصل عجلة الفأرة على القصور الذاتي في كل مكان بما في ذلك الطرفيات. «لا مكان» يوقف القصور الذاتي دون إلغاء تحميل الإضافة.",
     "scrollIgnorePluginLabel": "القصور الذاتي في",
     "scrollIgnorePluginNative": "لا مكان",
-    "scrollIgnorePluginBrowsers": "باستثناء المتصفحات"
+    "scrollIgnorePluginBrowsers": "باستثناء المتصفحات",
+    "swipeEmpty": "السحب ينتقل أيضًا إلى مساحات العمل الفارغة",
+    "inertiaMissing": "القصور الذاتي مفعّل، لكن Hyprland يعمل بدونه",
+    "inertiaReinstall": "إعادة تثبيت القصور الذاتي",
+    "inertiaReinstalling": "جارٍ إعادة التثبيت…",
+    "inertiaReinstalled": "عاد القصور الذاتي للعمل",
+    "inertiaReinstallFailed": "تعذّرت إعادة تثبيت القصور الذاتي",
+    "inertiaPaused": "تم تحديث Hyprland: سيعود القصور الذاتي بعد تسجيل الدخول التالي",
+    "inertiaAlert": "القصور الذاتي لا يعمل"
   },
   "tr": {
     "tooltipAppearance": "Araç ipucu görünümü",
@@ -2569,7 +2673,15 @@
     "scrollIgnorePluginHint": "Tarayıcılar hariç: tarayıcılar kendi dokunmatik yüzey ataletini korur, fare tekerleği terminaller dahil her yerde ataletli kayar. Hiçbir yerde, eklentiyi kaldırmadan ataleti kapatır.",
     "scrollIgnorePluginLabel": "Atalet",
     "scrollIgnorePluginNative": "Hiçbiri",
-    "scrollIgnorePluginBrowsers": "Tarayıcılar hariç"
+    "scrollIgnorePluginBrowsers": "Tarayıcılar hariç",
+    "swipeEmpty": "Kaydırma boş çalışma alanlarına da gider",
+    "inertiaMissing": "Atalet açık, ancak Hyprland onsuz çalışıyor",
+    "inertiaReinstall": "Ataleti yeniden yükle",
+    "inertiaReinstalling": "Yeniden yükleniyor…",
+    "inertiaReinstalled": "Atalet yeniden çalışıyor",
+    "inertiaReinstallFailed": "Atalet yeniden yüklenemedi",
+    "inertiaPaused": "Hyprland güncellendi: atalet bir sonraki oturum açışta geri gelir",
+    "inertiaAlert": "Atalet çalışmıyor"
   },
   "sv": {
     "tooltipAppearance": "Verktygstipsens utseende",
@@ -2681,7 +2793,15 @@
     "scrollIgnorePluginHint": "Utom webbläsare: webbläsare behåller sin egen tröghet på pekplattan, och mushjulet får tröghet överallt, även i terminaler. Ingenstans stänger av trögheten utan att ladda ur pluginet.",
     "scrollIgnorePluginLabel": "Tröghet i",
     "scrollIgnorePluginNative": "Ingenstans",
-    "scrollIgnorePluginBrowsers": "Utom webbläsare"
+    "scrollIgnorePluginBrowsers": "Utom webbläsare",
+    "swipeEmpty": "Svep går även till tomma arbetsytor",
+    "inertiaMissing": "Tröghet är på, men Hyprland kör utan den",
+    "inertiaReinstall": "Installera om tröghet",
+    "inertiaReinstalling": "Installerar om…",
+    "inertiaReinstalled": "Trögheten fungerar igen",
+    "inertiaReinstallFailed": "Kunde inte installera om trögheten",
+    "inertiaPaused": "Hyprland har uppdaterats: trögheten kommer tillbaka efter nästa inloggning",
+    "inertiaAlert": "Trögheten körs inte"
   },
   "da": {
     "tooltipAppearance": "Værktøjstippets udseende",
@@ -2793,7 +2913,15 @@
     "scrollIgnorePluginHint": "Undtagen browsere: browsere beholder deres egen inerti på touchpad, og musehjulet får inerti overalt, også i terminaler. Ingen steder slår inerti fra uden at fjerne pluginet.",
     "scrollIgnorePluginLabel": "Inerti i",
     "scrollIgnorePluginNative": "Ingen steder",
-    "scrollIgnorePluginBrowsers": "Undtagen browsere"
+    "scrollIgnorePluginBrowsers": "Undtagen browsere",
+    "swipeEmpty": "Swipe går også til tomme arbejdsområder",
+    "inertiaMissing": "Inerti er slået til, men Hyprland kører uden",
+    "inertiaReinstall": "Geninstaller inerti",
+    "inertiaReinstalling": "Geninstallerer…",
+    "inertiaReinstalled": "Inerti virker igen",
+    "inertiaReinstallFailed": "Kunne ikke geninstallere inerti",
+    "inertiaPaused": "Hyprland er opdateret: inerti kommer tilbage efter næste login",
+    "inertiaAlert": "Inerti kører ikke"
   },
   "no": {
     "tooltipAppearance": "Verktøytipsutseende",
@@ -2905,7 +3033,15 @@
     "scrollIgnorePluginHint": "Unntatt nettlesere: nettlesere beholder sin egen treghet på styreflaten, og musehjulet får treghet overalt, også i terminaler. Ingen steder slår av tregheten uten å laste ut programtillegget.",
     "scrollIgnorePluginLabel": "Treghet i",
     "scrollIgnorePluginNative": "Ingen steder",
-    "scrollIgnorePluginBrowsers": "Unntatt nettlesere"
+    "scrollIgnorePluginBrowsers": "Unntatt nettlesere",
+    "swipeEmpty": "Sveip går også til tomme arbeidsområder",
+    "inertiaMissing": "Treghet er på, men Hyprland kjører uten",
+    "inertiaReinstall": "Installer treghet på nytt",
+    "inertiaReinstalling": "Installerer på nytt…",
+    "inertiaReinstalled": "Treghet virker igjen",
+    "inertiaReinstallFailed": "Kunne ikke installere treghet på nytt",
+    "inertiaPaused": "Hyprland er oppdatert: treghet kommer tilbake etter neste innlogging",
+    "inertiaAlert": "Treghet kjører ikke"
   },
   "fi": {
     "tooltipAppearance": "Työkaluvihjeen ulkoasu",
@@ -3017,7 +3153,15 @@
     "scrollIgnorePluginHint": "Paitsi selaimet: selaimet pitävät oman kosketuslevyn inertiansa, ja hiiren rulla saa inertian kaikkialla, myös päätteissä. Ei missään poistaa inertian käytöstä purkamatta laajennusta.",
     "scrollIgnorePluginLabel": "Inertia",
     "scrollIgnorePluginNative": "Ei missään",
-    "scrollIgnorePluginBrowsers": "Paitsi selaimet"
+    "scrollIgnorePluginBrowsers": "Paitsi selaimet",
+    "swipeEmpty": "Pyyhkäisy siirtyy myös tyhjiin työtiloihin",
+    "inertiaMissing": "Inertia on päällä, mutta Hyprland toimii ilman sitä",
+    "inertiaReinstall": "Asenna inertia uudelleen",
+    "inertiaReinstalling": "Asennetaan uudelleen…",
+    "inertiaReinstalled": "Inertia toimii taas",
+    "inertiaReinstallFailed": "Inertiaa ei voitu asentaa uudelleen",
+    "inertiaPaused": "Hyprland päivitettiin: inertia palaa seuraavan kirjautumisen jälkeen",
+    "inertiaAlert": "Inertia ei ole käynnissä"
   },
   "cs": {
     "tooltipAppearance": "Vzhled popisků",
@@ -3129,6 +3273,14 @@
     "scrollIgnorePluginHint": "Kromě prohlížečů: prohlížeče si ponechají vlastní setrvačnost touchpadu a kolečko myši má setrvačnost všude, i v terminálech. Nikde vypne setrvačnost bez odebrání pluginu.",
     "scrollIgnorePluginLabel": "Setrvačnost v",
     "scrollIgnorePluginNative": "Nikde",
-    "scrollIgnorePluginBrowsers": "Kromě prohlížečů"
+    "scrollIgnorePluginBrowsers": "Kromě prohlížečů",
+    "swipeEmpty": "Přejetí přejde i na prázdné plochy",
+    "inertiaMissing": "Setrvačnost je zapnutá, ale Hyprland běží bez ní",
+    "inertiaReinstall": "Znovu nainstalovat setrvačnost",
+    "inertiaReinstalling": "Přeinstalování…",
+    "inertiaReinstalled": "Setrvačnost opět funguje",
+    "inertiaReinstallFailed": "Setrvačnost se nepodařilo přeinstalovat",
+    "inertiaPaused": "Hyprland byl aktualizován: setrvačnost se vrátí po příštím přihlášení",
+    "inertiaAlert": "Setrvačnost neběží"
   }
 }

@@ -1,4 +1,4 @@
-[One-line installer](#one-line-installer)
+[Install](#install)
 
 # Omarchy Control Panel
 
@@ -14,27 +14,45 @@ Turn it on in the Trackpad tab, for the touchpad and for the mouse wheel
 
 ![Trackpad](screenshot-1-trackpad.png)
 
-## One-line installer
+## Install
 
-Run this from a terminal in your Omarchy desktop session. It installs the panel,
-enables its widget on the right of the bar and opens the window immediately:
+One command, from a terminal in your Omarchy desktop session:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0298f59a033a3ed75b98b6d525aa3f984270d5e5/bin/install.sh | bash
+omarchy plugin add https://github.com/avillagran/omarchy-control-panel --enable --yes
 ```
 
-The installer downloads an immutable panel revision with Qt 6.12 compatibility.
-An existing plugin directory is backed up before replacement; your saved settings
-are retained. The panel is ready in the current session without a reboot.
+That is Omarchy's own plugin manager: it clones this repository, validates it
+and puts the panel's widget on the bar, ready to click, in the current session.
+Nothing else is downloaded, nothing runs as root and no Hyprland is replaced.
 
-Requires Omarchy with a running Hyprland desktop, Git, Python 3, jq and Quickshell.
-To remove the panel, run `omarchy plugin remove io.github.avillagran.omarchy-control-panel`.
-Previous plugin copies are preserved under
-`~/.cache/omarchy-control-panel/plugin-backups/` (or `$XDG_CACHE_HOME`).
-The installer changes the plugin directory and its bar placement; it keeps your
-panel preferences. To restore an earlier copy, disable the plugin, move the
-current plugin directory aside and move the saved backup to its original path,
-then run `omarchy-shell shell rescanPlugins` and enable the plugin again.
+Requires Omarchy with a running Hyprland desktop, Git, Python 3, jq and
+Quickshell (all part of Omarchy). Scroll inertia also needs `base-devel` the
+first time you turn it on ([details](#scroll-inertia)).
+
+Update:
+
+```bash
+omarchy plugin update io.github.avillagran.omarchy-control-panel --yes
+```
+
+## Remove
+
+```bash
+omarchy plugin remove io.github.avillagran.omarchy-control-panel --yes
+```
+
+Then, to leave no trace (all optional, none of it runs without the panel):
+
+- Delete `~/.config/hypr/control-panel.lua` and
+  `~/.config/hypr/control-panel-gestures.lua`, and the `require("control-panel")`
+  line the panel added to `~/.config/hypr/hyprland.lua`.
+- Delete `~/.local/state/omarchy/control-panel-prefs.json`,
+  `~/.local/state/omarchy/control-panel-profiles.json`,
+  `~/.local/state/omarchy/control-panel-display-topology` and the inertia build
+  in `~/.local/state/omarchy/control-panel-inertia/`.
+- Inertia unloads at the next login; to unload it now:
+  `hyprctl plugin unload "$(cat ~/.local/state/omarchy/control-panel-inertia/loaded)"`.
 
 ## Features
 
@@ -44,20 +62,35 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   - Tap to click (no physical press)
   - Natural/inverted scrolling (per-device via `natural_scroll` + `scroll_factor`)
   - Inertial scrolling for the touchpad and, optionally, the mouse wheel ([omarchy-hyprland-inertia](https://github.com/avillagran/omarchy-hyprland-inertia), [details](#scroll-inertia))
-  - 3-finger swipe to switch workspaces
+  - 3-finger swipe to switch workspaces, into empty ones too or only between busy ones
 - **Animations**: system animations, workspace transition, flat pointer acceleration, speed/sensitivity
 - **Windows**: inner/outer gaps, font size, Omarchy's square single-window and no-gaps toggles, animations and workspace distribution (on Omarchy 4.6 and later, Omarchy's own per-monitor workspaces are left in charge)
 - **Displays**: layout, resolution/refresh/orientation/scale, a color per monitor, and square/rounded/circle/none workspace indicators in the bar. Profiles remember a separate layout for each physical monitor combination using EDID identity rather than connector names.
 - **Devices**: keyboard backlight, APFS (macOS disks)
 - **QuickView (development)**: native Control Panel overview with live window cards and workspace activation, available from Dev mode.
 - **Keyboard & Language**: physical layout, system language
-- **Task Manager (bundled)**: [omarchy-task-manager](https://github.com/avillagran/omarchy-task-manager) pauses memory-hungry apps before the desktop freezes. It stays its own plugin and repo, but the panel ships it **on by default**: Control Panel > Task Manager shows Omi, live CPU/RAM and the activity graph, and its switch turns the whole thing off (watchdog stopped, paused apps thawed, bar icon removed) or back on.
+- **Task Manager**: [omarchy-task-manager](https://github.com/avillagran/omarchy-task-manager) pauses memory-hungry apps before the desktop freezes. It stays its own plugin and repo. Control Panel > Task Manager shows Omi, live CPU/RAM and the activity graph; its switch adds it through `omarchy plugin add` the first time you turn it on, and enables or disables it with `omarchy plugin enable|disable` after that.
 - **OmaBridge**: private links between your devices ([details](#omabridge))
 - **Night light**, and more
 
 ## Development: unified tooltips
 
 [Omarchy PR #15694](https://github.com/omacom/omarchy/pull/15694) adds shared themed hints and optional interactive cards. This Control Panel integration adds live appearance settings at the end of Windows, translated into all 19 UI languages.
+
+## What's new in 1.0.5
+
+- **Inertia repairs itself after updates**: an Omarchy update can rebuild
+  Hyprland against newer libraries without changing its version, and the old
+  inertia build stopped loading. The build now follows Hyprland's full header,
+  the bar reloads inertia at login and after every Hyprland reload, and if it
+  still cannot load the panel says so (a dismissible alert in its header and a
+  notification with a **Reinstall inertia** button).
+- **Swipe into empty workspaces**: a new switch under the 3-finger swipe. On
+  (the default), swiping moves to the next workspace even when it is empty,
+  like Omarchy's own gesture; off, it only cycles workspaces with windows.
+- **One-command install with Omarchy's plugin manager**: the download-and-run
+  installer, the retired Hyprland scroll-patch installer and its patches are
+  gone. Task Manager is no longer installed automatically on first launch.
 
 ## What's new in 1.0.4
 
@@ -218,12 +251,15 @@ When the `omarchy-hyprland-inertia` package is installed, the switch loads it
 and builds nothing. If inertia is already on in Omarchy's own settings, the
 panel leaves it alone, so it never scrolls twice. Otherwise
 `bin/inertia-plugin` compiles the plugin on your machine the first time
-(about 4 s; needs `base-devel`, Hyprland's headers ship with the `hyprland`
-package) into `~/.local/state/omarchy/control-panel-inertia/`, outside the
-plugin folder. No binary is shipped. A plugin only works with the exact
-Hyprland build it was compiled for, so after a Hyprland update inertia pauses
+(a few seconds; needs `base-devel`, Hyprland's headers ship with the
+`hyprland` package) into `~/.local/state/omarchy/control-panel-inertia/`,
+outside the plugin folder. No binary is shipped. A plugin only works with the
+exact Hyprland build it was compiled for (including the library versions in its
+header), so a build is kept per header. After a Hyprland update inertia pauses
 until the next login, then rebuilds itself. If anything fails, Hyprland keeps
-running without inertia. The bar widget reloads the plugin at login.
+running without inertia. The bar widget reloads the plugin at login and after
+each Hyprland reload; when inertia is on but cannot load, the panel shows an
+alert in its header and one notification per session offers to reinstall it.
 
 ## Internationalization
 
@@ -241,24 +277,6 @@ running without inertia. The bar widget reloads the plugin at login.
 - **Security hardening**: all writes to user files (`~/.config/hypr/control-panel.lua`, plugin prefs JSON, and the idempotent `require("control-panel")` line in `~/.config/hypr/hyprland.lua`) go through exclusive `mktemp` temp files in the same directory followed by an atomic `mv -f` — never a predictable `*.tmp` name (which a planted symlink could redirect) and never a `>>` append (the symlink-append vector). Every file/probe read, including inside the write helpers, is byte-capped and FIFO-safe (`timeout 5 head -c 65536`) so a large or malicious file cannot hang or exhaust memory.
 - **No state flicker**: the UI syncs from the Lua file (source of truth) on open, avoiding the `hyprctl` read flip-flop on mouse-class devices.
 
-## Installation
-
-```bash
-omarchy plugin add https://github.com/avillagran/omarchy-control-panel
-```
-
-The first time the panel runs it also installs the bundled
-[Task Manager](https://github.com/avillagran/omarchy-task-manager) once. Turn
-it off in Control Panel > Task Manager and it stays off.
-
-Update an existing git-managed installation to the latest release with:
-
-```bash
-omarchy plugin update io.github.avillagran.omarchy-control-panel --yes
-```
-
-Or clone manually into `~/.config/omarchy/plugins/io.github.avillagran.omarchy-control-panel/` and enable it.
-
 ## Development note: `import QtQuick 6.11`
 
 Every QML file imports `QtQuick 6.11` (and `QtQuick.Window 6.11`), never the
@@ -273,7 +291,8 @@ QtQuick and brings the problem back. New files must use the pinned import.
 ```
 manifest.json        # plugin declaration (id, kinds, entry points)
 BarWidget.qml        # bar widget that summons the panel
-Panel.qml            # the settings panel
+desktop/shell.qml    # the settings window (its own Quickshell process)
+desktop/Core.qml     # the settings pages
 i18n.json            # UI strings in 19 languages
 bin/locale-list.sh   # enumerates available system locales for the picker
 bin/locale-helper    # root-owned helper for one-click locale install
@@ -313,20 +332,11 @@ without merging, and that approach is finished:
   wheel** switch, remain behind Dev mode. They only act on a patched Hyprland
   and do nothing on the one Omarchy ships. Mouse-wheel inertia now comes from
   the plugin's own switch.
-- The combined scroll and tooltip trial installer is retired. It installed a
-  separate Hyprland binary, which could drift from Omarchy's and break login
-  after an update. The patches stay in `patches/` for reference only.
-
-To undo that trial installer on a machine that still has it, then reboot:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/25aa630efde26e7b3c1699590b0b839ef1c59e20/bin/install-hyprland-scroll-patch.sh | OMARCHY_PANEL_REF=25aa630efde26e7b3c1699590b0b839ef1c59e20 bash -s -- --uninstall
-```
-
-It restores the original plugin directory and any previous Hyprland binary, and
-removes the tooltip trial only if this installer created it. It refuses
-modified replacement files or an unrelated later Omarchy selection. Personal
-tooltip preferences are retained.
+- The combined scroll and tooltip trial installer, and the Hyprland patches
+  it applied, were removed in 1.0.5. It installed a separate Hyprland binary,
+  which could drift from Omarchy's and break login after an update. Machines
+  that still run it can undo it with the `--uninstall` mode of the copy that
+  installed it (see this repository's history before 1.0.5).
 
 ## License
 

@@ -151,7 +151,6 @@ validate_config() {
 apply_monitor_row() {
   local row=$1 name name_lua expression mode mode_lua position_lua x y scale transform mirror mirror_lua
   name=$(jq -r '.name' <<<"$row")
-  printf '%s apply_monitor_row name=%s\n' "$(date -Iseconds)" "$name" >>/tmp/omarchy-cp-display.log
   name_lua=$(jq -Rn --arg value "$name" '$value')
   if [[ $(jq -r '.disabled // false' <<<"$row") == true ]]; then
     expression="hl.monitor({ output = $name_lua, disabled = true })"
@@ -185,13 +184,7 @@ apply_monitor_row() {
     fi
     expression+=" })"
   fi
-  printf '%s hyprctl_eval name=%s expr=%s\n' "$(date -Iseconds)" "$name" "$expression" >>/tmp/omarchy-cp-display.log
-  if hyprctl eval "$expression" >/dev/null 2>&1; then
-    printf '%s hyprctl_eval_ok name=%s\n' "$(date -Iseconds)" "$name" >>/tmp/omarchy-cp-display.log
-  else
-    printf '%s hyprctl_eval_fail name=%s\n' "$(date -Iseconds)" "$name" >>/tmp/omarchy-cp-display.log
-    die "Hyprland rejected settings for $name"
-  fi
+  hyprctl eval "$expression" >/dev/null 2>&1 || die "Hyprland rejected settings for $name"
 }
 
 # Build a temporary "safety" layout that moves every monitor that is NOT about
@@ -283,29 +276,23 @@ apply_config() {
   if [[ $scaled_count -gt 0 ]]; then
     # Phase A: move every non-scaling monitor far away vertically so the scaling
     # monitor can resize without any neighbour geometry around it.
-    printf '%s phase=A scaled_names=%s\n' "$(date -Iseconds)" "$scaled_names_json" >>/tmp/omarchy-cp-display.log
     local safety_config scale_config
     safety_config=$(compute_safety_config "$config" "$scaled_names_json")
-    printf '%s safety_config=%s\n' "$(date -Iseconds)" "$safety_config" >>/tmp/omarchy-cp-display.log
     apply_rows "$safety_config" 0.50
 
     # Phase B: apply scale/mode changes while neighbours remain in the safety
     # positions. The scaling monitor uses its final scale/mode; others keep the
     # safety coordinates from Phase A.
-    printf '%s phase=B\n' "$(date -Iseconds)" >>/tmp/omarchy-cp-display.log
     scale_config=$(jq -cn --argjson safety "$safety_config" --argjson final "$config" --argjson scaled "$scaled_names_json" '
       $safety | map(. as $s
         | ($final | map(select(.name == $s.name)) | first) as $f
         | if ($s.name | IN($scaled[])) then $f else $s end)')
-    printf '%s scale_config=%s\n' "$(date -Iseconds)" "$scale_config" >>/tmp/omarchy-cp-display.log
     apply_rows "$scale_config" 0.75
 
     # Phase C: move every monitor to its final coordinates. The scaling monitor
     # already has the right scale, so only positions change now.
-    printf '%s phase=C\n' "$(date -Iseconds)" >>/tmp/omarchy-cp-display.log
     apply_rows "$config" 0.75
   else
-    printf '%s apply_rows_normal\n' "$(date -Iseconds)" >>/tmp/omarchy-cp-display.log
     # No scale/mode transition: apply only the rows proven different above.
     # Re-emitting an unchanged monitor rule can blank that output and destroy
     # the panel surface hosted on it.
@@ -413,17 +400,34 @@ persist_layout() {
   mv -f "$tmp" "$lua"
 }
 
+# The 15 s rollback runs in a detached background process, not a systemd unit:
+# it sleeps, then rolls back only if the token it was started with is still
+# current. Keep/Revert (or a newer preview) replaces or removes the token, so a
+# stale timer does nothing when it wakes up.
+token_file=$state_root/rollback-token
+
 cancel_rollback() {
-  systemctl --user stop omarchy-control-panel-rollback.timer >/dev/null 2>&1 || true
-  systemctl --user stop omarchy-control-panel-rollback.service >/dev/null 2>&1 || true
-  systemctl --user reset-failed omarchy-control-panel-rollback.service >/dev/null 2>&1 || true
+  rm -f "$token_file"
 }
 
 schedule_rollback() {
-  need systemd-run
-  cancel_rollback
-  systemd-run --user --quiet --unit=omarchy-control-panel-rollback \
-    --on-active=15s "$plugin_dir/bin/display-manager" rollback >/dev/null
+  need setsid
+  local token tmp
+  token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+  [[ $token =~ ^[0-9a-f]{32}$ ]] || return 1
+  tmp=$(mktemp "$state_root/rollback-token.XXXXXX")
+  printf '%s\n' "$token" >"$tmp"
+  mv -f "$tmp" "$token_file"
+  setsid -f "$plugin_dir/bin/display-manager" rollback-after 15 "$token" </dev/null >/dev/null 2>&1
+}
+
+rollback_after() {
+  local delay=${1:-} token=${2:-}
+  [[ $delay =~ ^[0-9]{1,3}$ && $token =~ ^[0-9a-f]{32}$ ]] || die "rollback-after needs a delay and a token"
+  sleep "$delay"
+  [[ -f $token_file && ! -L $token_file && $(head -c 64 "$token_file") == "$token" ]] || exit 0
+  rm -f "$token_file"
+  rollback
 }
 
 restore_pending() {
@@ -440,13 +444,11 @@ preview() {
   [[ -n $config ]] || die "preview requires a JSON configuration"
   # Log every preview request so we can inspect the exact config the panel sent
   # and what happened, even after a shell restart or log rotation.
-  printf '%s config=%s\n' "$(date -Iseconds)" "$config" >>/tmp/omarchy-cp-display.log
   validate_config "$config"
   snapshot_tmp=$(mktemp "$state_root/pending.XXXXXX")
   state >"$snapshot_tmp"
   mv "$snapshot_tmp" "$pending_file"
   if ! apply_error=$(apply_config "$config" 2>&1); then
-    printf '%s apply_error=%s\n' "$(date -Iseconds)" "$apply_error" >>/tmp/omarchy-cp-display.log
     if ! (apply_config "$(<"$pending_file")") >/dev/null 2>&1; then
       die "Preview failed and the previous layout could not be restored; the recovery snapshot remains at $pending_file"
     fi
@@ -455,14 +457,12 @@ preview() {
     return 1
   fi
   if ! schedule_error=$(schedule_rollback 2>&1); then
-    printf '%s schedule_error=%s\n' "$(date -Iseconds)" "$schedule_error" >>/tmp/omarchy-cp-display.log
     if ! (apply_config "$(<"$pending_file")") >/dev/null 2>&1; then
       die "Automatic rollback could not be scheduled and the previous layout could not be restored; the recovery snapshot remains at $pending_file"
     fi
     rm -f "$pending_file"
     die "Could not schedule automatic rollback: $schedule_error"
   fi
-  printf '%s result={"ok":true,"timeout":15}\n' "$(date -Iseconds)" >>/tmp/omarchy-cp-display.log
   printf '{"ok":true,"timeout":15}\n'
 }
 
@@ -511,6 +511,7 @@ case ${1:-help} in
   confirm) confirm ;;
   revert) revert ;;
   rollback) rollback ;;
+  rollback-after) rollback_after "${2:-}" "${3:-}" ;;
   pending) pending ;;
   *) printf 'Usage: %s {state|apply JSON|preview JSON|confirm|revert|rollback|pending}\n' "$0" ;;
 esac

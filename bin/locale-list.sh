@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Emit available glibc locales as "value<TAB>installed(0|1)" lines.
-# Used by Panel.qml localeListProc to populate the language picker.
+# Used by the panel (desktop/Core.qml) to populate the language picker.
 set -u
 gen=$(locale -a 2>/dev/null | sed -E 's/\.utf8$/\.UTF-8/I; s/\.utf-8$/\.UTF-8/I' | sort -u)
 for b in $(ls /usr/share/i18n/locales/ 2>/dev/null); do

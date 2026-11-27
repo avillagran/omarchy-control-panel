@@ -11,7 +11,7 @@ set -euo pipefail
 lua="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/control-panel.lua"
 [[ -f $lua && ! -L $lua ]] || exit 0
 
-runtime_dir=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
+runtime_dir=${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is not set}
 exec 9>"$runtime_dir/omarchy-control-panel-device-rules.lock"
 flock -n 9 || exit 0
 

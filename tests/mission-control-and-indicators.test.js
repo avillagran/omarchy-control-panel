@@ -153,7 +153,13 @@ assert.match(thirdPartyNotices, /Domenico Martella/,
 assert.match(thirdPartyNotices, /GPL-3\.0/,
   'upstream licensing must be explicit');
 assert.match(thirdPartyNotices, /1fdea0ac9faea585771d4da3680397e449285706/,
-  'the upstream revision must be pinned explicitly');
+  'the upstream revision must be named explicitly');
+assert.match(thirdPartyNotices, /fe44661a95b8ab4b7f9f4c290334cf4c3c129d31/,
+  'the pinned fork revision must be named explicitly');
+assert.match(quickViewLauncher, /^UPSTREAM_REVISION="fe44661a95b8ab4b7f9f4c290334cf4c3c129d31"$/m,
+  'the on-demand clone uses the same commit as the submodule');
+assert.match(quickViewLauncher, /rev-parse HEAD[\s\S]*!= "\$UPSTREAM_REVISION"[\s\S]*exit 1/,
+  'QuickView refuses to run QML from any other revision');
 assert.match(quickView, /workspaces\.width - workspaces\.spacing \* Math\.max\(0, workspaces\.count - 1\)/,
   'each workspace row must fit every defined slot into its available monitor width');
 assert.match(quickView, /invalid release leaves the card at[\s\S]*?target:\s*null/,

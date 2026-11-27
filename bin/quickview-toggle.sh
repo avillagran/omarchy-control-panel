@@ -7,8 +7,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UPSTREAM_DIR="$ROOT/external/qs-hyprview"
-UPSTREAM_REPO="https://github.com/dom0/qs-hyprview.git"
-UPSTREAM_REVISION="1fdea0ac9faea585771d4da3680397e449285706"
+# Upstream: https://github.com/dom0/qs-hyprview (1fdea0a). Same source as the
+# external/qs-hyprview submodule: that upstream commit plus one
+# Qt 6.12 import fix (fe44661) in a public fork.
+UPSTREAM_REPO="https://github.com/avillagran/qs-hyprview.git"
+UPSTREAM_REVISION="fe44661a95b8ab4b7f9f4c290334cf4c3c129d31"
 INTEGRATION_PATCH="$ROOT/patches/qs-hyprview/0001-integration-refresh-toplevel-model.patch"
 SHELL="$UPSTREAM_DIR/shell.qml"
 TARGET="expose"
@@ -37,10 +40,16 @@ if [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
   done
 fi
 
+# `omarchy plugin add` does not fetch submodules: fetch the pinned revision on
+# first use, and never run QML from anything but that exact commit.
 if [ ! -f "$SHELL" ]; then
   mkdir -p "$(dirname "$UPSTREAM_DIR")"
-  git clone "$UPSTREAM_REPO" "$UPSTREAM_DIR"
-  git -C "$UPSTREAM_DIR" checkout --detach "$UPSTREAM_REVISION"
+  git clone --quiet --no-checkout -- "$UPSTREAM_REPO" "$UPSTREAM_DIR"
+  git -C "$UPSTREAM_DIR" checkout --quiet --detach "$UPSTREAM_REVISION"
+fi
+if [ "$(git -C "$UPSTREAM_DIR" rev-parse HEAD 2>/dev/null)" != "$UPSTREAM_REVISION" ]; then
+  printf 'QuickView source is not at the pinned revision %s\n' "$UPSTREAM_REVISION" >&2
+  exit 1
 fi
 
 # Keep the upstream source pristine as a pinned submodule. Omarchy-specific

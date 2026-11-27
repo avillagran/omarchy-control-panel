@@ -20,7 +20,9 @@ Column {
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/" + pluginId
   readonly property string launcher: pluginDir + "/bin/task-manager-launch.sh"
   readonly property string keybindScript: pluginDir + "/bin/task-manager-keybind.sh"
-  readonly property string installUrl: "https://raw.githubusercontent.com/avillagran/omarchy-task-manager/main/install.sh"
+  // Installed the standard way (Omarchy's own plugin manager), only when the
+  // user turns it on here. Nothing is downloaded or run behind their back.
+  readonly property string repoUrl: "https://github.com/avillagran/omarchy-task-manager"
 
   property bool probed: false
   property bool installed: false
@@ -88,11 +90,9 @@ Column {
     if (busy) return
     busy = true
     pluginEnabled = on
-    var cmd
-    if (on && installed) cmd = "bash '" + pluginDir + "/install.sh' --enable"
-    else if (on) cmd = "curl -fsSL '" + installUrl + "' | bash"
-    else cmd = "bash '" + pluginDir + "/install.sh' --disable"
-    actionProc.command = ["bash", "-lc", cmd]
+    if (on && installed) actionProc.command = ["omarchy", "plugin", "enable", pluginId]
+    else if (on) actionProc.command = ["omarchy", "plugin", "add", repoUrl, "--enable", "--yes"]
+    else actionProc.command = ["omarchy", "plugin", "disable", pluginId]
     actionProc.running = true
   }
 
@@ -102,21 +102,8 @@ Column {
     keybindRecheck.restart()
   }
 
-  // Ship it by default: the first time the panel runs without the Task
-  // Manager installed, install it once. Turning it off later is remembered.
-  function maybeAutoInstall() {
-    if (!probed || !core.prefsLoaded || core.taskManagerOffered) return
-    core.taskManagerOffered = true
-    core.savePrefs()
-    if (!installed) setEnabled(true)
-  }
-
   Component.onCompleted: probe()
   onActiveChanged: if (active) { probe(); pollTimer.restart() }
-  Connections {
-    target: root.core
-    function onPrefsLoadedChanged() { root.maybeAutoInstall() }
-  }
 
   Process {
     id: probeProc
@@ -139,7 +126,6 @@ Column {
           else if (kv[0] === "KB") root.keybindOn = kv[1] === "enabled"
         }
         root.probed = true
-        root.maybeAutoInstall()
         if (root.active && root.running) root.pollHistory()
       }
     }

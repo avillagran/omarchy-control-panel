@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-runtime_dir=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
+runtime_dir=${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is not set}
 lock_file="$runtime_dir/omarchy-control-panel-scroll-feel.lock"
 exec 9>"$lock_file"
 flock -n 9 || exit 0

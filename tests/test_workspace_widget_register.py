@@ -8,7 +8,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HELPER = ROOT / "bin/install-workspace-colors-widget"
+HELPER = ROOT / "bin/register-workspace-colors-widget"
 
 
 class WorkspaceWidgetInstallerTests(unittest.TestCase):
@@ -55,7 +55,7 @@ class WorkspaceWidgetInstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "plugin"
             (root / "bin").mkdir(parents=True)
-            helper = root / "bin/install-workspace-colors-widget"
+            helper = root / "bin/register-workspace-colors-widget"
             shutil.copy2(HELPER, helper)
             source = root / "workspace-colors.qml"
             source.write_text("import QtQuick\nItem { property string version: 'one' }\n", encoding="utf-8")

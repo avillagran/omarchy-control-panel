@@ -18,7 +18,8 @@ echo "$*" >> "$FAKE/calls"
 case "$1 ${2:-}" in
   "version -j") printf '{"commit":"%s"}\n' "$(cat "$FAKE/running")" ;;
   "plugin list") if [[ -f $FAKE/loaded ]]; then echo '[{"name":"omarchy-inertia"}]'; else echo '[]'; fi ;;
-  "plugin load") [[ -f $FAKE/refuse ]] && { echo "error"; exit 0; }; echo "$3" > "$FAKE/loaded"; echo ok ;;
+  "plugin load") [[ -f $FAKE/abi ]] && { echo "plugin crashed/threw in main: omarchy-inertia: incompatible Hyprland ABI"; exit 0; }
+                 [[ -f $FAKE/refuse ]] && { echo "error"; exit 0; }; echo "$3" > "$FAKE/loaded"; echo ok ;;
   "plugin unload") [[ $(cat "$FAKE/loaded" 2>/dev/null) == "$3" ]] && rm -f "$FAKE/loaded"; echo ok ;;
 esac
 STUB
@@ -37,7 +38,9 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 bash "$helper" sync
 [[ ! -f $tmp/loaded ]] || fail "sync without prefs must not load"
 
+[[ $(bash "$helper" check) == off ]] || fail "check reports off when inertia is not wanted"
 echo '{"inertia": true}' > "$prefs"
+[[ $(bash "$helper" check) == missing* ]] || fail "check reports missing when wanted but not loaded"
 bash "$helper" sync
 [[ -f $tmp/loaded ]] || fail "sync with inertia=true must load"
 [[ $(cat "$tmp/loaded") == "$XDG_STATE_HOME/omarchy/control-panel-inertia/build/$commit-"*"/control-panel-inertia.so" ]] || fail "build must live in the state dir, keyed by the Hyprland commit"
@@ -46,11 +49,38 @@ bash "$helper" on
 [[ $(builds) == 1 ]] || fail "loaded + cached must not rebuild"
 [[ $(grep -c '^plugin load' "$tmp/calls") == 1 ]] || fail "already loaded must not load twice"
 [[ $(bash "$helper" status) == loaded ]] || fail "status loaded"
+[[ $(bash "$helper" check) == ok ]] || fail "check reports ok when loaded"
+
+# Same Hyprland commit rebuilt against newer libraries (version.h changes):
+# the cached build is stale and must be rebuilt, not reused.
+bash "$helper" off
+printf '#define GIT_COMMIT_HASH    "%s"\n#define HYPRGRAPHICS_VERSION "0.7.0"\n' "$commit" > "$HYPRLAND_VERSION_HEADER"
+bash "$helper" on
+[[ $(builds) == 2 ]] || fail "a changed version.h must rebuild"
+[[ $(compgen -G "$XDG_STATE_HOME/omarchy/control-panel-inertia/build/*/control-panel-inertia.so" | wc -l) == 1 ]] || fail "the stale build is pruned"
+
+# Headers newer than the running compositor: the plugin's ABI check refuses it.
+bash "$helper" off
+touch "$tmp/abi"
+export HYPRLAND_INSTANCE_SIGNATURE=session-a
+if bash "$helper" on 2>"$tmp/err"; then fail "ABI refusal must fail"; fi
+grep -q 'next login' "$tmp/err" || fail "ABI refusal explains it waits for next login"
+[[ $(bash "$helper" check) == $'missing\t'*'next login'* ]] || fail "check carries the reason"
+loads=$(grep -c '^plugin load' "$tmp/calls")
+bash "$helper" sync 2>/dev/null || true
+[[ $(grep -c '^plugin load' "$tmp/calls") == "$loads" ]] || fail "the same session does not retry a refused library"
+rm -f "$tmp/abi"
+export HYPRLAND_INSTANCE_SIGNATURE=session-b
+bash "$helper" sync
+[[ -f $tmp/loaded ]] || fail "a new session loads it again"
+[[ $(bash "$helper" check) == ok ]] || fail "check ok after the new session"
+unset HYPRLAND_INSTANCE_SIGNATURE
+printf '#define GIT_COMMIT_HASH    "%s"\n' "$commit" > "$HYPRLAND_VERSION_HEADER"
 
 bash "$helper" off
 [[ ! -f $tmp/loaded ]] || fail "off must unload"
 bash "$helper" on
-[[ $(builds) == 1 ]] || fail "reload after off uses the cached build"
+[[ $(builds) == 3 ]] || fail "reload after off uses the cached build"
 
 echo '{"inertia": false, "inertiaMouse": true}' > "$prefs"
 bash "$helper" sync
@@ -65,7 +95,7 @@ printf '#define GIT_COMMIT_HASH    "%s"\n' 0000000000000000000000000000000000000
 if bash "$helper" on 2>"$tmp/err"; then fail "mismatched headers must not load"; fi
 grep -q 'next login' "$tmp/err" || fail "mismatch explains it waits for next login"
 [[ ! -f $tmp/loaded ]] || fail "mismatch must not load"
-[[ $(builds) == 1 ]] || fail "mismatch must not build"
+[[ $(builds) == 3 ]] || fail "mismatch must not build"
 
 # After relogin: new commit, build failure is remembered instead of retried.
 new=1111111111111111111111111111111111111111
@@ -74,7 +104,7 @@ printf '%s\n' "$new" > "$tmp/running"
 touch "$tmp/makefail"
 if bash "$helper" on 2>/dev/null; then fail "failed build must report failure"; fi
 if bash "$helper" on 2>/dev/null; then fail "failed build must keep failing"; fi
-[[ $(builds) == 2 ]] || fail "a failed build is not retried for the same Hyprland"
+[[ $(builds) == 4 ]] || fail "a failed build is not retried for the same Hyprland"
 rm -f "$tmp/makefail"
 
 # Compositor refuses the library (ABI check in PLUGIN_INIT).

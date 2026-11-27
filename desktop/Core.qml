@@ -200,10 +200,19 @@ Item {
   readonly property bool hasKbBacklight: kbdLedFound
 
   property bool swipe3On: false
+  // Swipe also lands on empty workspaces (r±1, like Omarchy's own gesture);
+  // off = only cycle workspaces that already have windows (e±1).
+  property bool swipeEmptyOn: true
   property bool trackpadGesturesInstalled: false
   property bool kittyInstalled: true
   property bool inertiaOn: false
   property bool inertiaMouseOn: false
+  // "ok" | "off" | "missing" from `inertia-plugin check`: inertia was turned on
+  // here but Hyprland is running without it (an update, a removed package…).
+  property string inertiaHealth: ""
+  property string inertiaMissingReason: ""
+  property bool inertiaReinstalling: false
+  property bool inertiaAlertDismissed: false
   property bool tapToClick: false
   property var trackpadNames: []
   property var allMiceNames: []
@@ -558,7 +567,6 @@ Item {
   // Keep/Revert flow because a bad mode can leave the screen unusable.
   function displayApplyInstant() {
     console.warn("[CP] displayApplyInstant")
-    Quickshell.execDetached(["bash", "-lc", "echo \"$(date +%H:%M:%S) CP-APPLY-INSTANT displays=\" + JSON.stringify(root.displays.map(function(d){return d.name+':'+d.scale+'@'+d.x+'x'+d.y})) >> /tmp/cp-version.log"])
     if (!displayValidLayout || displayInstantProc.running) return
     // Suppress the periodic refresh from clobbering root.displays for 3s while
     // the new scale settles in Hyprland (or a concurrent hyprctl reload would
@@ -630,7 +638,6 @@ Item {
   // hl.monitor rules alongside every other setting in control-panel.lua.
   function displayKeep() {
     console.warn("[CP] displayKeep, pending=" + root.hyprReloadPending + " seconds=" + root.displaySecondsRemaining)
-    Quickshell.execDetached(["bash", "-lc", "echo \"$(date +%H:%M:%S) KEEP displays=" + JSON.stringify(root.displays.map(function(d){return d.name+':'+d.scale})) + " saved=" + JSON.stringify(root.saved.displays.map(function(d){return d.name+':'+d.scale})) + " live=$(hyprctl monitors -j 2>/dev/null | python3 -c 'import sys,json; print(json.dumps([(m.get(\"name\"),m.get(\"scale\")) for m in json.load(sys.stdin)]))' 2>/dev/null)\" >> /tmp/cp-keep.log"])
     // Stop the rollback timer immediately so it cannot fire (and revert) after
     // we confirm. displayConfirmProc.onExited also stops it, but a race could let
     // the timer expire first and revert the very change the user just kept.
@@ -669,7 +676,7 @@ Item {
 
   function copyCalc() {
     if (!root.calcValid || !root.calcResult) return
-    Quickshell.execDetached(["bash", "-lc", "printf %s " + Util.shellQuote(root.calcResult) + " | wl-copy"])
+    Quickshell.clipboardText = String(root.calcResult)
     root.calcStatus = root.t(root.uiLang, "calcCopied")
   }
 
@@ -796,6 +803,7 @@ Item {
     if (!kbdLedProbe.running) kbdLedProbe.running = true
     if (!scrollProbeProc.running) scrollProbeProc.running = true
     root.probeInertiaFeel()
+    root.checkInertia()
     displayRefresh()
   }
 
@@ -808,8 +816,8 @@ Item {
   // Copy text to the system clipboard and flash a brief confirmation.
   function copyToClipboard(text) {
     if (text) {
-      if (typeof Qt !== "undefined" && Qt.clipboard) Qt.clipboard.setText(text)
-      else Quickshell.execDetached(["bash", "-lc", "printf '%s' " + JSON.stringify(text) + " | wl-copy 2>/dev/null || xclip -selection clipboard 2>/dev/null || true"])
+      // In-process: the text never reaches a shell or another process's argv.
+      Quickshell.clipboardText = String(text)
       root.statusMessage = "Copied to clipboard"
       syncTimer.restart()
     }
@@ -871,6 +879,7 @@ Item {
     cursorSize: 24,
     kbLayout: "",
     swipe3: false,
+    swipeEmpty: true,
     tapToClick: false,
     browserCloseTab: true,
     middleButtonScreenshotOff: false,
@@ -1046,8 +1055,9 @@ Item {
   // mutually exclusive, so there is never a double definition.
   function syncGesturesFile() {
     var enabled = saved.swipe3 ? "true" : "false"
-    var leftTarget = saved.naturalScroll ? "e+1" : "e-1"
-    var rightTarget = saved.naturalScroll ? "e-1" : "e+1"
+    var kind = saved.swipeEmpty === false ? "e" : "r"
+    var leftTarget = kind + (saved.naturalScroll ? "+1" : "-1")
+    var rightTarget = kind + (saved.naturalScroll ? "-1" : "+1")
     Quickshell.execDetached(["bash", "-lc",
       "python3 '" + root.binDir + "/sync-gestures-file.py' " +
       "--enabled " + enabled + " --left '" + leftTarget + "' --right '" + rightTarget
@@ -1464,6 +1474,48 @@ Item {
     if (!inertiaFeelProbe.running) inertiaFeelProbe.running = true
   }
 
+  Process {
+    id: inertiaCheckProc
+    command: ["bash", root.binDir + "/inertia-plugin", "check"]
+    stdout: StdioCollector { waitForEnd: true }
+    onExited: function(exitCode) {
+      var line = String(inertiaCheckProc.stdout.text || "").split("\n")[0]
+      var tab = line.indexOf("\t")
+      root.inertiaHealth = exitCode === 0 ? (tab >= 0 ? line.slice(0, tab) : line) : ""
+      root.inertiaMissingReason = tab >= 0 ? line.slice(tab + 1) : ""
+    }
+  }
+
+  function checkInertia() {
+    if (!inertiaCheckProc.running) inertiaCheckProc.running = true
+  }
+
+  // Inertia can vanish (or come back) without the panel doing anything: a
+  // Hyprland update, a relogin, the bar's own repair. Keep the alert honest.
+  Timer {
+    interval: 10000
+    repeat: true
+    running: root.prefsLoaded && (root.inertiaOn || root.inertiaMouseOn)
+    onTriggered: root.checkInertia()
+  }
+
+  Process {
+    id: inertiaReinstallProc
+    command: ["bash", root.binDir + "/inertia-plugin", "on"]
+    onExited: function(exitCode) {
+      root.inertiaReinstalling = false
+      root.statusMessage = root.t(root.uiLang, exitCode === 0 ? "inertiaReinstalled" : "inertiaReinstallFailed")
+      root.checkInertia()
+      root.probeInertiaFeel()
+    }
+  }
+
+  function reinstallInertia() {
+    if (inertiaReinstallProc.running) return
+    inertiaReinstalling = true
+    inertiaReinstallProc.running = true
+  }
+
   Timer {
     id: inertiaFeelReprobe
     // The first enable may build the plugin; check again until it settles.
@@ -1472,6 +1524,7 @@ Item {
     property int left: 0
     onTriggered: {
       root.probeInertiaFeel()
+      root.checkInertia()
       if (--left <= 0) stop()
     }
   }
@@ -1639,6 +1692,14 @@ Item {
     statusMessage = t(uiLang, "swipe3") + " · " + (on ? "on" : "off")
     slowSyncLeft = 3
     slowSyncTimer.restart()
+  }
+
+  function setSwipeEmpty(on) {
+    swipeEmptyOn = on
+    saved.swipeEmpty = on
+    savePrefs()
+    syncGesturesFile()
+    statusMessage = t(uiLang, "swipeEmpty") + " · " + (on ? "on" : "off")
   }
 
   function setMiddleBtnOff(on) {
@@ -2179,6 +2240,8 @@ Item {
         || d.multiMonitorWorkspaces === undefined
       swipe3On = d.swipe3 === true
       saved.swipe3 = swipe3On
+      swipeEmptyOn = d.swipeEmpty !== false
+      saved.swipeEmpty = swipeEmptyOn
       inertiaOn = d.inertia === true
       saved.inertia = inertiaOn
       inertiaMouseOn = d.inertiaMouse === true
@@ -2230,6 +2293,9 @@ Item {
       saved.naturalScroll = naturalScroll
       tapToClick = d.tapToClick === true
       saved.tapToClick = tapToClick
+      // Before 1.0.5 the swipe only cycled busy workspaces (e±1). Regenerate
+      // the gesture file once so it follows the new default.
+      if (d.swipeEmpty === undefined && swipe3On) Qt.callLater(function() { root.savePrefs(); root.syncGesturesFile() })
       saved.browserCloseTab = d.browserCloseTab === true
       browserCloseTabOn = saved.browserCloseTab
       saved.middleButtonScreenshotOff = d.middleButtonScreenshotOff === true
@@ -2261,6 +2327,7 @@ Item {
       : WorkspaceModel.workspaceVisualMap(displays, singleMonitorWorkspaces, multiMonitorWorkspaces, monitorColors)
     prefsFile.setText(JSON.stringify({
       swipe3: swipe3On,
+      swipeEmpty: swipeEmptyOn,
       inertia: inertiaOn,
       inertiaMouse: inertiaMouseOn,
       naturalScroll: naturalScroll,
@@ -2311,7 +2378,7 @@ Item {
     id: workspaceWidgetSyncTimer
     interval: 300
     onTriggered: Quickshell.execDetached([
-      root.binDir + "/install-workspace-colors-widget"
+      root.binDir + "/register-workspace-colors-widget"
     ])
   }
 
@@ -2920,10 +2987,6 @@ Item {
     if (!localeListProc.running) localeListProc.running = true
     if (!layoutListProc.running) layoutListProc.running = true
     if (!localeHelperProbe.running) localeHelperProbe.running = true
-    // VERSION MARKER (2026-08-31c): confirms which build is live. The plugin
-    // writes a timestamp + this tag to /tmp/cp-version.log so we can tell apart
-    // a stale quickshell qmlcache from the real build without relying on qslog.
-    Quickshell.execDetached(["bash", "-lc", "echo \"$(date +%H:%M:%S) CP-LOAD 2026-08-31c\" >> /tmp/cp-version.log"])
     // The desktop launcher creates a fresh Quickshell process. Defer its
     // read-only state load until the process is fully connected to Hyprland;
     // opening the panel must never reapply display/workspace configuration.
@@ -3505,6 +3568,13 @@ Item {
         }
 
         ToggleRow {
+          visible: root.swipe3On
+          label: root.t(root.uiLang, "swipeEmpty")
+          checked: root.swipeEmptyOn
+          onClicked: { root.setSwipeEmpty(!root.swipeEmptyOn) }
+        }
+
+        ToggleRow {
           label: root.t(root.uiLang, "middleButtonScreenshotOff")
           checked: root.middleBtnOff
           onClicked: { root.setMiddleBtnOff(!root.middleBtnOff) }
@@ -3534,6 +3604,43 @@ Item {
           label: root.t(root.uiLang, "inertiaMouse")
           checked: root.inertiaMouseOn
           onClicked: { root.setInertiaMouse(!root.inertiaMouseOn) }
+        }
+
+        // Inertia was turned on here but Hyprland runs without it.
+        Item {
+          width: 1
+          height: Style.space(6)
+          visible: inertiaMissingBox.visible
+        }
+
+        Column {
+          id: inertiaMissingBox
+          width: parent.width
+          spacing: Style.space(6)
+          visible: (root.inertiaOn || root.inertiaMouseOn) && root.inertiaHealth === "missing"
+
+          Text {
+            width: parent.width
+            text: root.t(root.uiLang, "inertiaMissing")
+              + (root.inertiaMissingReason !== "" ? " (" + root.inertiaMissingReason + ")" : "")
+            textFormat: Text.PlainText
+            color: root.fg
+            opacity: 0.8
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            wrapMode: Text.WordWrap
+          }
+
+          Button {
+            width: parent.width
+            leftAlign: true
+            fontFamily: root.fontFamily
+            iconText: "󰑓"
+            text: root.t(root.uiLang, root.inertiaReinstalling ? "inertiaReinstalling" : "inertiaReinstall")
+            selected: true
+            foreground: root.fg
+            onClicked: root.reinstallInertia()
+          }
         }
 
         Item {

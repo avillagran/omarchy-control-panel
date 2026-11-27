@@ -11,7 +11,7 @@
 # keypress and this script running.
 set -uo pipefail
 
-LOG=/tmp/superw-debug.log
+LOG=/dev/null  # set to a private file to debug SUPER+W
 echo "$(date '+%H:%M:%S') SUPER+W triggered; HYPRLAND_INSTANCE_SIGNATURE=${HYPRLAND_INSTANCE_SIGNATURE:-UNSET} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-UNSET}" >> "$LOG"
 
 BROWSERS='chrome|chromium|chromium-browser|brave|brave-browser|firefox|firefox-esr|edge|microsoft-edge|opera|opera-browser|vivaldi|vivaldi-stable|epiphany|gnome-web'

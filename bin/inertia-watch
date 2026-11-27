@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Keep scroll inertia that was turned on in the Control Panel actually loaded.
+# Runs at login and after Hyprland reloads (BarWidget). A Hyprland update, a
+# rebuilt library or a removed package can leave the compositor without the
+# plugin: rebuild/load it, and if that still fails, say so once per session
+# with a button that reinstalls it.
+set -uo pipefail
+umask 077
+
+dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+helper=$dir/inertia-plugin
+i18n=$dir/../desktop/i18n.json
+state=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/control-panel-inertia
+
+bash "$helper" sync 2>/dev/null
+result=$(bash "$helper" check 2>/dev/null) || exit 0
+[[ $result == missing* ]] || exit 0
+reason=${result#missing}
+reason=${reason#$'\t'}
+
+command -v notify-send >/dev/null || exit 0
+mkdir -p "$state"
+mark=$state/notified
+instance=${HYPRLAND_INSTANCE_SIGNATURE:-none}
+[[ -f $mark && ! -L $mark && $(<"$mark") == "$instance" ]] && exit 0
+printf '%s\n' "$instance" >"$mark"
+
+say() {
+  python3 - "$i18n" "$1" "${LC_ALL:-${LC_MESSAGES:-${LANG:-en}}}" <<'PY'
+import json, sys
+path, key, locale = sys.argv[1:4]
+lang = locale.split("_")[0].split(".")[0].lower() or "en"
+try:
+    with open(path, encoding="utf-8") as handle: data = json.load(handle)
+except (OSError, ValueError): data = {}
+table = data.get(lang) or data.get("en") or {}
+print(table.get(key) or (data.get("en") or {}).get(key) or key)
+PY
+}
+
+app="Control Panel"
+if [[ $reason == *"next login"* ]]; then
+  notify-send -a "$app" -i input-touchpad -- "$(say inertia)" "$(say inertiaPaused)"
+  exit 0
+fi
+
+action=$(notify-send -a "$app" -i input-touchpad -A "reinstall=$(say inertiaReinstall)" \
+  -- "$(say inertiaMissing)" "$reason")
+[[ $action == reinstall ]] || exit 0
+out=$(bash "$helper" on 2>&1)
+rc=$?
+out=${out:0:400}
+if [[ $rc == 0 ]]; then
+  notify-send -a "$app" -i input-touchpad -- "$(say inertiaReinstalled)"
+else
+  notify-send -a "$app" -i input-touchpad -u critical -- "$(say inertiaReinstallFailed)" "$out"
+fi

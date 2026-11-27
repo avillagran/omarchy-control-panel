@@ -17,7 +17,7 @@ BarWidget {
   readonly property string superWBindPath: Qt.resolvedUrl("bin/apply-superw-bind").toString().replace("file://", "")
   readonly property string scrollFeelPath: Qt.resolvedUrl("bin/apply-scroll-feel").toString().replace("file://", "")
   readonly property string deviceRulesPath: Qt.resolvedUrl("bin/apply-device-rules").toString().replace("file://", "")
-  readonly property string inertiaPluginPath: Qt.resolvedUrl("bin/inertia-plugin").toString().replace("file://", "")
+  readonly property string inertiaWatchPath: Qt.resolvedUrl("bin/inertia-watch").toString().replace("file://", "")
   readonly property string displaySyncPath: Qt.resolvedUrl("bin/display-hotplug-sync").toString().replace("file://", "")
 
   // Shape contract for shell.summon/hide/toggle routing (Bar.findPanelWidget
@@ -42,8 +42,9 @@ BarWidget {
   Component.onCompleted: {
     root.ensurePersistentState()
     deviceRulesTimer.restart()
-    // Runtime plugins do not survive a Hyprland restart: reload inertia at login.
-    Quickshell.execDetached(["bash", root.inertiaPluginPath, "sync"])
+    // Runtime plugins do not survive a Hyprland restart: reload inertia at login
+    // (rebuilding it after a Hyprland update) and offer a reinstall if it fails.
+    Quickshell.execDetached(["bash", root.inertiaWatchPath])
     root.knownScreenTopology = root.screenTopology
     // Monitors may have changed while the shell was down (or at login with a
     // different set connected). --startup only restores profile geometry when
@@ -85,7 +86,10 @@ BarWidget {
     id: deviceRulesTimer
     interval: 1500
     repeat: false
-    onTriggered: Quickshell.execDetached(["bash", root.deviceRulesPath])
+    onTriggered: {
+      Quickshell.execDetached(["bash", root.deviceRulesPath])
+      Quickshell.execDetached(["bash", root.inertiaWatchPath])
+    }
   }
   Timer {
     id: displaySyncStartupTimer

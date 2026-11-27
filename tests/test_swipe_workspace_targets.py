@@ -39,12 +39,17 @@ class SwipeWorkspaceTargetsTest(unittest.TestCase):
     def test_explicit_existing_targets_are_kept(self):
         self.assertEqual(swipe_targets(generate('--left', 'e-1', '--right', 'e+1')), ['e-1', 'e+1'])
 
-    def test_panel_callers_pass_existing_targets(self):
-        for name in ('Panel.qml', 'desktop/Core.qml'):
-            source = (PROJECT / name).read_text()
-            for line in source.splitlines():
-                if re.search(r'var (left|right)Target = ', line):
-                    self.assertNotRegex(line, r'"[+-]1"', f'{name}: {line.strip()}')
+    def test_monitor_relative_targets_are_kept(self):
+        # "Swipe also goes to empty workspaces": r±1, like Omarchy's gesture.
+        self.assertEqual(swipe_targets(generate('--left', 'r+1', '--right', 'r-1')), ['r+1', 'r-1'])
+
+    def test_core_prefixes_every_target_with_e_or_r(self):
+        source = (PROJECT / 'desktop/Core.qml').read_text()
+        self.assertIn('var kind = saved.swipeEmpty === false ? "e" : "r"', source)
+        targets = [l for l in source.splitlines() if re.search(r'var (left|right)Target = ', l)]
+        self.assertEqual(len(targets), 2)
+        for line in targets:
+            self.assertRegex(line, r'= kind \+ ', line.strip())
 
 
 if __name__ == '__main__':

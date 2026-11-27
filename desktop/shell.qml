@@ -192,6 +192,7 @@ ShellRoot {
             }
 
             Text {
+              id: headerTitle
               Layout.fillWidth: true
               Layout.minimumWidth: 0
               textFormat: Text.StyledText
@@ -204,6 +205,7 @@ ShellRoot {
             }
 
             Text {
+              id: headerProfile
               visible: !win.narrow
               textFormat: Text.StyledText
               text: core.t(core.uiLang, "profileLabel") + " <font color=\"" + theme.text + "\">"
@@ -220,6 +222,70 @@ ShellRoot {
               ToolTip.visible: hovered
               ToolTip.text: core.t(core.uiLang, "close")
               onClicked: win.visible = false
+            }
+          }
+
+          // Inertia was turned on here but Hyprland runs without it (an update,
+          // a removed package…). Centered in the header so it cannot be missed;
+          // dismissible until the panel restarts.
+          Rectangle {
+            id: inertiaAlert
+            readonly property real leftUsed: headerContent.x + headerTitle.x + headerTitle.contentWidth
+            readonly property real rightUsed: header.width - headerContent.x
+              - (headerProfile.visible ? headerProfile.x : closeButton.x)
+            readonly property real room: header.width - 2 * Math.max(leftUsed, rightUsed) - 2 * theme.gap
+            visible: (core.inertiaOn || core.inertiaMouseOn) && core.inertiaHealth === "missing"
+              && !core.inertiaAlertDismissed && room > alertIcon.implicitWidth + alertFix.implicitWidth + 40
+            anchors.centerIn: parent
+            width: Math.min(alertRow.implicitWidth + theme.padding * 2, room)
+            height: Math.round(theme.controlHeight * 0.82)
+            radius: theme.radius
+            color: Qt.alpha(theme.urgent, 0.16)
+            border.color: theme.urgent
+            border.width: 1
+
+            RowLayout {
+              id: alertRow
+              anchors.fill: parent
+              anchors.leftMargin: theme.padding
+              anchors.rightMargin: 4
+              spacing: theme.gap
+
+              Text {
+                id: alertIcon
+                text: "󰀦"
+                color: theme.urgent
+                font.family: theme.fontUi
+                font.pixelSize: theme.body + 2
+              }
+
+              Text {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                text: core.t(core.uiLang, "inertiaAlert")
+                textFormat: Text.PlainText
+                color: theme.text
+                font.family: theme.fontUi
+                font.pixelSize: theme.body
+                font.bold: true
+                elide: Text.ElideRight
+              }
+
+              ActionButton {
+                id: alertFix
+                primary: true
+                enabled: !core.inertiaReinstalling
+                text: core.t(core.uiLang, core.inertiaReinstalling ? "inertiaReinstalling" : "inertiaReinstall")
+                onClicked: core.reinstallInertia()
+              }
+
+              ActionButton {
+                text: "×"
+                Accessible.name: core.t(core.uiLang, "close")
+                ToolTip.visible: hovered
+                ToolTip.text: core.t(core.uiLang, "close")
+                onClicked: core.inertiaAlertDismissed = true
+              }
             }
           }
         }

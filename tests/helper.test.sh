@@ -113,26 +113,18 @@ fi
 exit 1
 SH
 
-cat >"$fixture_dir/bin/systemd-run" <<'SH'
+# The rollback timer is a detached `setsid -f display-manager rollback-after`;
+# record it instead of sleeping.
+cat >"$fixture_dir/bin/setsid" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$TEST_SYSTEMD_CALLS"
-if [[ -f $TEST_FAIL_NEXT_SYSTEMD_RUN ]]; then
-  rm -f "$TEST_FAIL_NEXT_SYSTEMD_RUN"
-  exit 1
-fi
-exit 0
-SH
-
-cat >"$fixture_dir/bin/systemctl" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >>"$TEST_SYSTEMCTL_CALLS"
 exit 0
 SH
 
 chmod +x "$fixture_dir/bin/"*
 
 export PATH="$fixture_dir/bin:$PATH"
-for mocked_command in hyprctl systemd-run systemctl; do
+for mocked_command in hyprctl setsid; do
   [[ $(command -v "$mocked_command") == "$fixture_dir/bin/$mocked_command" ]] || exit 1
 done
 export XDG_STATE_HOME="$fixture_dir/state"
@@ -141,11 +133,9 @@ export TEST_ACTIVE_NAMES="$fixture_dir/active-names"
 printf '%s\n' "eDP-1" "DP-1" >"$TEST_ACTIVE_NAMES"
 export TEST_CALLS="$fixture_dir/calls"
 export TEST_SYSTEMD_CALLS="$fixture_dir/systemd-calls"
-export TEST_SYSTEMCTL_CALLS="$fixture_dir/systemctl-calls"
 export TEST_FAIL_NEXT_EVAL="$fixture_dir/fail-next-eval"
 export TEST_FAIL_EVAL_AT="$fixture_dir/fail-eval-at"
 export TEST_IGNORE_EVALS="$fixture_dir/ignore-evals"
-export TEST_FAIL_NEXT_SYSTEMD_RUN="$fixture_dir/fail-next-systemd-run"
 export DISPLAY_MANAGER_SETTLE_SECONDS=0
 helper="$project_dir/bin/display-manager"
 
@@ -227,9 +217,22 @@ $helper preview "$config" >/dev/null
 # The helper canonicalizes refresh rates to at most two decimals before eval;
 # 60.001 therefore becomes 60, matching what Hyprland reliably honours.
 grep -q '^hl.monitor({ output = "eDP-1", mode = "1920x1200@60", position = "3840x0", scale = 1, transform = 1 })$' "$TEST_CALLS"
-grep -q 'display-manager rollback$' "$TEST_SYSTEMD_CALLS"
+grep -Eq -- '^-f .*/display-manager rollback-after 15 [0-9a-f]{32}$' "$TEST_SYSTEMD_CALLS"
+token=$(tail -n1 "$TEST_SYSTEMD_CALLS" | awk '{print $NF}')
 $helper state | jq -e '.[0].x == 3840 and .[0].transform == 1 and .[1].x == 0' >/dev/null
+# A timer from an older preview wakes up and does nothing.
+$helper rollback-after 0 0123456789abcdef0123456789abcdef >/dev/null
+$helper state | jq -e '.[0].x == 3840' >/dev/null
+# The current timer rolls the preview back when nobody pressed Keep.
+$helper rollback-after 0 "$token" >/dev/null
+$helper state | jq -e '.[0].x != 3840' >/dev/null
+[[ ! -e $XDG_STATE_HOME/omarchy-control-panel/pending.json ]]
+# Keep removes the token, so the timer is a no-op afterwards.
+$helper preview "$config" >/dev/null
+token=$(tail -n1 "$TEST_SYSTEMD_CALLS" | awk '{print $NF}')
 $helper confirm >/dev/null
+$helper rollback-after 0 "$token" >/dev/null
+$helper state | jq -e '.[0].x == 3840' >/dev/null
 
 # Reject an invalid configuration (mirror onto itself, overlapping layouts).
 for invalid in \
