@@ -78,3 +78,30 @@ assert.strictEqual(context.isVirtualDisplay({ name: "HEADLESS-1", make: "", mode
 assert.strictEqual(context.isVirtualDisplay({ name: "eDP-1", make: "", model: "", serial: "", virtual: true }), true)
 assert.strictEqual(context.isVirtualDisplay({ name: "gliff-7", make: "", model: "", serial: "", virtual: false }), false)
 assert.deepStrictEqual(Array.from(context.activeMonitors(withRemote), function(d) { return d.name }), ["eDP-1"])
+
+// Omarchy 4.6 owns per-monitor workspace blocks; the panel only follows them.
+const blocksText = [
+  "0\teDP-1\tApple Computer Inc Apple Panel fd089739",
+  "0\t\teDP-1",
+  "2\tHDMI-A-1\tLG Electronics LG HDR QHD 102NTDV7Y202",
+  "3\t\tgliff-4242",
+  "not a row",
+  ""
+].join("\n")
+const blocks = context.parseOmarchyBlocks(blocksText)
+assert.deepStrictEqual(JSON.parse(JSON.stringify(blocks)), { "eDP-1": 0, "HDMI-A-1": 2 })
+const ranges = context.omarchyRanges(displays, blocks)
+assert.deepStrictEqual(JSON.parse(JSON.stringify(ranges)), [
+  { monitor: "eDP-1", first: 1, last: 10 },
+  { monitor: "HDMI-A-1", first: 21, last: 30 }
+])
+assert.strictEqual(context.omarchySummary(displays, blocks), "eDP-1 1–10 · HDMI-A-1 21–30")
+const omarchyVisual = context.omarchyVisualMap(displays, blocks, { "HDMI-A-1": "red" })
+assert.strictEqual(Object.keys(omarchyVisual).length, 20)
+assert.deepStrictEqual(JSON.parse(JSON.stringify(omarchyVisual["10"])), { monitor: "eDP-1", colorRole: "accent" })
+assert.deepStrictEqual(JSON.parse(JSON.stringify(omarchyVisual["21"])), { monitor: "HDMI-A-1", colorRole: "red" })
+assert.strictEqual(omarchyVisual["11"], undefined)
+// A monitor Omarchy has not given a block yet gets no colors rather than a guess.
+assert.deepStrictEqual(JSON.parse(JSON.stringify(context.omarchyRanges(displays, { "eDP-1": 0 }))),
+  [{ monitor: "eDP-1", first: 1, last: 10 }])
+assert.strictEqual(context.omarchySummary(displays, {}), "")

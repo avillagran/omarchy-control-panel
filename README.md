@@ -46,7 +46,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
   - Inertial scrolling for the touchpad and, optionally, the mouse wheel ([omarchy-hyprland-inertia](https://github.com/avillagran/omarchy-hyprland-inertia), [details](#scroll-inertia))
   - 3-finger swipe to switch workspaces
 - **Animations**: system animations, workspace transition, flat pointer acceleration, speed/sensitivity
-- **Windows**: inner/outer gaps, font size, Omarchy's square single-window and no-gaps toggles, animations and workspace distribution
+- **Windows**: inner/outer gaps, font size, Omarchy's square single-window and no-gaps toggles, animations and workspace distribution (on Omarchy 4.6 and later, Omarchy's own per-monitor workspaces are left in charge)
 - **Displays**: layout, resolution/refresh/orientation/scale, a color per monitor, and square/rounded/circle/none workspace indicators in the bar. Profiles remember a separate layout for each physical monitor combination using EDID identity rather than connector names.
 - **Devices**: keyboard backlight, APFS (macOS disks)
 - **QuickView (development)**: native Control Panel overview with live window cards and workspace activation, available from Dev mode.
@@ -58,6 +58,19 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 ## Development: unified tooltips
 
 [Omarchy PR #15694](https://github.com/omacom/omarchy/pull/15694) adds shared themed hints and optional interactive cards. This Control Panel integration adds live appearance settings at the end of Windows, translated into all 19 UI languages.
+
+## What's new in 1.0.4
+
+- **Omarchy's per-monitor workspaces stay in charge**: Omarchy 4.6 gives every
+  monitor its own block of ten workspaces and renumbers, on each config
+  reload, any workspace sitting in another monitor's block. The panel's own
+  workspace rules (1-5 on one monitor, 6-10 on the next) fought that, so
+  windows jumped to workspaces such as 26 or 261. When Omarchy's
+  `monitor-workspaces.lua` is present, the panel now writes no workspace rules
+  and removes the ones it wrote before. The bar's colored workspaces follow the
+  same rules as Omarchy's bar: each bar shows its own monitor's workspaces,
+  numbered 1-10 like Super + 1-0, in that monitor's color. Older Omarchy
+  versions keep the panel's distribution.
 
 ## What's new in 0.5
 

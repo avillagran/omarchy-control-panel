@@ -822,6 +822,31 @@ Item {
   // are never parsed or rewritten; ours can be deleted at any time.
   property string luaPath: Quickshell.env("HOME") + "/.config/hypr/control-panel.lua"
 
+  // Omarchy 4.6+ numbers workspaces per monitor itself (see
+  // WorkspaceModel.parseOmarchyBlocks). Both files load synchronously, so the
+  // answer is known before the first writeLua().
+  readonly property string omarchyPath: Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy"
+  property bool omarchyWorkspaces: false
+  property var omarchyBlocks: ({})
+
+  property FileView omarchyWorkspaceModule: FileView {
+    path: root.omarchyPath + "/default/hypr/monitor-workspaces.lua"
+    blockLoading: true
+    printErrors: false
+    onLoaded: root.omarchyWorkspaces = true
+    onLoadFailed: function() { root.omarchyWorkspaces = false }
+  }
+
+  property FileView omarchyBlocksFile: FileView {
+    path: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/monitors/workspaces"
+    blockLoading: true
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.omarchyBlocks = WorkspaceModel.parseOmarchyBlocks(text())
+    onLoadFailed: function() { root.omarchyBlocks = ({}) }
+    onFileChanged: reload()
+  }
+
   property var saved: ({
     naturalScroll: false,
     flatAccel: false,
@@ -948,7 +973,10 @@ Item {
       }
     }
 
-    var workspacePlan = WorkspaceModel.assignments(
+    // With Omarchy's per-monitor blocks, any rule of ours would put a
+    // workspace on a monitor whose block it is not in, and Omarchy renumbers
+    // it into that monitor's block on the next reload (1 -> 261).
+    var workspacePlan = root.omarchyWorkspaces ? [] : WorkspaceModel.assignments(
       saved.displays && saved.displays.length ? saved.displays : root.displays,
       saved.singleMonitorWorkspaces,
       saved.multiMonitorWorkspaces)
@@ -1804,6 +1832,12 @@ Item {
       workspaceTopologyTimer.restart()
       return
     }
+    if (root.omarchyWorkspaces) {
+      // Omarchy places the workspaces; only refresh the colors that follow
+      // its blocks.
+      root.savePrefs()
+      return
+    }
     var plan = WorkspaceModel.assignments(root.displays,
       root.singleMonitorWorkspaces, root.multiMonitorWorkspaces)
     if (!plan.length) return
@@ -2222,7 +2256,9 @@ Item {
   }
 
   function savePrefs() {
-    var visuals = WorkspaceModel.workspaceVisualMap(displays, singleMonitorWorkspaces, multiMonitorWorkspaces, monitorColors)
+    var visuals = omarchyWorkspaces
+      ? WorkspaceModel.omarchyVisualMap(displays, omarchyBlocks, monitorColors)
+      : WorkspaceModel.workspaceVisualMap(displays, singleMonitorWorkspaces, multiMonitorWorkspaces, monitorColors)
     prefsFile.setText(JSON.stringify({
       swipe3: swipe3On,
       inertia: inertiaOn,
@@ -3914,7 +3950,11 @@ Item {
           width: parent.width
           topPadding: Style.space(8)
           bottomPadding: Style.space(4)
-          text: WorkspaceModel.summary(root.displays, root.singleMonitorWorkspaces, root.multiMonitorWorkspaces)
+          text: root.omarchyWorkspaces
+            ? root.t(root.uiLang, "omarchyWorkspaceBlocks")
+              + (WorkspaceModel.omarchySummary(root.displays, root.omarchyBlocks)
+                ? "\n" + WorkspaceModel.omarchySummary(root.displays, root.omarchyBlocks) : "")
+            : WorkspaceModel.summary(root.displays, root.singleMonitorWorkspaces, root.multiMonitorWorkspaces)
           color: Qt.alpha(root.fg, 0.62)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -3923,6 +3963,7 @@ Item {
 
         SliderRow {
           separator: false
+          visible: !root.omarchyWorkspaces
           label: root.t(root.uiLang, "oneMonitorWorkspaces")
           from: 1
           to: 10
@@ -3934,6 +3975,7 @@ Item {
         }
 
         SliderRow {
+          visible: !root.omarchyWorkspaces
           label: root.t(root.uiLang, "multiMonitorWorkspaces")
           from: 1
           to: 10
@@ -3944,9 +3986,10 @@ Item {
           onMoved: root.multiMonitorWorkspaces = Math.round(value)
         }
 
-        Item { width: 1; height: Style.space(8) }
+        Item { width: 1; height: Style.space(8); visible: !root.omarchyWorkspaces }
 
         Button {
+          visible: !root.omarchyWorkspaces
           width: parent.width
           text: root.t(root.uiLang, "applyWorkspaceLayout")
           selected: true

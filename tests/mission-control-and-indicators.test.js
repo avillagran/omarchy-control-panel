@@ -92,11 +92,21 @@ assert.match(widget, /WorkspaceModel\.workspaceNumber\(values\[i\]\)/,
   'workspace widget must use the numeric workspace name when IPC has no id field');
 assert.match(widget, /Every bar shows the complete workspace strip/,
   'every monitor bar must expose the complete numbered workspace strip');
-assert.doesNotMatch(widget, /liveMonitorOf\(values\[i\]\) === screenName/,
-  'workspace visibility must not be restricted to the bar monitor');
+// Without Omarchy's per-monitor blocks the strip stays complete on every bar;
+// with them (Omarchy 4.6+) each bar shows its own monitor's block, as
+// Omarchy's bar does, numbered 1-10 like Super + N.
+const classicIds = widget.slice(widget.indexOf('function workspaceIds()'), widget.indexOf('function visual('));
+assert.match(classicIds, /if \(omarchyWorkspaces\) return omarchyWorkspaceIds\(\)/,
+  'the strip must follow Omarchy blocks when Omarchy numbers workspaces per monitor');
+assert.doesNotMatch(classicIds, /liveMonitorOf\(values\[i\]\) === screenName/,
+  'without Omarchy blocks workspace visibility must not be restricted to the bar monitor');
+assert.match(widget, /default\/hypr\/monitor-workspaces\.lua/,
+  'Omarchy block mode must be detected from its monitor-workspaces module');
+assert.match(widget, /o\.workspaces\.focus\(/,
+  'a slot of the bar monitor must be focused through Omarchy so it opens on that monitor');
 assert.match(widget, /Hyprland\.focusedWorkspace[\s\S]*?WorkspaceModel\.workspaceNumber/,
   'workspace widget must mark focus from the current Hyprland workspace name');
-assert.match(widget, /formatWorkspaceNumber\(delegate\.modelData, root\.workspaceNumeralStyle\)/,
+assert.match(widget, /formatWorkspaceNumber\(root\.labelFor\(delegate\.modelData\), root\.workspaceNumeralStyle\)/,
   'workspace labels must honor the selected numeral style');
 assert.match(widget, /color: delegate\.focused \? delegate\.workspaceColor/,
   'the focused workspace must remain visibly marked in every numeral style');

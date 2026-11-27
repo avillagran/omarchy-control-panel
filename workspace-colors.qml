@@ -39,6 +39,51 @@ Item {
   readonly property int barSize: bar ? bar.barSize : 26
   readonly property color fallbackColor: bar ? bar.foreground : "white"
 
+  // Omarchy 4.6+ gives every monitor its own block of ten workspaces
+  // (default/hypr/monitor-workspaces.lua) and its bar shows each monitor's own
+  // block numbered 1-10. With it present this strip follows the same rules,
+  // keeping only the colors; without it, the strip below is unchanged.
+  readonly property int omarchySlots: 10
+  property bool omarchyWorkspaces: false
+  property var omarchyBlocks: ({})
+
+  function readOmarchyBlocks(text) {
+    var next = {}
+    var lines = String(text || "").split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      var match = /^(\d+)\t([^\t]*)\t.+$/.exec(lines[i])
+      if (match && match[2]) next[match[2]] = Number(match[1])
+    }
+    omarchyBlocks = next
+  }
+
+  function blockOf(id) { return Math.floor((id - 1) / omarchySlots) }
+  function slotOf(id) { return (id - 1) % omarchySlots + 1 }
+
+  readonly property var hyprMonitor: {
+    var values = Hyprland.monitors.values
+    for (var i = 0; i < values.length; i++)
+      if (values[i].name === root.screenName) return values[i]
+    return null
+  }
+
+  function shownWorkspaceNumber() {
+    return hyprMonitor ? WorkspaceModel.workspaceNumber(hyprMonitor.activeWorkspace) : 0
+  }
+
+  // Until Hyprland has written the file, the workspace a monitor shows is in
+  // its own block.
+  readonly property int omarchyBlock: {
+    var block = omarchyBlocks[screenName]
+    if (block !== undefined) return block
+    var shown = shownWorkspaceNumber()
+    return shown > 0 ? blockOf(shown) : 0
+  }
+
+  function labelFor(id) {
+    return omarchyWorkspaces && blockOf(id) === omarchyBlock ? slotOf(id) : id
+  }
+
   function applySettings() {
     // shell.json may retain an old nested `settings` snapshot. Once the
     // authoritative prefs file loads, never let that stale copy overwrite it.
@@ -84,8 +129,10 @@ Item {
 
   // The monitor this bar instance sits on (each bar window is per-screen).
   readonly property string screenName: {
-    var w = bar && bar.targetWindow ? bar.targetWindow(root) : null
-    return w && w.screen ? String(w.screen.name || "") : ""
+    var w = root.QsWindow.window || (bar && bar.targetWindow ? bar.targetWindow(root) : null)
+    var screen = w ? w.screen : null
+    var monitor = screen ? Hyprland.monitorFor(screen) : null
+    return monitor ? String(monitor.name || "") : screen ? String(screen.name || "") : ""
   }
 
   // Name of the monitor a live workspace currently sits on ("" if unknown).
@@ -105,13 +152,35 @@ Item {
     var ids = workspaceIds()
     for (var i = 0; i < ids.length; i++) {
       var width = numberMetrics.advanceWidth(
-        WorkspaceModel.formatWorkspaceNumber(ids[i], workspaceNumeralStyle))
+        WorkspaceModel.formatWorkspaceNumber(labelFor(ids[i]), workspaceNumeralStyle))
       widest = Math.max(widest, width)
     }
     return Math.min(barSize, Math.ceil(widest + 2 * workspaceIndicatorPadding))
   }
 
+  // As Omarchy's bar: the first five of this monitor's block, any of the rest
+  // that exist, then workspaces only visiting this monitor.
+  function omarchyWorkspaceIds() {
+    var base = omarchyBlock * omarchySlots
+    var ids = [base + 1, base + 2, base + 3, base + 4, base + 5]
+    var guests = []
+    var values = Hyprland.workspaces.values
+    for (var i = 0; i < values.length; i++) {
+      var id = WorkspaceModel.workspaceNumber(values[i])
+      if (id <= 0) continue
+      if (blockOf(id) === omarchyBlock) {
+        if (ids.indexOf(id) === -1) ids.push(id)
+      } else if (liveMonitorOf(values[i]) === screenName && guests.indexOf(id) === -1) {
+        guests.push(id)
+      }
+    }
+    ids.sort(function(a, b) { return a - b })
+    guests.sort(function(a, b) { return a - b })
+    return ids.concat(guests)
+  }
+
   function workspaceIds() {
+    if (omarchyWorkspaces) return omarchyWorkspaceIds()
     var ids = []
     var values = Hyprland.workspaces.values
     var i, id, key
@@ -149,6 +218,13 @@ Item {
 
   function focusWorkspace(id) {
     if (!bar) return
+    // A slot of this monitor's block goes through Omarchy, which brings it to
+    // this monitor; focusing the bare number would create a missing one on
+    // whichever monitor has focus.
+    if (omarchyWorkspaces && blockOf(id) === omarchyBlock && screenName) {
+      bar.run("hyprctl dispatch " + Util.shellQuote("o.workspaces.focus(" + slotOf(id) + ", " + JSON.stringify(screenName) + ")"))
+      return
+    }
     bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
   }
 
@@ -168,6 +244,24 @@ Item {
     printErrors: false
     onLoaded: root.loadPrefs(text())
     onLoadFailed: function() { root.loadPrefs("{}") }
+    onFileChanged: reload()
+  }
+
+  FileView {
+    path: (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/default/hypr/monitor-workspaces.lua"
+    blockLoading: true
+    printErrors: false
+    onLoaded: root.omarchyWorkspaces = true
+    onLoadFailed: function() { root.omarchyWorkspaces = false }
+  }
+
+  FileView {
+    path: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/monitors/workspaces"
+    blockLoading: true
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.readOmarchyBlocks(text())
+    onLoadFailed: function() { root.omarchyBlocks = ({}) }
     onFileChanged: reload()
   }
 
@@ -263,7 +357,9 @@ Item {
         required property int modelData
         readonly property var workspace: root.workspaceById(modelData)
         readonly property bool occupied: workspace !== null && workspace.toplevels.values.length > 0
-        readonly property bool focused: root.focusedWorkspaceNumber() === modelData
+        readonly property bool focused: root.omarchyWorkspaces
+          ? root.shownWorkspaceNumber() === modelData
+          : root.focusedWorkspaceNumber() === modelData
         readonly property var workspaceVisual: root.visual(modelData)
         readonly property color workspaceColor: root.themeColor(workspaceVisual.colorRole || workspaceVisual.color) || root.fallbackColor
         readonly property string indicatorMode: root.workspaceIndicatorMode
@@ -290,7 +386,7 @@ Item {
           Text {
             id: numberLabel
             anchors.centerIn: parent
-            text: WorkspaceModel.formatWorkspaceNumber(delegate.modelData, root.workspaceNumeralStyle)
+            text: WorkspaceModel.formatWorkspaceNumber(root.labelFor(delegate.modelData), root.workspaceNumeralStyle)
             color: delegate.focused ? "#101014" : delegate.workspaceColor
             font.family: root.bar ? root.bar.fontFamily : "monospace"
             font.pixelSize: Style.font.body
@@ -304,7 +400,7 @@ Item {
           onClicked: root.focusWorkspace(delegate.modelData)
           onEntered: {
             if (root.bar && delegate.workspaceVisual.monitor)
-              root.bar.showTooltip(delegate, "Escritorio " + delegate.modelData + " · " + delegate.workspaceVisual.monitor)
+              root.bar.showTooltip(delegate, "Escritorio " + root.labelFor(delegate.modelData) + " · " + delegate.workspaceVisual.monitor)
           }
           onExited: if (root.bar) root.bar.hideTooltip(delegate)
           hoverEnabled: true

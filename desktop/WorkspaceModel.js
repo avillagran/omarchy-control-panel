@@ -163,6 +163,57 @@ function colorRoleForMonitor(name, displays, colors) {
   return monitorPalette[0]
 }
 
+// Omarchy 4.6 gives every monitor its own block of ten workspaces
+// (default/hypr/monitor-workspaces.lua): the laptop panel 1-10, another
+// monitor 11-20 or 21-30, and so on. It renumbers any workspace that sits on
+// the wrong monitor's block on every config reload, so when it is present it
+// owns the numbering and the panel writes no workspace rules of its own.
+// Its state file has one row per monitor ever seen: block, connector (only
+// while plugged in) and identity, separated by tabs.
+var OMARCHY_BLOCK_SLOTS = 10
+
+function parseOmarchyBlocks(text) {
+  var blocks = {}
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var match = /^(\d+)\t([^\t]*)\t.+$/.exec(lines[i])
+    if (match && match[2]) blocks[match[2]] = Number(match[1])
+  }
+  return blocks
+}
+
+function omarchyRanges(displays, blocks) {
+  var monitors = activeMonitors(displays)
+  var ranges = []
+  for (var i = 0; i < monitors.length; i++) {
+    var block = blocks ? blocks[monitors[i].name] : undefined
+    if (typeof block !== "number" || !isFinite(block) || block < 0) continue
+    ranges.push({
+      monitor: monitors[i].name,
+      first: block * OMARCHY_BLOCK_SLOTS + 1,
+      last: block * OMARCHY_BLOCK_SLOTS + OMARCHY_BLOCK_SLOTS
+    })
+  }
+  return ranges
+}
+
+function omarchySummary(displays, blocks) {
+  return omarchyRanges(displays, blocks).map(function(range) {
+    return range.monitor + " " + range.first + "–" + range.last
+  }).join(" · ")
+}
+
+function omarchyVisualMap(displays, blocks, colors) {
+  var ranges = omarchyRanges(displays, blocks)
+  var result = {}
+  for (var i = 0; i < ranges.length; i++) {
+    var role = colorRoleForMonitor(ranges[i].monitor, displays, colors)
+    for (var id = ranges[i].first; id <= ranges[i].last; id++)
+      result[String(id)] = { monitor: ranges[i].monitor, colorRole: role }
+  }
+  return result
+}
+
 function workspaceVisualMap(displays, singleCount, perMonitorCount, colors, previous) {
   var plan = assignments(displays, singleCount, perMonitorCount, previous)
   var result = {}
