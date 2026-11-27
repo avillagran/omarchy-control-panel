@@ -13,7 +13,15 @@
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/version.h>
 #include <hyprland/src/Compositor.hpp>
+// Hyprland 0.57 moved CWindow into view/window/ and exposes the class through
+// metadata(); 0.56 (Omarchy 4.5) keeps it in view/ as m_class.
+#if __has_include(<hyprland/src/desktop/view/window/Window.hpp>)
 #include <hyprland/src/desktop/view/window/Window.hpp>
+#define OMARCHY_INERTIA_APP_ID(window) (window)->metadata().appID()
+#else
+#include <hyprland/src/desktop/view/Window.hpp>
+#define OMARCHY_INERTIA_APP_ID(window) (window)->m_class
+#endif
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
@@ -85,7 +93,7 @@ bool allowed(Source from) {
     if (!window) window = g_pInputManager->m_lastMouseFocus.lock();
     if (!window) return false;
     if (from == Source::Wheel || (allAppsOption && allAppsOption->value())) return true;
-    std::string cls = window->metadata().appID();
+    std::string cls = OMARCHY_INERTIA_APP_ID(window);
     std::transform(cls.begin(), cls.end(), cls.begin(), [](unsigned char c) { return std::tolower(c); });
     for (const auto* excluded : {"firefox", "chrom", "brave", "vivaldi", "librewolf", "zen"})
         if (cls.find(excluded) != std::string::npos) return false;

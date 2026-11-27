@@ -77,6 +77,10 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 
 [Omarchy PR #15694](https://github.com/omacom/omarchy/pull/15694) adds shared themed hints and optional interactive cards. This Control Panel integration adds live appearance settings at the end of Windows, translated into all 19 UI languages.
 
+## What's new in 1.0.6
+
+- **Inertia builds on Hyprland 0.56 too** (Omarchy 4.5), not only on 0.57.
+
 ## What's new in 1.0.5
 
 - **Inertia repairs itself after updates**: an Omarchy update can rebuild
