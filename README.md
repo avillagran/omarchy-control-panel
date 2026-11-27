@@ -20,7 +20,7 @@ Run this from a terminal in your Omarchy desktop session. It installs the panel,
 enables its widget on the right of the bar and opens the window immediately:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/771fc4e5a10d65d9d4b9622f72a259cc16431fcf/bin/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/avillagran/omarchy-control-panel/0298f59a033a3ed75b98b6d525aa3f984270d5e5/bin/install.sh | bash
 ```
 
 The installer downloads an immutable panel revision with Qt 6.12 compatibility.
