@@ -2414,19 +2414,41 @@ Item {
     syncTimer.restart()
   }
 
-  function autoMountApfs(dev) {
-    // The plugin never runs privileged shell strings built from QML. Show the
-    // exact command so the user can copy and run it themselves.
-    var base = dev.replace("/dev/", "")
-    var uuid = "$(blkid -s UUID -o value " + dev + ")"
-    root.apfsCommandText = "UUID=" + uuid + "; MP=/mnt/apfs-" + base + "; "
-      + "pkexec bash -c \"grep -qs \\\$UUID /etc/fstab || echo 'UUID=\\\$UUID \\\$MP apfs rw,nofail,x-systemd.automount,x-systemd.device-timeout=10 0 0' >> /etc/fstab; mkdir -p \\\$MP; systemctl daemon-reload; modprobe apfs; ls \\\$MP\""
-    statusMessage = "APFS · command ready to copy"
+  // APFS disks mount through udisks (polkit asks when it must): fixed argv,
+  // no shell, nothing run as root by the plugin. Only devices the probe listed.
+  function apfsDevice(dev) {
+    if (!/^\/dev\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(String(dev || ""))) return ""
+    for (var i = 0; i < root.apfsList.length; i++)
+      if (root.apfsList[i].path === dev) return dev
+    return ""
   }
 
-  function unmountApfs(mp) {
-    root.apfsCommandText = "pkexec umount '" + mp + "'"
-    statusMessage = "APFS · command ready to copy"
+  function autoMountApfs(dev) {
+    var device = apfsDevice(dev)
+    if (!device || apfsMountProc.running) return
+    root.apfsCommandText = ""
+    apfsMountProc.command = ["udisksctl", "mount", "--block-device", device]
+    apfsMountProc.running = true
+  }
+
+  function unmountApfs(dev) {
+    var device = apfsDevice(dev)
+    if (!device || apfsMountProc.running) return
+    root.apfsCommandText = ""
+    apfsMountProc.command = ["udisksctl", "unmount", "--block-device", device]
+    apfsMountProc.running = true
+  }
+
+  Process {
+    id: apfsMountProc
+    stdout: StdioCollector { id: apfsMountOut; waitForEnd: true }
+    stderr: StdioCollector { id: apfsMountErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var text = String((exitCode === 0 ? apfsMountOut.text : apfsMountErr.text) || "").slice(0, 400).trim()
+      root.apfsCommandText = text
+      root.statusMessage = "APFS · " + (exitCode === 0 ? "ok" : "error")
+      if (!apfsProbe.running) apfsProbe.running = true
+    }
   }
 
   Process {
@@ -4138,12 +4160,8 @@ Item {
             : root.t(root.uiLang, "apfsInstall")
           selected: !root.apfsInstalled
           foreground: root.fg
-          onClicked: {
-            statusMessage = root.t(root.uiLang, "apfsInstall") + "…"
-            root.run("omarchy-launch-floating-terminal-with-presentation 'yay -S --needed linux-asahi-headers linux-apfs-rw-dkms && sudo depmod -a && sudo modprobe apfs'")
-            slowSyncLeft = 12
-            slowSyncTimer.restart()
-          }
+          // The driver comes from the AUR: open its page, install it yourself.
+          onClicked: if (!root.apfsInstalled) Qt.openUrlExternally("https://aur.archlinux.org/packages/linux-apfs-rw-dkms")
         }
 
         Text {
@@ -4172,6 +4190,7 @@ Item {
               Text {
                 width: parent.width - apfsActions.width - parent.spacing
                 text: modelData.path + (modelData.label ? "  ·  " + modelData.label : "") + (modelData.size ? "  (" + modelData.size + ")" : "")
+                textFormat: Text.PlainText
                 color: root.fg
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -4197,7 +4216,7 @@ Item {
                   text: root.t(root.uiLang, "unmount")
                   fontSize: Style.font.caption
                   foreground: root.fg
-                  onClicked: root.unmountApfs(modelData.mountpoint)
+                  onClicked: root.unmountApfs(modelData.path)
                 }
               }
             }
@@ -4206,22 +4225,16 @@ Item {
           }
         }
 
+        // udisks' own answer (mounted at …, or why not).
         Text {
           width: parent.width
           visible: root.apfsCommandText !== ""
           text: root.apfsCommandText
+          textFormat: Text.PlainText
           color: root.fg
           wrapMode: Text.Wrap
           font.pixelSize: Style.font.caption
           opacity: 0.85
-        }
-
-        Button {
-          width: parent.width
-          visible: root.apfsCommandText !== ""
-          text: "Copy APFS command"
-          foreground: root.fg
-          onClicked: root.copyToClipboard(root.apfsCommandText)
         }
       }
 

@@ -112,7 +112,8 @@ Column {
       "echo EN=$(omarchy plugin list --json 2>/dev/null | python3 -c 'import json,sys\n" +
       "d=json.load(sys.stdin)\nd=d if isinstance(d,list) else d.get(\"plugins\",[])\n" +
       "print(\"yes\" if any(p.get(\"id\")==\"" + root.pluginId + "\" and p.get(\"enabled\") for p in d) else \"no\")' 2>/dev/null); " +
-      "echo WD=$(systemctl --user is-active omarchy-task-manager.service 2>/dev/null); " +
+      // The watchdog is the plugin's own `task-manager watch` process.
+      "echo WD=$(pgrep -u \"$(id -u)\" -a -x task-manager 2>/dev/null | grep -q ' watch' && echo active || echo inactive); " +
       "echo KB=$('" + root.keybindScript + "' status 2>/dev/null)"]
     stdout: StdioCollector {
       waitForEnd: true

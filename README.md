@@ -66,7 +66,7 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 - **Animations**: system animations, workspace transition, flat pointer acceleration, speed/sensitivity
 - **Windows**: inner/outer gaps, font size, Omarchy's square single-window and no-gaps toggles, animations and workspace distribution (on Omarchy 4.6 and later, Omarchy's own per-monitor workspaces are left in charge)
 - **Displays**: layout, resolution/refresh/orientation/scale, a color per monitor, and square/rounded/circle/none workspace indicators in the bar. Profiles remember a separate layout for each physical monitor combination using EDID identity rather than connector names.
-- **Devices**: keyboard backlight, APFS (macOS disks)
+- **Devices**: keyboard backlight, APFS (macOS disks): mount and unmount through udisks (`udisksctl`, polkit asks when needed). The driver, [linux-apfs-rw-dkms](https://aur.archlinux.org/packages/linux-apfs-rw-dkms), comes from the AUR; the panel only links to it.
 - **QuickView (development)**: native Control Panel overview with live window cards and workspace activation, available from Dev mode.
 - **Keyboard & Language**: physical layout, system language
 - **Task Manager**: [omarchy-task-manager](https://github.com/avillagran/omarchy-task-manager) pauses memory-hungry apps before the desktop freezes. It stays its own plugin and repo. Control Panel > Task Manager shows Omi, live CPU/RAM and the activity graph; its switch adds it through `omarchy plugin add` the first time you turn it on, and enables or disables it with `omarchy plugin enable|disable` after that.
@@ -80,6 +80,10 @@ A quick settings panel summoned from the Omarchy bar. It manages settings withou
 ## What's new in 1.0.6
 
 - **Inertia builds on Hyprland 0.56 too** (Omarchy 4.5), not only on 0.57.
+- **Reinstall inertia** retries a build that failed before, and the header
+  alert says why when it still fails.
+- **APFS disks mount through udisks**: no more copy-and-run root commands or
+  `/etc/fstab` edits; the driver button opens its AUR page.
 
 ## What's new in 1.0.5
 
@@ -277,7 +281,7 @@ alert in its header and one notification per session offers to reinstall it.
 
 - **External i18n**: all UI strings live in `i18n.json` (19 fully translated languages). The UI language follows the OS locale.
 - **Persistence**: state is saved to `~/.config/hypr/control-panel.lua` (re-applied on Hyprland load) and to the plugin's prefs JSON.
-- **No root**: the plugin never writes to `/usr/share/omarchy` and never asks for sudo for normal operation; only essential changes via `hyprctl`. Locale changes use the root-owned `localectl` binary directly (`pkexec localectl set-locale <locale>`). Installing a *missing* locale uses a root-owned helper installed once at `/usr/local/bin/omarchy-control-panel-locale-helper` (pkexec argv, not plugin code). APFS mount/unmount is surfaced as a manual terminal command the user can copy.
+- **No root**: the plugin never writes to `/usr/share/omarchy` and never asks for sudo for normal operation; only essential changes via `hyprctl`. Locale changes use the root-owned `localectl` binary directly (`pkexec localectl set-locale <locale>`). Installing a *missing* locale uses a root-owned helper installed once at `/usr/local/bin/omarchy-control-panel-locale-helper` (pkexec argv, not plugin code). APFS disks mount through udisks with a fixed argv; the panel never edits `/etc/fstab`.
 - **Security hardening**: all writes to user files (`~/.config/hypr/control-panel.lua`, plugin prefs JSON, and the idempotent `require("control-panel")` line in `~/.config/hypr/hyprland.lua`) go through exclusive `mktemp` temp files in the same directory followed by an atomic `mv -f` — never a predictable `*.tmp` name (which a planted symlink could redirect) and never a `>>` append (the symlink-append vector). Every file/probe read, including inside the write helpers, is byte-capped and FIFO-safe (`timeout 5 head -c 65536`) so a large or malicious file cannot hang or exhaust memory.
 - **No state flicker**: the UI syncs from the Lua file (source of truth) on open, avoiding the `hyprctl` read flip-flop on mouse-class devices.
 
