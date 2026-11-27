@@ -5,6 +5,7 @@
 #   inertia-plugin sync  follow "inertia" in control-panel-prefs.json (login)
 #   inertia-plugin status
 #   inertia-plugin check  ok | off | missing<TAB>reason (wanted but not loaded)
+#   inertia-plugin reinstall  forget earlier failures and build/load again (user asked)
 # The library is built on this machine (never shipped) into the state dir, outside
 # the plugin tree, and only loaded when the installed headers match the running
 # compositor. A Hyprland update therefore pauses inertia until the next login.
@@ -24,7 +25,7 @@ error_file=$state/last-error
 
 log() { printf '%s: %s\n' "$name" "$*" >&2; printf '%s\n' "$*" >"$error_file" 2>/dev/null || true; }
 
-case $mode in on|off|sync|status|check) ;; *) log "usage: $0 on|off|sync|status|check"; exit 2 ;; esac
+case $mode in on|off|sync|status|check|reinstall) ;; *) log "usage: $0 on|off|sync|status|check|reinstall"; exit 2 ;; esac
 command -v hyprctl >/dev/null || { log "hyprctl not found"; exit 1; }
 
 mkdir -p "$state"
@@ -156,4 +157,11 @@ case $mode in
   sync) if wanted; then load; else unload; fi ;;
   status) if is_loaded; then echo loaded; else echo unloaded; fi ;;
   check) check ;;
+  reinstall)
+    # An explicit request: retry a build that failed before (e.g. after the
+    # plugin itself was fixed) and a load this session refused.
+    for marker in "$state"/build/*.failed "$state/refused"; do
+      [[ -f $marker && ! -L $marker ]] && rm -f -- "$marker"
+    done
+    load ;;
 esac

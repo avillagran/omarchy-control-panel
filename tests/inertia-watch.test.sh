@@ -15,7 +15,7 @@ cat > "$tmp/plugin/bin/inertia-plugin" <<'STUB'
 echo "plugin $1" >> "$FAKE/calls"
 case $1 in
   check) cat "$FAKE/check" ;;
-  on) [[ -f $FAKE/onfail ]] && { echo "missing c++" >&2; exit 1; }; printf 'ok\n' > "$FAKE/check" ;;
+  reinstall) [[ -f $FAKE/onfail ]] && { echo "missing c++" >&2; exit 1; }; printf 'ok\n' > "$FAKE/check" ;;
 esac
 STUB
 cat > "$tmp/stubs/notify-send" <<'STUB'
@@ -44,7 +44,7 @@ echo reinstall > "$tmp/answer"
 watch
 grep -q 'reinstall=Reinstalar inercia' "$tmp/notes" || fail "offers a localized reinstall button"
 grep -q 'build failed' "$tmp/notes" || fail "shows the reason"
-grep -q '^plugin on' "$tmp/calls" || fail "the button reinstalls"
+grep -q '^plugin reinstall' "$tmp/calls" || fail "the button reinstalls"
 grep -q 'La inercia volvió a funcionar' "$tmp/notes" || fail "confirms the reinstall"
 
 # Once per Hyprland session.

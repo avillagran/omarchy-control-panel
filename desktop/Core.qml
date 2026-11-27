@@ -213,6 +213,7 @@ Item {
   property string inertiaMissingReason: ""
   property bool inertiaReinstalling: false
   property bool inertiaAlertDismissed: false
+  property bool inertiaReinstallFailed: false
   property bool tapToClick: false
   property var trackpadNames: []
   property var allMiceNames: []
@@ -1501,9 +1502,10 @@ Item {
 
   Process {
     id: inertiaReinstallProc
-    command: ["bash", root.binDir + "/inertia-plugin", "on"]
+    command: ["bash", root.binDir + "/inertia-plugin", "reinstall"]
     onExited: function(exitCode) {
       root.inertiaReinstalling = false
+      root.inertiaReinstallFailed = exitCode !== 0
       root.statusMessage = root.t(root.uiLang, exitCode === 0 ? "inertiaReinstalled" : "inertiaReinstallFailed")
       root.checkInertia()
       root.probeInertiaFeel()
@@ -1513,6 +1515,7 @@ Item {
   function reinstallInertia() {
     if (inertiaReinstallProc.running) return
     inertiaReinstalling = true
+    inertiaReinstallFailed = false
     inertiaReinstallProc.running = true
   }
 

@@ -47,7 +47,7 @@ fi
 action=$(notify-send -a "$app" -i input-touchpad -A "reinstall=$(say inertiaReinstall)" \
   -- "$(say inertiaMissing)" "$reason")
 [[ $action == reinstall ]] || exit 0
-out=$(bash "$helper" on 2>&1)
+out=$(bash "$helper" reinstall 2>&1)
 rc=$?
 out=${out:0:400}
 if [[ $rc == 0 ]]; then

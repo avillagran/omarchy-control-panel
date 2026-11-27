@@ -106,6 +106,13 @@ if bash "$helper" on 2>/dev/null; then fail "failed build must report failure"; 
 if bash "$helper" on 2>/dev/null; then fail "failed build must keep failing"; fi
 [[ $(builds) == 4 ]] || fail "a failed build is not retried for the same Hyprland"
 rm -f "$tmp/makefail"
+# Reinstall (the user pressed the button) forgets that failure and builds again.
+bash "$helper" reinstall
+[[ $(builds) == 5 ]] || fail "reinstall retries a failed build"
+[[ -f $tmp/loaded ]] || fail "reinstall loads the fresh build"
+bash "$helper" off
+rm -f "$XDG_STATE_HOME"/omarchy/control-panel-inertia/build/"$new"-*/control-panel-inertia.so
+touch "$tmp/makefail"; bash "$helper" on 2>/dev/null || true; rm -f "$tmp/makefail"
 
 # Compositor refuses the library (ABI check in PLUGIN_INIT).
 rm -f "$XDG_STATE_HOME/omarchy/control-panel-inertia/build/$new-"*.failed

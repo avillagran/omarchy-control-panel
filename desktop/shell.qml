@@ -262,7 +262,12 @@ ShellRoot {
               Text {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
-                text: core.t(core.uiLang, "inertiaAlert")
+                // After a failed reinstall, say so and why (the full reason
+                // is also under the inertia switches in Trackpad).
+                text: core.inertiaReinstallFailed
+                  ? core.t(core.uiLang, "inertiaReinstallFailed")
+                    + (core.inertiaMissingReason !== "" ? ": " + core.inertiaMissingReason : "")
+                  : core.t(core.uiLang, "inertiaAlert")
                 textFormat: Text.PlainText
                 color: theme.text
                 font.family: theme.fontUi
