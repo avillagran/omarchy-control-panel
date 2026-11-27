@@ -34,16 +34,27 @@ def ensure_required(input_path, marker):
     return True
 
 
+def existing_workspace_target(target):
+    """A bare relative target ("+1") makes Hyprland create a new numbered
+    workspace on every swipe, so repeated swipes walk off to 200+.  Cycle the
+    existing workspaces instead, like Omarchy's SUPER+scroll binding."""
+    if re.fullmatch(r"[+-]\d+", target):
+        return "e" + target
+    return target
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--enabled", choices=["true", "false"], required=True)
-    parser.add_argument("--left", default="+1")
-    parser.add_argument("--right", default="-1")
+    parser.add_argument("--left", default="e+1")
+    parser.add_argument("--right", default="e-1")
     parser.add_argument("--quickview", default="")
     parser.add_argument("--input", default=os.path.expanduser("~/.config/hypr/input.lua"))
     parser.add_argument("--output", default=os.path.expanduser("~/.config/hypr/control-panel-gestures.lua"))
     parser.add_argument("--no-reload", action="store_true", help="Skip hyprctl reload")
     args = parser.parse_args()
+    args.left = existing_workspace_target(args.left)
+    args.right = existing_workspace_target(args.right)
 
     enabled = args.enabled == "true"
     output_dir = os.path.dirname(args.output)

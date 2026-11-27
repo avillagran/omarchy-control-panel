@@ -30,7 +30,7 @@ python3 "$project_dir/tests/test_tooltip_settings.py"
 python3 "$project_dir/tests/test_installers_tooltips.py"
 grep -q 'execDetached(\["bash", root.binPath\])' "$project_dir/BarWidget.qml"
 node "$project_dir/tests/mission-control-and-indicators.test.js"
-python3 -m unittest "$project_dir/tests/test_workspace_widget_installer.py" "$project_dir/tests/test_display_hotplug_sync.py"
+python3 -m unittest "$project_dir/tests/test_workspace_widget_installer.py" "$project_dir/tests/test_display_hotplug_sync.py" "$project_dir/tests/test_swipe_workspace_targets.py"
 python3 -m unittest discover -s "$project_dir/tests" -p 'test_backup*.py' -v
 python3 "$project_dir/tests/test_display_isolation.py"
 bash -n "$project_dir/bin/install.sh" "$project_dir/bin/omabridge-client" "$project_dir/bin/apply-device-rules" "$project_dir/bin/display-manager" "$project_dir/bin/apply-superw-bind" "$project_dir/bin/inertia-plugin" "$project_dir/tests/inertia-plugin.test.sh" "$project_dir/bin/install-hyprland-scroll-patch.sh" "$project_dir/tests/run.sh" "$project_dir/tests/helper.test.sh" "$project_dir/tests/superw-startup.test.sh"

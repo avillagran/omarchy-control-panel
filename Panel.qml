@@ -509,8 +509,8 @@ Panel {
   // mutually exclusive, so there is never a double definition.
   function syncGesturesFile() {
     var enabled = saved.swipe3 ? "true" : "false"
-    var leftTarget = saved.naturalScroll ? "+1" : "-1"
-    var rightTarget = saved.naturalScroll ? "-1" : "+1"
+    var leftTarget = saved.naturalScroll ? "e+1" : "e-1"
+    var rightTarget = saved.naturalScroll ? "e-1" : "e+1"
     Quickshell.execDetached(["bash", "-lc",
       "python3 '" + root.pluginDir + "/bin/sync-gestures-file.py' " +
       "--enabled " + enabled + " --left '" + leftTarget + "' --right '" + rightTarget + "'"])
